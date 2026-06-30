@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   Robert Maestro — Portfolio design system
+   Style: Modern Dark / Cinema + Aurora mesh. Premium, gold accent, tech glow.
+   ========================================================================== */
+
+@theme {
+  /* Surfaces (never pure #000 — avoids OLED smear) */
+  --color-deep: #050506;
+  --color-base: #0a0a0c;
+  --color-elevated: #101014;
+  --color-surface: rgba(255, 255, 255, 0.04);
+  --color-surface-strong: rgba(255, 255, 255, 0.06);
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text */
+  --color-foreground: #ededef;
+  --color-muted: #9aa0aa;
+  --color-faint: #6b7280;
+
+  /* Gold accent (evolved from the 2023 yellow, WCAG-checked) */
+  --color-gold: #e0a82e;
+  --color-gold-bright: #f6c453;
+  --color-gold-deep: #c8841c;
+  --color-gold-glow: rgba(224, 168, 46, 0.18);
+
+  /* Secondary "AI / tech" glow — used sparingly */
+  --color-cyan: #38bdf8;
+  --color-cyan-glow: rgba(56, 189, 248, 0.14);
+
+  /* Fonts (wired to next/font variables in layout.tsx) */
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* Motion */
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 24px;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--color-deep);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  /* subtle base vignette so the page never reads flat */
+  background-image:
+    radial-gradient(60rem 40rem at 50% -10%, rgba(224, 168, 46, 0.06), transparent 70%),
+    radial-gradient(50rem 40rem at 100% 10%, rgba(56, 189, 248, 0.05), transparent 70%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: var(--color-gold);
+  color: #1a1206;
+}
+
+/* Custom scrollbar — small premium detail */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  border: 2px solid var(--color-deep);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(224, 168, 46, 0.5);
+}
+
+@layer utilities {
+  /* Glassmorphism card */
+  .glass {
+    background: var(--color-surface);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--color-line);
+  }
+
+  /* Gold gradient text */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Faint mono eyebrow label */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+
+  /* Hairline grid texture overlay (depth, not flat) */
+  .grid-texture {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 0 1px var(--color-line), 0 20px 60px -20px var(--color-gold-glow);
+  }
+}
+
+/* Aurora drift used by the hero blobs */
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(6%, -4%) scale(1.08); }
+  66% { transform: translate(-5%, 5%) scale(0.96); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Slow dash flow for the workflow-graph edges */
+@keyframes dashflow {
+  to { stroke-dashoffset: -100; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
