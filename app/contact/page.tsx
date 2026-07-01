@@ -34,7 +34,7 @@ export default function ContactPage() {
       />
 
       <section className="px-4 pb-8">
-        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1fr_1.1fr]">
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_1.1fr]">
           {/* Left: reassurance */}
           <Reveal>
             <div className="space-y-4">

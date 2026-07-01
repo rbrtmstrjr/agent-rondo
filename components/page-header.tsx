@@ -15,7 +15,7 @@ export function PageHeader({
   return (
     <section className="relative isolate overflow-hidden px-4 pb-10 pt-36 sm:pt-44">
       <Aurora />
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <Reveal>
           <p className="eyebrow">{eyebrow}</p>
           <h1 className="mt-4 max-w-4xl font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl md:text-6xl">

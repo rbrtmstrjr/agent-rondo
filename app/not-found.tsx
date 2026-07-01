@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Aurora } from "@/components/visual/aurora";
 import { Button } from "@/components/ui/button";
 

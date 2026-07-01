@@ -3,19 +3,24 @@ import { ArrowUpRight } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 import { RevealGroup, RevealItem, Reveal } from "@/components/reveal";
 import { CaseCard } from "@/components/work/case-card";
+import { WorkflowGraph } from "@/components/visual/workflow-graph";
 import { featuredCaseStudies } from "@/content/site";
 
 export function FeaturedWork() {
   return (
     <section className="relative px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
+        {/* live automation graph — nodes + flowing data packets only */}
+        <Reveal className="mx-auto mb-14 max-w-3xl">
+          <WorkflowGraph />
+        </Reveal>
+
         <div className="flex flex-wrap items-end justify-between gap-6">
           <SectionHeading
             eyebrow="Proof, not promises"
             title={
               <>
-                Real systems,{" "}
-                <span className="text-gradient-gold">running in production.</span>
+                Systems <span className="text-gradient-gold">running live.</span>
               </>
             }
             desc="Not mockups or tutorials — automations built to a production standard, error-handled and tested, including a live deployment for a real client."
@@ -31,9 +36,9 @@ export function FeaturedWork() {
           </Reveal>
         </div>
 
-        <RevealGroup className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <RevealGroup className="mt-14 grid auto-rows-fr gap-4 md:grid-cols-2 lg:grid-cols-3">
           {featuredCaseStudies.map((study) => (
-            <RevealItem key={study.slug}>
+            <RevealItem key={study.slug} className="h-full">
               <CaseCard study={study} />
             </RevealItem>
           ))}

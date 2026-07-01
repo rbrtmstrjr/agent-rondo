@@ -9,13 +9,12 @@ export function Services() {
 
   return (
     <section id="services" className="relative scroll-mt-24 px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="What I do"
           title={
             <>
-              Automation first.{" "}
-              <span className="text-gradient-gold">Full-stack second.</span>
+              Automation <span className="text-gradient-gold">first.</span>
             </>
           }
           desc="My focus is AI automation — but I can also build the website, app, and brand it all runs on. One person, the whole system."

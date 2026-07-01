@@ -5,7 +5,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <Link
       href="/"
-      aria-label="Robert Maestro — home"
+      aria-label="Agent Rondo — home"
       className={cn(
         "group inline-flex items-center gap-2 font-display text-lg font-bold tracking-tight",
         className,
@@ -16,7 +16,7 @@ export function Logo({ className }: { className?: string }) {
         <span className="absolute inset-0 rounded-lg opacity-0 transition-opacity duration-300 group-hover:opacity-100 glow-gold" />
       </span>
       <span>
-        Robert<span className="text-gold">.</span>
+        Agent Rondo<span className="text-gold">.</span>
       </span>
     </Link>
   );

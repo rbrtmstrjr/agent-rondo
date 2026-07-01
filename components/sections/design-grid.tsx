@@ -16,13 +16,12 @@ const TILES = [
 export function DesignGrid() {
   return (
     <section className="px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Beyond automation"
           title={
             <>
-              <span className="text-gradient-gold">119+ websites</span> built before I
-              automated them.
+              <span className="text-gradient-gold">119+ sites</span> shipped.
             </>
           }
           desc="Automation is the focus — but the design and development chops are real. A glimpse of the web and brand work behind the systems."

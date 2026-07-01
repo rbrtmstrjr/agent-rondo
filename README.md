@@ -13,8 +13,8 @@ who can also build the full stack (web, mobile, UI/UX, graphics). Replaces the 2
 
 ## Design system
 
-Modern Dark / Cinema + Aurora mesh. Premium dark base (never pure black), gold accent
-(`#E0A82E`), cyan tech-glow. Fonts: **Space Grotesk** (display), **Inter** (body),
+Modern Dark / Cinema + Aurora mesh. Deep indigo base (`#03001C`), bright yellow accent
+(`#FFC700`), cyan tech-glow. Fonts: **Space Grotesk** (display), **Inter** (body),
 **JetBrains Mono** (labels/stats). All tokens live in `app/globals.css`.
 
 ## Structure

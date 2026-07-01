@@ -1,6 +1,7 @@
 import { Clock, MailX, FileWarning, MoonStar } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 import { RevealGroup, RevealItem } from "@/components/reveal";
+import { SpotlightCard } from "@/components/visual/spotlight-card";
 
 const PAINS = [
   {
@@ -32,13 +33,14 @@ const PAINS = [
 export function Problem() {
   return (
     <section className="relative px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="The hidden cost of doing it by hand"
           title={
             <>
-              Your team is doing work a{" "}
-              <span className="text-gradient-gold">machine should be doing.</span>
+              Work a <span className="text-gradient-gold">machine</span>
+              <br />
+              <span className="text-gradient-gold">should do.</span>
             </>
           }
           desc="Most businesses don't have a sales or staffing problem. They have a busywork problem — and it's quietly costing them customers, hours, and money every single day."
@@ -47,14 +49,16 @@ export function Problem() {
         <RevealGroup className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PAINS.map((p) => (
             <RevealItem key={p.title}>
-              <div className="glass h-full rounded-2xl p-6 transition-colors hover:border-line-strong">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface">
-                  <p.icon className="h-5 w-5 text-gold" aria-hidden />
+              <SpotlightCard className="h-full" spotlight="var(--color-cyan-glow)">
+                <div className="p-6">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface">
+                    <p.icon className="h-5 w-5 text-gold" aria-hidden />
+                  </div>
+                  <p className="mt-5 font-display text-3xl font-bold text-foreground">{p.stat}</p>
+                  <h3 className="mt-1 font-display text-base font-semibold">{p.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{p.desc}</p>
                 </div>
-                <p className="mt-5 font-display text-3xl font-bold text-foreground">{p.stat}</p>
-                <h3 className="mt-1 font-display text-base font-semibold">{p.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted">{p.desc}</p>
-              </div>
+              </SpotlightCard>
             </RevealItem>
           ))}
         </RevealGroup>

@@ -28,10 +28,22 @@ export function Aurora({ className }: { className?: string }) {
       <div
         className="absolute left-1/3 top-1/2 h-[26rem] w-[26rem] rounded-full opacity-25 blur-[100px]"
         style={{
-          background: "radial-gradient(circle, rgba(224,168,46,0.14), transparent 65%)",
+          background: "radial-gradient(circle, rgba(255,199,0,0.14), transparent 65%)",
           animation: "drift 34s ease-in-out infinite",
         }}
       />
+
+      {/* horizontal tech beam sweeping across */}
+      <div
+        className="absolute left-0 top-1/3 h-px w-full opacity-40"
+        style={{
+          background: "linear-gradient(90deg, transparent, var(--color-cyan), transparent)",
+          animation: "beam 9s ease-in-out infinite",
+        }}
+      />
+
+      {/* film grain */}
+      <div className="noise absolute inset-0 opacity-[0.15] mix-blend-soft-light" />
 
       {/* top + bottom fades to seat content */}
       <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-deep to-transparent" />

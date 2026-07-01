@@ -6,10 +6,10 @@
    ========================================================================== */
 
 @theme {
-  /* Surfaces (never pure #000 — avoids OLED smear) */
-  --color-deep: #050506;
-  --color-base: #0a0a0c;
-  --color-elevated: #101014;
+  /* Surfaces — deep indigo base (brand) */
+  --color-deep: #03001c;
+  --color-base: #070425;
+  --color-elevated: #0e0a31;
   --color-surface: rgba(255, 255, 255, 0.04);
   --color-surface-strong: rgba(255, 255, 255, 0.06);
   --color-line: rgba(255, 255, 255, 0.08);
@@ -20,11 +20,11 @@
   --color-muted: #9aa0aa;
   --color-faint: #6b7280;
 
-  /* Gold accent (evolved from the 2023 yellow, WCAG-checked) */
-  --color-gold: #e0a82e;
-  --color-gold-bright: #f6c453;
-  --color-gold-deep: #c8841c;
-  --color-gold-glow: rgba(224, 168, 46, 0.18);
+  /* Brand accent — gradient gold */
+  --color-gold: #f5c24b; /* rich gold (base) */
+  --color-gold-bright: #ffe29a; /* pale gold highlight */
+  --color-gold-deep: #b87a1e; /* deep bronze-gold */
+  --color-gold-glow: rgba(245, 194, 75, 0.2);
 
   /* Secondary "AI / tech" glow — used sparingly */
   --color-cyan: #38bdf8;
@@ -60,14 +60,14 @@ body {
   font-family: var(--font-sans);
   /* subtle base vignette so the page never reads flat */
   background-image:
-    radial-gradient(60rem 40rem at 50% -10%, rgba(224, 168, 46, 0.06), transparent 70%),
+    radial-gradient(60rem 40rem at 50% -10%, rgba(255, 199, 0, 0.07), transparent 70%),
     radial-gradient(50rem 40rem at 100% 10%, rgba(56, 189, 248, 0.05), transparent 70%);
   background-attachment: fixed;
 }
 
 ::selection {
   background: var(--color-gold);
-  color: #1a1206;
+  color: #03001c;
 }
 
 /* Custom scrollbar — small premium detail */
@@ -83,7 +83,7 @@ body {
   border: 2px solid var(--color-deep);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(224, 168, 46, 0.5);
+  background: rgba(255, 199, 0, 0.5);
 }
 
 @layer utilities {
@@ -97,11 +97,18 @@ body {
 
   /* Gold gradient text */
   .text-gradient-gold {
-    background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold-deep));
+    background: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold) 45%, var(--color-gold-deep));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
+
+  /* Gold gradient fill — for accent surfaces (buttons, chips).
+     NOTE: not named bg-gradient-* — Tailwind v4 reserves that namespace. */
+  .gold-gradient {
+    background-image: linear-gradient(135deg, var(--color-gold-bright), var(--color-gold) 45%, var(--color-gold-deep));
+  }
+
 
   /* Faint mono eyebrow label */
   .eyebrow {
@@ -123,6 +130,80 @@ body {
   .glow-gold {
     box-shadow: 0 0 0 1px var(--color-line), 0 20px 60px -20px var(--color-gold-glow);
   }
+
+  /* Fine film grain so large dark areas never read flat */
+  .noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  }
+
+  /* Animated gradient border (masked ring) — add `.gradient-border` to a rounded box */
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(120deg, var(--color-gold), var(--color-cyan) 40%, transparent 60%, var(--color-gold));
+    background-size: 220% 220%;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: borderflow 7s linear infinite;
+    pointer-events: none;
+  }
+
+  /* Monospace HUD label with brackets */
+  .hud-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-cyan);
+  }
+
+  .animate-marquee {
+    animation: marquee 32s linear infinite;
+  }
+}
+
+@keyframes borderflow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 220% 50%; }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes marquee-y {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-120%); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(520%); opacity: 0; }
+}
+
+@keyframes beam {
+  0% { transform: translateX(-40%) scaleX(0.6); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(140%) scaleX(1); opacity: 0; }
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+/* Gentle float for the track-record stat labels */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 /* Aurora drift used by the hero blobs */

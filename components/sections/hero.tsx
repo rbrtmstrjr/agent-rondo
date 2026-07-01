@@ -1,132 +1,62 @@
 "use client";
 
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Sparkles } from "lucide-react";
-import { Aurora } from "@/components/visual/aurora";
-import { WorkflowGraph } from "@/components/visual/workflow-graph";
-import { Button } from "@/components/ui/button";
-import { site } from "@/content/site";
+import robot from "@/src/images/robot.png";
 import { EASE } from "@/lib/motion";
-
-const TOOLS = ["n8n", "Gemini", "Next.js", "Airtable", "Slack", "WhatsApp"];
 
 export function Hero() {
   return (
-    <section className="relative isolate overflow-hidden px-4 pb-20 pt-36 sm:pt-44">
-      <Aurora />
+    <section className="relative isolate flex flex-col overflow-hidden px-4 pt-32 text-center sm:min-h-dvh">
+      {/* plain static backdrop — no motion */}
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 grid-texture opacity-30 [mask-image:radial-gradient(70%_55%_at_50%_30%,black,transparent)]"
+        aria-hidden
+      />
 
-      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
-        {/* Left: copy */}
-        <div>
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: EASE }}
-            className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
-            </span>
-            <span className="text-muted">{site.availability}</span>
-          </motion.div>
+      {/* Giant RONDO wordmark — subtle, behind the robot (Figma gradient) */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-[30%] z-0 select-none font-display text-[clamp(5rem,23vw,21rem)] font-bold uppercase leading-none tracking-tighter"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, rgba(223,220,222,0.30) 25%, rgba(255,194,82,1) 56%, rgba(89,62,20,0.50) 75%, rgba(3,0,28,1) 100%)",
+          WebkitBackgroundClip: "text",
+          backgroundClip: "text",
+          color: "transparent",
+          opacity: 0.85,
+        }}
+      >
+        Rondo
+      </span>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: EASE, delay: 0.05 }}
-            className="mt-6 font-display text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl"
-          >
-            Stop running your
-            <br />
-            business on{" "}
-            <span className="relative whitespace-nowrap">
-              <span className="text-gradient-gold">busywork.</span>
-              <svg
-                className="absolute -bottom-2 left-0 w-full"
-                viewBox="0 0 300 12"
-                fill="none"
-                aria-hidden
-              >
-                <path
-                  d="M2 9C60 3 120 3 180 6C220 8 260 8 298 4"
-                  stroke="var(--color-gold)"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  opacity="0.6"
-                />
-              </svg>
-            </span>
-          </motion.h1>
+      {/* Paragraph */}
+      <motion.p
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: EASE, delay: 0.2 }}
+        className="relative z-10 mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted"
+      >
+        I&apos;m Robert — I build <span className="text-foreground">AI systems</span> that answer
+        your customers, qualify your leads, and handle your paperwork{" "}
+        <span className="text-foreground">24/7, while you sleep.</span> Production-grade automation,
+        live in weeks.
+      </motion.p>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
-            className="mt-7 max-w-xl text-lg leading-relaxed text-muted"
-          >
-            I&apos;m Robert — I build <span className="text-foreground">AI systems</span> that answer
-            your customers, qualify your leads, and handle your paperwork{" "}
-            <span className="text-foreground">24/7, while you sleep.</span> Production-grade
-            automation, live in weeks.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: EASE, delay: 0.25 }}
-            className="mt-9 flex flex-wrap items-center gap-3"
-          >
-            <Button href="/contact" size="lg">
-              Book a free automation audit
-              <ArrowUpRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            </Button>
-            <Button href="/work" variant="outline" size="lg">
-              <Sparkles className="h-4 w-4 text-gold" />
-              See the systems
-            </Button>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-            className="mt-10"
-          >
-            <p className="font-mono text-xs uppercase tracking-widest text-faint">
-              Built with
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {TOOLS.map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full border border-line bg-surface px-3 py-1 font-mono text-xs text-muted"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Right: the live automation diagram */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.94 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.9, ease: EASE, delay: 0.2 }}
-          className="relative"
-        >
-          <div className="glass rounded-3xl p-6 sm:p-8">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="font-mono text-xs text-muted">automation.live</span>
-              <span className="inline-flex items-center gap-1.5 font-mono text-xs text-gold">
-                <span className="h-1.5 w-1.5 rounded-full bg-gold" /> running
-              </span>
-            </div>
-            <WorkflowGraph />
-          </div>
-        </motion.div>
-      </div>
+      {/* Robot — large, anchored to the bottom of the screen */}
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, ease: EASE }}
+        className="relative z-10 mt-8 flex justify-center sm:mt-auto"
+      >
+        <Image
+          src={robot}
+          alt="Agent Rondo — AI automation agent"
+          priority
+          className="block h-auto w-[380px] sm:w-[560px] lg:w-[720px]"
+        />
+      </motion.div>
     </section>
   );
 }

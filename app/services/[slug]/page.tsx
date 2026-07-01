@@ -48,7 +48,7 @@ export default async function ServicePage({
       </PageHeader>
 
       <section className="px-4 pb-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <Link
             href="/#services"
             className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"

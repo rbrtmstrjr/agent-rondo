@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import { site } from "@/content/site";
 import { Nav } from "@/components/nav";
+import { BottomNav } from "@/components/bottom-nav";
 import { Footer } from "@/components/footer";
 import "./globals.css";
 
@@ -72,6 +73,7 @@ export default function RootLayout({
         <Nav />
         <main id="main">{children}</main>
         <Footer />
+        <BottomNav />
       </body>
     </html>
   );

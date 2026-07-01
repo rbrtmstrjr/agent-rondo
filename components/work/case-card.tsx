@@ -22,19 +22,9 @@ export function CaseCard({ study, className }: { study: CaseStudy; className?: s
         <p className="mt-1 text-xs text-faint">{study.client}</p>
         <p className="mt-4 leading-relaxed text-muted">{study.oneLiner}</p>
 
-        {/* metrics */}
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          {study.metrics.map((m) => (
-            <div key={m.label} className="rounded-xl border border-line bg-surface px-3 py-2.5">
-              <p className="font-display text-sm font-bold text-gold">{m.value}</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-faint">{m.label}</p>
-            </div>
-          ))}
-        </div>
-
         {/* stack */}
-        <div className="mt-5 flex flex-wrap gap-1.5">
-          {study.stack.slice(0, 4).map((t) => (
+        <div className="mt-6 flex flex-wrap gap-1.5">
+          {study.stack.slice(0, 3).map((t) => (
             <span key={t} className="rounded-md bg-surface px-2 py-0.5 font-mono text-[10px] text-muted">
               {t}
             </span>

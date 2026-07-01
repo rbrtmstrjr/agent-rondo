@@ -23,7 +23,7 @@ export default function WorkPage() {
         desc="Each of these is built to a production standard — input validation, error handling, idempotency, and a human-in-the-loop wherever it matters. Tap one to see the problem, the build, and the result."
       />
       <section className="px-4 pb-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <WorkIndex />
         </div>
       </section>

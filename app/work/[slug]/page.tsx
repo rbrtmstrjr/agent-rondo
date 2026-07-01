@@ -56,7 +56,7 @@ export default async function CaseStudyPage({
       </PageHeader>
 
       <article className="px-4 pb-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <Link
             href="/work"
             className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"

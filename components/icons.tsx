@@ -7,6 +7,11 @@ import {
   Linkedin,
   Facebook,
   Instagram,
+  Target,
+  ScanLine,
+  Clapperboard,
+  Workflow,
+  Plug,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,6 +24,11 @@ const map: Record<string, LucideIcon> = {
   linkedin: Linkedin,
   facebook: Facebook,
   instagram: Instagram,
+  target: Target,
+  scan: ScanLine,
+  clapperboard: Clapperboard,
+  workflow: Workflow,
+  plug: Plug,
 };
 
 export function Icon({

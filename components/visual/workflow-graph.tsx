@@ -1,10 +1,5 @@
-"use client";
-
-import { useRef } from "react";
-import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-
-/* Hub-and-spoke automation diagram: a trigger flows into an AI core, which
-   fans out to your tools. Mouse-reactive 3D tilt + data packets along edges. */
+/* Hub-and-spoke automation diagram: a trigger flows into an AI core, which fans
+   out to your tools. Just the nodes + flowing data packets (no tilt / no bg). */
 
 type Node = { id: string; x: number; y: number; label: string; sub: string; hub?: boolean };
 
@@ -33,111 +28,78 @@ function edgePath(a: Node, b: Node) {
 }
 
 export function WorkflowGraph() {
-  const ref = useRef<HTMLDivElement>(null);
-  const mx = useMotionValue(0);
-  const my = useMotionValue(0);
-  const rotX = useSpring(useTransform(my, [-0.5, 0.5], [8, -8]), { stiffness: 120, damping: 16 });
-  const rotY = useSpring(useTransform(mx, [-0.5, 0.5], [-10, 10]), { stiffness: 120, damping: 16 });
-
-  function onMove(e: React.MouseEvent) {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    mx.set((e.clientX - r.left) / r.width - 0.5);
-    my.set((e.clientY - r.top) / r.height - 0.5);
-  }
-  function onLeave() {
-    mx.set(0);
-    my.set(0);
-  }
-
   return (
-    <div
-      ref={ref}
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-      className="relative w-full"
-      style={{ perspective: 1200 }}
-    >
-      <motion.div
-        style={{ rotateX: rotX, rotateY: rotY, transformStyle: "preserve-3d" }}
-        className="relative"
-      >
-        {/* soft glow plate behind the graph */}
-        <div className="absolute inset-6 -z-10 rounded-3xl bg-gold-glow blur-3xl" />
+    <svg viewBox="0 0 440 360" className="w-full" role="img" aria-label="AI automation workflow diagram">
+      <defs>
+        <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="var(--color-gold)" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0.7" />
+        </linearGradient>
+        <radialGradient id="hubGlow">
+          <stop offset="0%" stopColor="var(--color-gold-bright)" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
 
-        <svg viewBox="0 0 440 360" className="w-full" role="img" aria-label="AI automation workflow diagram">
-          <defs>
-            <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="var(--color-gold)" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0.7" />
-            </linearGradient>
-            <radialGradient id="hubGlow">
-              <stop offset="0%" stopColor="var(--color-gold-bright)" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0" />
-            </radialGradient>
-          </defs>
+      {/* edges */}
+      {EDGES.map(([a, b], i) => {
+        const d = edgePath(nodeById(a), nodeById(b));
+        return (
+          <g key={`${a}-${b}`}>
+            <path d={d} fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" />
+            <path
+              d={d}
+              fill="none"
+              stroke="url(#edge)"
+              strokeWidth="2"
+              strokeDasharray="6 10"
+              style={{ animation: `dashflow ${3 + i * 0.4}s linear infinite` }}
+            />
+            {/* data packet */}
+            <circle r="3.2" fill="var(--color-cyan)">
+              <animateMotion dur={`${2.4 + i * 0.5}s`} repeatCount="indefinite" path={d} />
+            </circle>
+          </g>
+        );
+      })}
 
-          {/* edges */}
-          {EDGES.map(([a, b], i) => {
-            const d = edgePath(nodeById(a), nodeById(b));
-            return (
-              <g key={`${a}-${b}`}>
-                <path d={d} fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" />
-                <path
-                  d={d}
-                  fill="none"
-                  stroke="url(#edge)"
-                  strokeWidth="2"
-                  strokeDasharray="6 10"
-                  style={{ animation: `dashflow ${3 + i * 0.4}s linear infinite` }}
-                />
-                {/* data packet */}
-                <circle r="3.2" fill="var(--color-cyan)">
-                  <animateMotion dur={`${2.4 + i * 0.5}s`} repeatCount="indefinite" path={d} />
-                </circle>
-              </g>
-            );
-          })}
-
-          {/* nodes */}
-          {NODES.map((n) => (
-            <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
-              {n.hub && <circle r="34" fill="url(#hubGlow)" />}
-              <circle
-                r={n.hub ? 16 : 9}
-                fill={n.hub ? "var(--color-gold)" : "var(--color-base)"}
-                stroke={n.hub ? "var(--color-gold-bright)" : "var(--color-line-strong)"}
-                strokeWidth="1.5"
-              />
-              {n.hub && (
-                <circle r="16" fill="none" stroke="var(--color-gold-bright)" strokeWidth="1.5" opacity="0.5">
-                  <animate attributeName="r" values="16;26;16" dur="3s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.5;0;0.5" dur="3s" repeatCount="indefinite" />
-                </circle>
-              )}
-              <text
-                x="0"
-                y={n.hub ? 40 : 26}
-                textAnchor="middle"
-                className="fill-foreground font-[family-name:var(--font-display)]"
-                fontSize="13"
-                fontWeight="600"
-              >
-                {n.label}
-              </text>
-              <text
-                x="0"
-                y={n.hub ? 56 : 40}
-                textAnchor="middle"
-                className="fill-[var(--color-faint)] font-[family-name:var(--font-jetbrains)]"
-                fontSize="9"
-              >
-                {n.sub}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </motion.div>
-    </div>
+      {/* nodes */}
+      {NODES.map((n) => (
+        <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
+          {n.hub && <circle r="34" fill="url(#hubGlow)" />}
+          <circle
+            r={n.hub ? 16 : 9}
+            fill={n.hub ? "var(--color-gold)" : "var(--color-base)"}
+            stroke={n.hub ? "var(--color-gold-bright)" : "var(--color-line-strong)"}
+            strokeWidth="1.5"
+          />
+          {n.hub && (
+            <circle r="16" fill="none" stroke="var(--color-gold-bright)" strokeWidth="1.5" opacity="0.5">
+              <animate attributeName="r" values="16;26;16" dur="3s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.5;0;0.5" dur="3s" repeatCount="indefinite" />
+            </circle>
+          )}
+          <text
+            x="0"
+            y={n.hub ? 40 : 26}
+            textAnchor="middle"
+            className="fill-foreground font-[family-name:var(--font-display)]"
+            fontSize="13"
+            fontWeight="600"
+          >
+            {n.label}
+          </text>
+          <text
+            x="0"
+            y={n.hub ? 56 : 40}
+            textAnchor="middle"
+            className="fill-[var(--color-faint)] font-[family-name:var(--font-jetbrains)]"
+            fontSize="9"
+          >
+            {n.sub}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }

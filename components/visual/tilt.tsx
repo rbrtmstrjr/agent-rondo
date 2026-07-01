@@ -41,7 +41,7 @@ export function Tilt({
   }
 
   return (
-    <div ref={ref} onMouseMove={onMove} onMouseLeave={onLeave} style={{ perspective: 1000 }}>
+    <div ref={ref} onMouseMove={onMove} onMouseLeave={onLeave} className="h-full" style={{ perspective: 1000 }}>
       <motion.div
         style={{ rotateX: rotX, rotateY: rotY, transformStyle: "preserve-3d" }}
         className={cn("relative", className)}

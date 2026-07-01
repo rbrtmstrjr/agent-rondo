@@ -288,3 +288,57 @@ export function getCaseStudy(slug: string) {
 export function getService(slug: string) {
   return services.find((s) => s.slug === slug);
 }
+
+/* ---- Pricing -------------------------------------------------------------- */
+export type Plan = {
+  name: string;
+  price: string;
+  priceNote: string;
+  tagline: string;
+  features: string[];
+  cta: string;
+  featured?: boolean;
+};
+
+export const pricing: Plan[] = [
+  {
+    name: "Basic Automation",
+    price: "$500",
+    priceNote: "one-time setup",
+    tagline: "One focused automation, built to a production standard.",
+    features: [
+      "1 automation workflow",
+      "Input validation + error handling",
+      "Human-in-the-loop where it matters",
+      "Tested end-to-end + setup docs",
+    ],
+    cta: "Book a call",
+  },
+  {
+    name: "Custom Automation",
+    price: "$1,000–$4,000",
+    priceNote: "scoped by complexity",
+    tagline: "Multi-step AI systems tailored to how your business runs.",
+    features: [
+      "Multiple workflows & integrations",
+      "AI chatbot, lead, document or content engines",
+      "Wired into your tools (CRM, Sheets, Airtable, Slack, WhatsApp)",
+      "Dashboards, testing & revisions",
+    ],
+    cta: "Book a call",
+    featured: true,
+  },
+  {
+    name: "Everything else",
+    price: "Let's talk",
+    priceNote: "priced after a call",
+    tagline: "Web, mobile, UI/UX, graphics — or a bespoke package.",
+    features: [
+      "Web & mobile development",
+      "UI/UX & graphic design",
+      "Ongoing maintenance & retainers",
+      "Custom scope — quoted together",
+    ],
+    cta: "Create a custom quote",
+  },
+];

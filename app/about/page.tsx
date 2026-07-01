@@ -49,7 +49,7 @@ export default function AboutPage() {
       />
 
       <section className="px-4 pb-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <div className="grid items-start gap-12 lg:grid-cols-[0.8fr_1.2fr]">
             <Reveal>
               <Placeholder label="Robert" ratio="aspect-[4/5]" />
