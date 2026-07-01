@@ -1,0 +1,283 @@
+﻿{
+    "updatedAt":  "2026-03-17T13:53:41.239Z",
+    "createdAt":  "2025-12-21T13:31:14.577Z",
+    "id":  "WWtLwu1UrvQ4KivI",
+    "name":  "Single name generator | Kising",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "3b810e07-4d90-4cb3-bbce-bea0acc1cbd2",
+                                                                                     "name":  "backgroundTheme",
+                                                                                     "value":  "[Little Star Haven] (boy) Backdrop: Solid pastel mint backdrop (no texture, smooth studio finish)  Outfit: Pastel ivory outfit (soft knit onesie, clean and minimal)  Props: Plush star toy with gentle eyes Small crescent moon pillow Soft cloud cushion  Theme Style: Calm, soothing, and softly celestial with a peaceful dreamy atmosphere",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "69c55327-cbc7-4f70-a0a2-eb68fd13e83a",
+                                                                                     "name":  "babyNameTheme",
+                                                                                     "value":  "Baby names (boy)",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "1c4f7015-28d0-4f5b-b382-8b923fe5a089",
+                                                                                     "name":  "quantity:",
+                                                                                     "value":  12,
+                                                                                     "type":  "number"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       -96,
+                                       -112
+                                   ],
+                      "id":  "9cc086f9-cd08-469b-bf97-956e595ecc60",
+                      "name":  "Edit Fields"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "=You are an AI that generates high-quality, photography-consistent text-to-image prompts for baby name content.\nYour output must ALWAYS be a valid JSON array with the exact number of items requested.\nNo text before or after the array.\nNo markdown.\nNo explanations.\n\nGOAL:\nFor each requested image, return an object containing:\n  \"name\": a SINGLE baby name in ALL CAPS, semibold\n    (ONE name only — no combo, no double names, no first+middle)\n  \"meaning\": a short poetic meaning in lowercase (3–6 words, regular weight)\n  \"frameType\": either \"with-subject\" or \"props-only\"\n  \"prompt\": a full image prompt that already includes the name and meaning in the overlay description,\n    with correct visual hierarchy, PLUS a small subtle watermark \"@unique_names\"\n    perfectly centered both horizontally and vertically\n\nINPUTS:\nBACKGROUND THEME: {{ $json.backgroundTheme }}\nBABY NAME THEME: {{ $json.babyNameTheme }}\nNUMBER OF IMAGES: {{ $json[\"quantity:\"] }}\n\nGLOBAL CONSISTENCY RULES:\nAll generated images must look like they belong to the same photoshoot.\nThis includes identical style for:\n  - scene\n  - background elements\n  - color palette\n  - lighting direction \u0026 softness\n  - mood \u0026 aesthetic\n  - camera type (e.g., DSLR, 50mm lens, soft natural light)\n  - editing style (warm tones, airy, matte, film-like)\n\nOnly the composition may vary (close-up, medium, flatlay, wide, low angle).\n\nFRAME TYPE RULES — follow strictly:\n\n  \"with-subject\" frames:\n    - Include a newborn, infant, toddler, or young child\n    - Subject must appear gorgeous, adorable, and cute\n    - Props may also appear alongside the subject\n\n  \"props-only\" frames:\n    - NO baby, child, or human subject of any kind — not even hands or feet\n    - Feature ONLY beautiful, carefully styled props\n      (e.g., name blocks, floral arrangements, linen fabric, wooden letters,\n      dried botanicals, ribbons, baby shoes, soft toys, vintage books, candles)\n    - Composition must be intentional and editorial — styled flatlay or soft vignette\n    - These frames provide variety and negative space within the set\n    - This is a valid, intentional creative choice — do not add a subject\n\nDistribute frame types naturally across the set. Not every image needs a baby.\n\nIMAGE + TEXT RULES:\n  - Provide generous negative space for white Poppins overlay text\n  - NAME must appear in ALL CAPS, semibold\n  - MEANING in lowercase, regular\n  - Name must appear visually larger than meaning\n  - NEVER generate camera-rendered or physical text inside the image\n  - All text must be clean digital overlay only\n  - Add a small, subtle, semi-transparent watermark text \"@unique_names\"\n    (lowercase, with underscore, spelled exactly)\n  - Position: perfectly centered horizontally and vertically in the frame\n  - No other watermark variants allowed\n  - Include name + meaning directly inside the prompt\n  - Aspect ratio: 4:5\n\nJSON OUTPUT FORMAT:\nReturn ONLY a JSON array with EXACTLY the number of objects defined by {{ $json[\"quantity:\"] }}.\nNo trailing commas. No commentary. No additional keys.\n\nEach object must follow this structure exactly:\n\n{\n  \"name\": \"RIVER\",\n  \"meaning\": \"flowing, tranquil spirit\",\n  \"frameType\": \"props-only\",\n  \"prompt\": \"RIVER — flowing, tranquil spirit, white Poppins overlay with NAME semibold and larger, MEANING smaller and regular, small semi-transparent centered watermark \u0027@unique_names\u0027, 4:5 aspect ratio, consistent photoshoot style with identical background, lighting, tones, and camera setup, soft natural light, warm neutral palette, clean centered composition, NO baby or human subject, props-only styled flatlay: wooden letter R, dried pampas grass, soft ivory linen, small wildflower sprigs, pastel ribbon arranged on a light textured surface, top-down flatlay, editorial and minimal\"\n}\n\nReturn ONLY the final JSON array."
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       64,
+                                       -112
+                                   ],
+                      "id":  "6b467d6a-e635-4c5e-b130-9d1516fc2190",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "epic catch api"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "name, meaning, prompt",
+                                         "include":  "allOtherFields",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       512,
+                                       -112
+                                   ],
+                      "id":  "9c5ae56e-e55d-48a6-8180-2873a918bd2f",
+                      "name":  "Split Out"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "return JSON.parse($input.first().json.content.parts[0].text);"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       352,
+                                       -112
+                                   ],
+                      "id":  "c4efd706-f070-45ac-947c-8d1453515932",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -288,
+                                       -112
+                                   ],
+                      "id":  "3c603918-cab7-4027-b754-f14465575239",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $json.prompt }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       688,
+                                       -112
+                                   ],
+                      "id":  "c1eeee43-76d5-4904-902a-7ab93bb386e3",
+                      "name":  "Generate an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "epic catch api"
+                                                            }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Edit Fields":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Message a model",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Split Out":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "Generate an image",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Split Out",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Edit Fields",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "54b195de-96cd-46ae-98fe-aa3dc4a3fce2",
+    "activeVersionId":  null,
+    "versionCounter":  100,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-21T13:31:14.583Z",
+                       "createdAt":  "2025-12-21T13:31:14.583Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "WWtLwu1UrvQ4KivI",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

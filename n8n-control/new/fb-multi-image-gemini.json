@@ -1,0 +1,340 @@
+{
+  "name": "FB Multi-Image Auto Post (Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📘 FB Multi-Image Auto Post (Gemini) — with Slack Approval\n\nGenerate caption + N images → preview them in Slack →\n**wait for your Approve/Reject** → publish only if approved.\n\nImages are uploaded to FB as UNPUBLISHED (not public), their URLs are\nfetched and shown in Slack for review, then you approve or reject.\nNothing goes public until you approve — protects a monetized page.",
+        "height": 280,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -560],
+      "id": "sticky-overview",
+      "name": "Sticky Overview"
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ SETUP\n\n**Config** → topic, numImages (≥2), pageId.\n**Facebook Graph API** cred → on the 3 FB HTTP nodes.\n**Slack** cred → on the preview, approval, notify nodes.\n\nBot must be /invite'd to the Slack channel.\nApproval PAUSES the workflow until you click in Slack.",
+        "height": 280,
+        "width": 520,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-20, -560],
+      "id": "sticky-setup",
+      "name": "Sticky Setup"
+    },
+    {
+      "parameters": {
+        "content": "### 3 · Preview + approve\nEach image is uploaded to FB unpublished, its URL fetched and posted to Slack for review. Then Approve/Reject decides whether to publish.",
+        "height": 200,
+        "width": 600,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [560, -240],
+      "id": "sticky-sec3",
+      "name": "Sticky Section 3"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-560, 0],
+      "id": "node-trigger-0001",
+      "name": "When clicking 'Execute workflow'",
+      "notes": "Manual run for testing. To automate, add a Schedule Trigger later."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "asg-topic", "name": "topic", "value": "unique and meaningful baby names with their meanings", "type": "string" },
+            { "id": "asg-numimages", "name": "numImages", "value": 3, "type": "number" },
+            { "id": "asg-pageid", "name": "pageId", "value": "559642567232550", "type": "string" },
+            { "id": "asg-graphver", "name": "graphVersion", "value": "v21.0", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-360, 0],
+      "id": "node-config-0002",
+      "name": "Config",
+      "notes": "Edit per post: topic, numImages (>=2), pageId, graphVersion."
+    },
+    {
+      "parameters": {
+        "modelId": { "__rl": true, "value": "models/gemini-2.5-pro", "mode": "list", "cachedResultName": "models/gemini-2.5-pro" },
+        "messages": {
+          "values": [
+            { "content": "=You are a social media content creator for a Facebook page.\n\nTopic: {{ $json.topic }}\n\nCreate ONE cohesive Facebook photo-album post about this topic. The album will contain {{ $json.numImages }} images that belong together as a set.\n\nReturn ONLY valid JSON (no markdown, no code fences, no extra text) in EXACTLY this shape:\n{\n  \"caption\": \"<engaging Facebook caption, 2 to 4 sentences, no hashtags, no emojis>\",\n  \"image_prompts\": [\n    \"<detailed image generation prompt #1>\"\n  ]\n}\n\nRules:\n- image_prompts MUST contain EXACTLY {{ $json.numImages }} prompts.\n- Each prompt must be ultra-realistic or cinematic, highly detailed, sharp focus, dramatic lighting.\n- The images must be visually distinct but clearly part of the same cohesive set.\n- Do NOT render any text, words, letters, or watermarks in the images.\n" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [-160, 0],
+      "id": "node-llm-0003",
+      "name": "Generate Caption + Prompts",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Gemini 2.5 Pro. Outputs strict JSON { caption, image_prompts[] }.",
+      "credentials": { "googlePalmApi": { "id": "0eINQFptxG4T1uH7", "name": "Google Gemini(PaLM) Api account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini JSON output and fan out one item per image prompt\nconst text = $json.content.parts[0].text;\n\nlet clean = text.trim()\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/, '')\n  .replace(/```$/, '')\n  .trim();\n\nlet data;\ntry { data = JSON.parse(clean); } catch (e) { throw new Error('Model did not return valid JSON. Raw: ' + clean); }\n\nconst caption = (data.caption || '').trim();\nconst prompts = Array.isArray(data.image_prompts) ? data.image_prompts : [];\nif (!caption) throw new Error('No caption returned by the model.');\nif (prompts.length === 0) throw new Error('No image_prompts returned. Raw: ' + clean);\n\nreturn prompts.map((p, idx) => ({ json: { image_prompt: String(p).trim(), caption, index: idx + 1, total: prompts.length } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "id": "node-parse-0004",
+      "name": "Parse & Split Prompts",
+      "notes": "Validates Gemini's JSON and outputs ONE item per image prompt."
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": { "__rl": true, "value": "models/gemini-2.5-flash-image", "mode": "list", "cachedResultName": "models/gemini-2.5-flash-image (Nano Banana)" },
+        "prompt": "=Generate this image: {{ $json.image_prompt }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [240, 0],
+      "id": "node-image-0005",
+      "name": "Generate Image",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Gemini 2.5 Flash Image. Runs once per prompt. Outputs binary 'data'.",
+      "credentials": { "googlePalmApi": { "id": "0eINQFptxG4T1uH7", "name": "Google Gemini(PaLM) Api account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Drop corrupted/empty images (Gemini sometimes returns a 0-byte image)\nconst all = $input.all();\nconst out = [];\nlet bad = 0;\nfor (let i = 0; i < all.length; i++) {\n  const meta = all[i].binary && all[i].binary.data;\n  let size = 0;\n  if (meta) {\n    const buf = await this.helpers.getBinaryDataBuffer(i, 'data');\n    size = buf ? buf.length : 0;\n  }\n  if (size > 1024) { out.push(all[i]); } else { bad++; }\n}\nif (out.length < 2) {\n  throw new Error('Only ' + out.length + ' valid image(s) generated (need >=2 for a Facebook album); ' + bad + ' were corrupted/empty. Please re-run.');\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 180],
+      "id": "node-validate-0016",
+      "name": "Validate Images",
+      "notes": "Filters out corrupted/empty (0-byte) Gemini images before uploading. Fails clearly if fewer than 2 valid images remain (FB albums need >=2)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.graphVersion }}/{{ $('Config').first().json.pageId }}/photos",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "published", "value": "false" },
+            { "parameterType": "formBinaryData", "name": "source", "inputDataFieldName": "data" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "id": "node-upload-0006",
+      "name": "Upload Photo (unpublished)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Uploads each image with published=false (NOT public). Returns photo id (media_fbid).",
+      "credentials": { "facebookGraphApi": { "id": "tI4WK5lgRCOtmaKN", "name": "FB Page - Unique Names" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.graphVersion }}/{{ $json.id }}?fields=images",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 0],
+      "id": "node-geturl-0007",
+      "name": "Get Photo URL",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notes": "Fetches the uploaded photo's image URLs (for the Slack preview). Carries the photo id through.",
+      "credentials": { "facebookGraphApi": { "id": "tI4WK5lgRCOtmaKN", "name": "FB Page - Unique Names" } }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "text": "=🖼️ Preview image {{ $json.id }}\n{{ $json.images && $json.images[0] ? $json.images[0].source : 'image URL unavailable' }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [840, -160],
+      "id": "node-preview-0008",
+      "name": "Slack Preview Image",
+      "onError": "continueRegularOutput",
+      "notes": "Posts each image URL to Slack so you can review (Slack unfurls the link into a preview). Terminal branch; never blocks posting.",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all photo ids (for the album) + urls (for reference)\nconst media = items.map(i => ({ media_fbid: i.json.id }));\nif (media.length === 0) throw new Error('No photos were uploaded.');\nif (media.some(m => !m.media_fbid)) throw new Error('A photo upload returned no id: ' + JSON.stringify(items.map(i => i.json)));\n\nconst urls = items.map(i => (i.json.images && i.json.images[0] ? i.json.images[0].source : null)).filter(Boolean);\nconst caption = $('Parse & Split Prompts').first().json.caption;\n\nreturn [{ json: { attached_media: JSON.stringify(media), photo_count: media.length, caption, urls } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 40],
+      "id": "node-collect-0009",
+      "name": "Collect Photo IDs",
+      "notes": "Builds attached_media (ids) + carries caption/count for the approval and publish steps."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "message": "=*Review this Facebook album before posting*\n\n*Caption:*\n{{ $json.caption }}\n\n*Images:* {{ $json.photo_count }} (previews posted above)\n\nApprove to publish to the Page, or Reject to cancel.",
+        "responseType": "approval",
+        "approvalOptions": { "values": { "approvalType": "double", "buttonApprovalLabel": "Approve", "buttonDisapprovalLabel": "Reject" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1040, 40],
+      "id": "node-approval-0010",
+      "name": "Approval (Send & Wait)",
+      "notes": "Posts an Approve/Reject prompt and PAUSES until you click. Output carries data.approved (true/false).",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "cond-approved", "leftValue": "={{ $json.data.approved }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1240, 40],
+      "id": "node-if-0011",
+      "name": "Approved?",
+      "notes": "TRUE = approved -> publish. FALSE = rejected -> notify only."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.graphVersion }}/{{ $('Config').first().json.pageId }}/feed",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "message", "value": "={{ $('Parse & Split Prompts').first().json.caption }}" },
+            { "name": "attached_media", "value": "={{ $('Collect Photo IDs').first().json.attached_media }}" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1460, -60],
+      "id": "node-publish-0012",
+      "name": "Publish Album Post",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Runs ONLY after approval. Creates ONE Page post with all images + caption.",
+      "credentials": { "facebookGraphApi": { "id": "tI4WK5lgRCOtmaKN", "name": "FB Page - Unique Names" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const postId = $json.id || $json.post_id || 'unknown';\nconst count = $('Collect Photo IDs').first().json.photo_count;\nconst caption = $('Parse & Split Prompts').first().json.caption;\nconst text = ['\\u2705 *Facebook album PUBLISHED*', `*Post ID:* ${postId}`, `*Images:* ${count}`, `*Caption:* ${caption}`].join('\\n');\nreturn [{ json: { text, postId, count } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1660, -60],
+      "id": "node-success-0013",
+      "name": "Format Success",
+      "notes": "Builds the success summary for Slack."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1860, -60],
+      "id": "node-notify-0014",
+      "name": "Notify Success (Slack)",
+      "notes": "Sends the success summary to Slack.",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "text": "=❌ *Post REJECTED* — nothing was published.\n*Topic:* {{ $('Config').first().json.topic }}\nThe {{ $('Collect Photo IDs').first().json.photo_count }} uploaded images stay unpublished (not public).",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1460, 180],
+      "id": "node-rejected-0015",
+      "name": "Notify Rejected (Slack)",
+      "notes": "Runs when you Reject. Nothing is published.",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Generate Caption + Prompts", "type": "main", "index": 0 }]] },
+    "Generate Caption + Prompts": { "main": [[{ "node": "Parse & Split Prompts", "type": "main", "index": 0 }]] },
+    "Parse & Split Prompts": { "main": [[{ "node": "Generate Image", "type": "main", "index": 0 }]] },
+    "Generate Image": { "main": [[{ "node": "Validate Images", "type": "main", "index": 0 }]] },
+    "Validate Images": { "main": [[{ "node": "Upload Photo (unpublished)", "type": "main", "index": 0 }]] },
+    "Upload Photo (unpublished)": { "main": [[{ "node": "Get Photo URL", "type": "main", "index": 0 }]] },
+    "Get Photo URL": { "main": [[
+      { "node": "Slack Preview Image", "type": "main", "index": 0 },
+      { "node": "Collect Photo IDs", "type": "main", "index": 0 }
+    ]] },
+    "Collect Photo IDs": { "main": [[{ "node": "Approval (Send & Wait)", "type": "main", "index": 0 }]] },
+    "Approval (Send & Wait)": { "main": [[{ "node": "Approved?", "type": "main", "index": 0 }]] },
+    "Approved?": { "main": [
+      [{ "node": "Publish Album Post", "type": "main", "index": 0 }],
+      [{ "node": "Notify Rejected (Slack)", "type": "main", "index": 0 }]
+    ] },
+    "Publish Album Post": { "main": [[{ "node": "Format Success", "type": "main", "index": 0 }]] },
+    "Format Success": { "main": [[{ "node": "Notify Success (Slack)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "errorWorkflow": "660Xkpo164VSNTDZ" }
+}

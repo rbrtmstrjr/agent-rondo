@@ -1,0 +1,700 @@
+{
+  "name": "Content Repurposing → Airtable + Approve (Northwind)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-northwind",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "n-wh",
+      "name": "Content Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        300
+      ],
+      "webhookId": "content-northwind-hook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "companyName",
+              "value": "Northwind Home Services",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "phone",
+              "value": "(555) 010-4729",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "brandVoice",
+              "value": "helpful, friendly, trustworthy, and practical",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "chatModel",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "imageModel",
+              "value": "gemini-3.1-flash-image",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "baseId",
+              "value": "appug80MzHJWdeZNU",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "contentTableId",
+              "value": "tblURbYKPLR5CWWHk",
+              "type": "string"
+            },
+            {
+              "id": "c8",
+              "name": "imageFieldId",
+              "value": "fldlhfj3EliOLkWxp",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "channel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Get Source & Build Prompt — Code node (no creds). Accepts text / URL / topic.\n// If it's a URL, fetches + strips the article (plain httpRequest works in Code\n// nodes; only the *authenticated* helper doesn't). Builds the Gemini request that\n// generates all 4 platform drafts + an image prompt in one structured call.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst wh = $('Content Webhook').first().json;\nconst body = (wh && wh.body) ? wh.body : {};\n\nlet input = String(body.input || body.text || body.url || body.topic || '').trim();\nif (!input) return [{ json: { valid: false, reason: 'No input provided. Send {\"input\": \"...text, URL, or topic...\"}.' } }];\n\nlet sourceType = 'topic';\nlet sourceText = input;\n\nif (/^https?:\\/\\//i.test(input)) {\n  sourceType = 'url';\n  try {\n    const html = await this.helpers.httpRequest({ method: 'GET', url: input, headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 });\n    sourceText = String(html)\n      .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n      .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n      .replace(/<[^>]+>/g, ' ')\n      .replace(/&[a-z]+;/gi, ' ')\n      .replace(/\\s+/g, ' ')\n      .trim()\n      .slice(0, 6000);\n    if (sourceText.length < 60) { sourceType = 'url (little text found)'; }\n  } catch (e) { sourceType = 'url (fetch failed — using as topic)'; sourceText = input; }\n} else if (input.length > 280) {\n  sourceType = 'text';\n}\n\nconst voice = cfg.brandVoice || 'helpful, friendly, trustworthy, and practical';\nconst sys = 'You are the social media manager for ' + cfg.companyName + ', a home-services company (HVAC, plumbing, electrical) serving the Greater Portland area. '\n  + 'Repurpose the SOURCE into platform-native posts in a ' + voice + ' brand voice. Stay accurate to home services; never invent prices or guarantees. '\n  + 'Include a soft, natural call-to-action (book online or call ' + (cfg.phone || '') + ') where it fits. '\n  + 'Return JSON with: '\n  + 'title (a short internal title for this content); '\n  + 'summary (1 sentence); '\n  + 'linkedin (professional: strong hook, value, short paragraphs/line breaks, ~900-1300 chars, 0-3 hashtags); '\n  + 'twitter (one punchy post, MAX 280 characters, may use 1-2 hashtags); '\n  + 'facebook (warm and conversational, ends with a question to drive comments); '\n  + 'instagram (an engaging caption with line breaks and a few emojis); '\n  + 'hashtags (8-15 relevant hashtags as one space-separated string, for Instagram); '\n  + 'imagePrompt (a vivid description for a clean, professional, on-brand SQUARE graphic with NO text in the image).';\n\nconst geminiBody = {\n  systemInstruction: { parts: [{ text: sys }] },\n  contents: [{ role: 'user', parts: [{ text: 'SOURCE (' + sourceType + '):\\n' + sourceText }] }],\n  generationConfig: {\n    temperature: 0.8,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        title: { type: 'STRING' },\n        summary: { type: 'STRING' },\n        linkedin: { type: 'STRING' },\n        twitter: { type: 'STRING' },\n        facebook: { type: 'STRING' },\n        instagram: { type: 'STRING' },\n        hashtags: { type: 'STRING' },\n        imagePrompt: { type: 'STRING' },\n      },\n      required: ['title', 'linkedin', 'twitter', 'facebook', 'instagram', 'hashtags', 'imagePrompt'],\n    },\n  },\n};\n\nreturn [{ json: { valid: true, sourceType, sourceText: sourceText.slice(0, 2000), input, geminiBody } }];\n"
+      },
+      "id": "n-src",
+      "name": "Get Source & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifvalid",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.geminiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "n-gen",
+      "name": "Generate Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Parse Content — Code node (no creds). Parses the generated drafts and builds\n// the Airtable record + the image-generation request.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst src = $('Get Source & Build Prompt').first().json;\nconst chat = $json;\n\nlet c = {};\ntry { c = JSON.parse(chat.candidates[0].content.parts.map((p) => p.text || '').join('')); } catch (e) { c = {}; }\n\nconst title = (c.title || src.input.slice(0, 60) || 'Untitled content').toString().trim();\n\nconst fields = {\n  'Title': title,\n  'Source Type': src.sourceType,\n  'Source': src.sourceText,\n  'LinkedIn': c.linkedin || '',\n  'X / Twitter': c.twitter || '',\n  'Facebook': c.facebook || '',\n  'Instagram': c.instagram || '',\n  'Hashtags': c.hashtags || '',\n  'Image Prompt': c.imagePrompt || '',\n  'Status': 'Pending Approval',\n  'Created': new Date().toISOString(),\n};\n\nconst imagePrompt = (c.imagePrompt || ('A clean professional graphic for ' + cfg.companyName))\n  + '. Square 1:1 composition, modern, polished, on-brand for a home-services company. No text, no watermark, no logos.';\n\nreturn [{ json: {\n  title,\n  summary: c.summary || '',\n  airtableBody: { fields, typecast: true },\n  imageGeminiBody: { contents: [{ role: 'user', parts: [{ text: imagePrompt }] }] },\n} }];\n"
+      },
+      "id": "n-parse",
+      "name": "Parse Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.imageModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Parse Content').first().json.imageGeminiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "n-img",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Validate Image — Code node (no creds). Pulls the base64 image out of the Gemini\n// image response and prepares the Airtable attachment upload. Gemini occasionally\n// returns a 0-byte image (success, not error) — we drop those gracefully.\n// ============================================================================\n\nconst chat = $json; // image generateContent response\nconst pc = $('Parse Content').first().json;\n\nlet data = '';\nlet mime = 'image/png';\ntry {\n  const parts = chat.candidates[0].content.parts || [];\n  for (const p of parts) {\n    if (p.inlineData && p.inlineData.data) { data = p.inlineData.data; mime = p.inlineData.mimeType || 'image/png'; break; }\n  }\n} catch (e) { data = ''; }\n\nconst imageOk = !!data && data.length > 1000;\nconst filename = (pc.title || 'post').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 40).toLowerCase() + '.png';\n\nreturn [{ json: {\n  imageOk,\n  mime,\n  uploadBody: imageOk ? { contentType: mime, file: data, filename } : { contentType: 'image/png', file: '', filename: 'none.png' },\n} }];\n"
+      },
+      "id": "n-vimg",
+      "name": "Validate Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Config').first().json.contentTableId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Parse Content').first().json.airtableBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-create",
+      "name": "Create Airtable Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $('Validate Image').first().json.imageOk }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifimg",
+      "name": "Image ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://content.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Create Airtable Record').first().json.id + '/' + $('Config').first().json.imageFieldId + '/uploadAttachment' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Validate Image').first().json.uploadBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-upimg",
+      "name": "Upload Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        110
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok:true, recordId: $('Create Airtable Record').first().json.id, title: $('Parse Content').first().json.title, status:'Pending Approval', airtableUrl: 'https://airtable.com/' + $('Config').first().json.baseId + '/' + $('Config').first().json.contentTableId + '/' + $('Create Airtable Record').first().json.id, imageAttached: $('Validate Image').first().json.imageOk, drafts: { linkedin: $('Parse Content').first().json.airtableBody.fields.LinkedIn, twitter: $('Parse Content').first().json.airtableBody.fields['X / Twitter'], facebook: $('Parse Content').first().json.airtableBody.fields.Facebook, instagram: $('Parse Content').first().json.airtableBody.fields.Instagram } }) }}",
+        "options": {}
+      },
+      "id": "n-resp",
+      "name": "Respond Drafts",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.channel }}",
+          "mode": "id"
+        },
+        "message": "=📣 *New content ready to review — {{ $('Parse Content').first().json.title }}*\n\n{{ $('Parse Content').first().json.summary }}\n\nReview all drafts + the image in Airtable:\n{{ 'https://airtable.com/' + $('Config').first().json.baseId + '/' + $('Config').first().json.contentTableId + '/' + $('Create Airtable Record').first().json.id }}\n\n*Approve* to mark ready-to-publish, or *Reject* to discard.",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double"
+          }
+        },
+        "options": {}
+      },
+      "id": "n-wait",
+      "name": "Approval (Send & Wait)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2260,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifapp",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Config').first().json.contentTableId + '/' + $('Create Airtable Record').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Status: 'Approved' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-appr",
+      "name": "Mark Approved",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2700,
+        110
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Config').first().json.contentTableId + '/' + $('Create Airtable Record').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Status: 'Rejected' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-rej",
+      "name": "Mark Rejected",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2700,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok:false, error: $('Get Source & Build Prompt').first().json.reason }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "n-bad",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        500,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Content Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Source & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Generate Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content": {
+      "main": [
+        [
+          {
+            "node": "Parse Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Content": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Validate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Image": {
+      "main": [
+        [
+          {
+            "node": "Create Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Image ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image ok?": {
+      "main": [
+        [
+          {
+            "node": "Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Respond Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Drafts": {
+      "main": [
+        [
+          {
+            "node": "Approval (Send & Wait)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval (Send & Wait)": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Mark Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

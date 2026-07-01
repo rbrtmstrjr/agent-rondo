@@ -1,0 +1,239 @@
+﻿{
+    "updatedAt":  "2026-01-24T07:21:54.314Z",
+    "createdAt":  "2026-01-07T07:52:16.027Z",
+    "id":  "8j1vwMtjg7fGFBZK",
+    "name":  "Studio Room",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Meow",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "6d8f9be5-e423-49bc-9b6e-3b54e68f0c83",
+                      "name":  "On form submission",
+                      "webhookId":  "7b43dbf2-e2a8-4abe-9017-05f801da8978"
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       480,
+                                       0
+                                   ],
+                      "id":  "26e9aa3f-9c06-4e31-91ec-5d6843463ab9",
+                      "name":  "Form",
+                      "webhookId":  "975fa677-7685-4be5-9c03-85f36cdeff01"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "=Fill this 9x16 transparent image with this new prompt. make sure all the transparent image is filled and cover all the entire spaces. heres the prompt:\n\n{{ $(\u0027Message a model1\u0027).item.json.content.parts[0].text }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       656,
+                                       0
+                                   ],
+                      "id":  "2535e773-778e-4b14-bc64-c417265e3786",
+                      "name":  "Edit an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-preview"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are an AI that generates high-quality, realistic text-to-image prompts.\n\nTASK\nGenerate a random studio-type empty room scene based on the rules below.\n\nSCENE RULES\n\nLocation: Indoor studio room\n\nWall color: Beige or cream only\n\nStyle: Clean, modern, minimal\n\nLayout: Always random (different room proportions, wall angles, ceiling height, and floor layout every time)\n\nThe room must be completely empty\n\nCONTENT RESTRICTIONS\n\nDo NOT include:\n\nFurniture\n\nDecorations\n\nPlants\n\nLighting fixtures\n\nLamps\n\nWall frames\n\nCurtains\n\nObjects of any kind\n\nOnly walls, floor, and ceiling\n\nCAMERA\n\nLens: 35mm to 50mm\n\nOne main focused shot\n\nOne ultra-wide shot covering more of the room space\n\nProfessional interior photography look\n\nNatural depth of field, sharp architectural details, balanced composition\n\nOUTPUT FORMAT\nReturn a single, detailed image prompt in one paragraph.\nNo explanations.\nNo bullet points.\nNo titles.\nJust the final prompt."
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       176,
+                                       0
+                                   ],
+                      "id":  "0d02e1fe-853c-42cb-bb9b-847634227b76",
+                      "name":  "Message a model1",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Message a model1",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Form":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Edit an image",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "Edit an image":  {
+                                              "main":  [
+                                                           [
+
+                                                           ]
+                                                       ]
+                                          },
+                        "Message a model1":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Form",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "e664af25-4000-4aa4-bc0e-9843f69d7528",
+    "activeVersionId":  null,
+    "versionCounter":  35,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-01-07T07:52:16.032Z",
+                       "createdAt":  "2026-01-07T07:52:16.032Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "8j1vwMtjg7fGFBZK",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

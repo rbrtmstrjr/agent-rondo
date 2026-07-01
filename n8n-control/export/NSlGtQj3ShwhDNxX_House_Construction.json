@@ -1,0 +1,400 @@
+﻿{
+    "updatedAt":  "2025-12-28T10:19:00.492Z",
+    "createdAt":  "2025-12-28T08:41:12.097Z",
+    "id":  "NSlGtQj3ShwhDNxX",
+    "name":  "House Construction",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Meow",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -112,
+                                       -64
+                                   ],
+                      "id":  "5ef2ccb2-56e0-4130-8035-6c7d8a7c60b9",
+                      "name":  "On form submission",
+                      "webhookId":  "7b43dbf2-e2a8-4abe-9017-05f801da8978"
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       464,
+                                       -64
+                                   ],
+                      "id":  "4d059db8-17f6-4662-b69a-08ede3fc73e4",
+                      "name":  "Form",
+                      "webhookId":  "975fa677-7685-4be5-9c03-85f36cdeff01"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-preview"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are an AI prompt engineer specialized in high-realism architectural image generation and image-to-image restoration workflows.\n\nYour task is to generate FOUR (4) highly detailed, production-ready prompts for a house transformation sequence.\n\nIMPORTANT OUTPUT RULES:\n- Output plain text only\n- Do NOT include explanations\n- Do NOT include JSON\n- Do NOT include markdown formatting\n- Clearly label each section exactly as instructed\n- Each prompt must be fully self-contained and ready for direct use in an image generation or image editing model\n\n────────────────────────────────────\nGLOBAL SCENE \u0026 CAMERA LOCK (APPLIES TO ALL PROMPTS)\n────────────────────────────────────\n- Vertical architectural photograph\n- Low aerial drone perspective\n- Positioned slightly above roof level\n- Gently angled downward\n- 50mm lens look\n- Shallow depth of field\n- House sharply in focus\n- Distant mountains and sky softly blurred with atmospheric haze\n- Bright, natural daylight\n- Ultra-realistic architectural photography quality\n\n────────────────────────────────────\nPROMPT 1 — IMAGE GENERATION PROMPT (RUINED HOUSE)\n────────────────────────────────────\nGenerate a completely abandoned tropical tiny house that has not been touched by humanity for over 20 years.\n\nHouse condition:\n- Extreme long-term abandonment\n- Severe structural decay and deterioration\n- Cracked and broken concrete pillars\n- Exposed rebar and damaged walls\n- Collapsed or partially missing roof sections\n- Rotten and splintered wood\n- Rusted metal elements\n- Broken or missing windows and doors\n- Balcony visibly damaged and unsafe\n- Heavy moss, vines, and vegetation aggressively growing ON the house\n- Clear signs of prolonged neglect and natural decay\n\nEnvironment:\n- The house is located in the middle of lush green rice fields\n- Terrain shows natural contours, uneven soil, and organic elevation changes\n- Rice fields are wild, overgrown, and unmaintained\n- Large broad-leaf banana trees grow naturally and chaotically near the house\n- No maintained paths, gardens, or landscaping\n- No people, animals, vehicles, or modern human activity\n\nBackground:\n- Distant mountain range behind the rice fields\n- Mountains appear softly blurred with atmospheric haze\n- Natural cloud-filled sky with realistic lighting\n\nAtmosphere:\n- Cinematic realism\n- Quiet, post-abandonment mood\n- Documentary-style decay\n\n────────────────────────────────────\nPROMPT 2 — IMAGE EDITING PROMPT (CLEAN SURROUNDINGS + PURE STRUCTURE)\n────────────────────────────────────\nEdit the provided image.\n\nTASK:\nClean the surroundings and restore the house into a raw, unfinished structural state only.\n\nSTRUCTURAL RULES:\n- Repair all columns, beams, slabs, and walls\n- Restore straight lines, clean geometry, and structural integrity\n- Remove all decay, moss, vines, rust, and damage from the house\n- Expose raw concrete and unfinished structural materials only\n- NO paint\n- NO roof installation\n- NO exterior finishes\n- NO glass, windows, doors, or decorative elements\n\nSURROUNDINGS RULES:\n- Clean the immediate surroundings of debris and overgrowth\n- Keep terrain natural and realistic\n- Do NOT add landscaping, gardens, or decorative elements\n- Banana trees remain natural and unstyled\n- Rice fields remain present but cleaned of chaos\n\nSTRICT CONSISTENCY RULES:\n- The house footprint, size, position, and orientation must remain identical\n- Do NOT add or remove rooms, floors, balconies, or extensions\n- Do NOT change camera angle, framing, or perspective\n\nResult:\nA clean construction-stage structural shell of the original house in a cleared but still natural environment.\n\n────────────────────────────────────\nPROMPT 3 — IMAGE EDITING PROMPT (FULL MODERN HOUSE RESTORATION)\n────────────────────────────────────\nEdit the provided image.\n\nTASK:\nApply a complete modern tropical architectural renovation to the existing structure.\n\nHOUSE DESIGN DETAILS:\n- Modern tropical tiny house\n- Split-level design\n- Sharp slanted shed roof\n- Clean white plaster facade\n- Warm reddish-brown wood paneling beneath the eaves\n- Elevated on white concrete pillars (stilt style)\n- Wooden wrap-around front balcony\n- Glass sliding doors with wooden frames\n- Shaded open-air relaxation space beneath with a hanging wooden swing bench\n- Semi-outdoor kitchen and dining pavilion on the right side\n- Vertical wooden slat accents\n- Modern white kitchen counter with black top\n- Wooden dining table and chairs\n\nSTRICT RULES:\n- Maintain the SAME structure and footprint\n- Do NOT modify surrounding land or environment\n- NO landscaping, plants, gardens, or paths\n- Rice fields and terrain must remain unchanged\n\nResult:\nA fully renovated modern tropical house standing in an untouched environment.\n\n────────────────────────────────────\nPROMPT 4 — IMAGE EDITING PROMPT (FINAL LANDSCAPING)\n────────────────────────────────────\nEdit the provided image.\n\nTASK:\nApply excellent, realistic landscaping that blends naturally with the environment.\n\nLANDSCAPING DETAILS:\n- Neatly organized vegetable garden in the foreground\n- Central gray gravel pathway leading to the house\n- Symmetrical raised planting beds\n- Young green crops bordered with small orange marigolds\n- Landscaping that feels natural, sustainable, and location-appropriate\n- Subtle refinement of banana trees without over-styling\n\nSTRICT RULES:\n- The house must remain COMPLETELY unchanged\n- Do NOT alter architecture, colors, materials, or structure\n- Enhance landscape only\n\nATMOSPHERE:\n- Bright, sunny daylight\n- Balanced shadows and highlights\n- Peaceful, cinematic countryside mood"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       32,
+                                       -64
+                                   ],
+                      "id":  "4136bf5a-3e91-4eac-a0f2-7619797ccfa5",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Get the raw LLM text output\nconst rawText =\n  $input.all()[0]?.json?.content?.parts?.[0]?.text || \u0027\u0027;\n\n// Safety check\nif (!rawText) {\n  return [\n    {\n      json: {\n        error: \u0027No LLM text output found\u0027\n      }\n    }\n  ];\n}\n\n// Helper function to extract prompt sections\nfunction extractSection(labelStart, labelEnd) {\n  const startIndex = rawText.indexOf(labelStart);\n  if (startIndex === -1) return \u0027\u0027;\n\n  const endIndex = labelEnd\n    ? rawText.indexOf(labelEnd, startIndex)\n    : rawText.length;\n\n  return rawText\n    .substring(startIndex + labelStart.length, endIndex)\n    .trim();\n}\n\n// Extract each prompt\nconst ruinedPrompt = extractSection(\n  \u0027PROMPT 1 — IMAGE GENERATION PROMPT (RUINED HOUSE)\u0027,\n  \u0027PROMPT 2 — IMAGE EDITING PROMPT\u0027\n);\n\nconst structurePrompt = extractSection(\n  \u0027PROMPT 2 — IMAGE EDITING PROMPT (CLEAN SURROUNDINGS + PURE STRUCTURE)\u0027,\n  \u0027PROMPT 3 — IMAGE EDITING PROMPT\u0027\n);\n\nconst restorePrompt = extractSection(\n  \u0027PROMPT 3 — IMAGE EDITING PROMPT (FULL MODERN HOUSE RESTORATION)\u0027,\n  \u0027PROMPT 4 — IMAGE EDITING PROMPT\u0027\n);\n\nconst landscapePrompt = extractSection(\n  \u0027PROMPT 4 — IMAGE EDITING PROMPT (FINAL LANDSCAPING)\u0027,\n  null\n);\n\n// Return clean, assignable fields\nreturn [\n  {\n    json: {\n      ruined_prompt: ruinedPrompt,\n      structure_prompt: structurePrompt,\n      restore_prompt: restorePrompt,\n      landscape_prompt: landscapePrompt\n    }\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       304,
+                                       -64
+                                   ],
+                      "id":  "bbe546c7-da08-486e-820b-17218e9c4b6c",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "=Fill this transparent image with this new prompt. make sure all the transparent image is filled and cover all the entire spaces. heres the prompt:\n\n{{ $(\u0027Code in JavaScript\u0027).item.json.ruined_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       624,
+                                       -64
+                                   ],
+                      "id":  "f47fd819-e755-45ca-aa61-e34aecf55551",
+                      "name":  "Edit an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript\u0027).item.json.structure_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       784,
+                                       -64
+                                   ],
+                      "id":  "a3fe61f7-d58c-4b4f-bbcf-6d472dd7ee86",
+                      "name":  "Edit an image1",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript\u0027).item.json.restore_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       944,
+                                       -64
+                                   ],
+                      "id":  "00ecdd1d-6b4e-4659-a417-63c6e58326dd",
+                      "name":  "Edit an image2",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript\u0027).item.json.landscape_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1104,
+                                       -64
+                                   ],
+                      "id":  "158116b4-2f07-4754-b419-ad435c1fbce7",
+                      "name":  "Edit an image3",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Message a model",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Form":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Edit an image",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Form",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Edit an image":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Edit an image1",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Edit an image1":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Edit an image2",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Edit an image2":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Edit an image3",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "15251b7b-2055-42e7-9170-0fc674754263",
+    "activeVersionId":  null,
+    "versionCounter":  10,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-28T08:41:12.102Z",
+                       "createdAt":  "2025-12-28T08:41:12.102Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "NSlGtQj3ShwhDNxX",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

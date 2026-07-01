@@ -1,0 +1,569 @@
+{
+  "name": "Lead Capture → Enrich → Sheet + Follow-up (Northwind)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-northwind",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "n-webhook",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        300
+      ],
+      "webhookId": "lead-northwind-hook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "companyName",
+              "value": "Northwind Home Services",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "phone",
+              "value": "(555) 010-4729",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "fromEmail",
+              "value": "robertmaestro09@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "chatModel",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "sheetId",
+              "value": "1tz1m4g5tvTxBunlVjD_GEIfPF_Ghxs5WC0ihMn_qWS0",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "sheetTab",
+              "value": "Leads",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "serviceAreas",
+              "value": "Portland, Beaverton, Hillsboro, Tigard, Lake Oswego, Gresham, Milwaukie, Oregon City, Tualatin, West Linn",
+              "type": "string"
+            },
+            {
+              "id": "c8",
+              "name": "hotThreshold",
+              "value": 70,
+              "type": "number"
+            },
+            {
+              "id": "c9",
+              "name": "dedupMinutes",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "c10",
+              "name": "leadChannel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Validate & Prepare — Code node (no credentials). Validates the incoming lead,\n// drops spam (honeypot) + duplicates, and builds the Gemini enrich+score request.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst wh = $('Lead Webhook').first().json;\nconst body = (wh && wh.body) ? wh.body : {};\n\nconst str = (v) => String(v == null ? '' : v).trim();\nconst name = str(body.name);\nconst email = str(body.email);\nconst phone = str(body.phone);\nconst zip = str(body.zip);\nconst service = str(body.service);\nconst urgency = str(body.urgency);\nconst message = str(body.message);\nconst honeypot = str(body.company);\n\nconst isEmail = (s) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s);\n\nlet valid = true;\nlet process = true;\nlet reason = '';\n\n// 1) Spam honeypot — accept silently but do nothing.\nif (honeypot) { process = false; reason = 'spam (honeypot)'; }\n\n// 2) Required fields.\nif (!name || (!email && !phone)) { valid = false; reason = 'Missing name and a contact method (email or phone).'; }\nelse if (email && !isEmail(email)) { valid = false; reason = 'Invalid email address.'; }\n\n// 3) Idempotency — ignore identical re-submits within the dedup window.\nif (valid && process) {\n  try {\n    const sd = $getWorkflowStaticData('global');\n    sd.seen = sd.seen || {};\n    const now = Date.now();\n    const windowMs = Number(cfg.dedupMinutes || 10) * 60000;\n    for (const k of Object.keys(sd.seen)) { if (now - sd.seen[k] > 3600000) delete sd.seen[k]; }\n    const key = (email || phone).toLowerCase() + '|' + message.slice(0, 80).toLowerCase();\n    if (sd.seen[key] && now - sd.seen[key] < windowMs) { process = false; reason = 'duplicate submission'; }\n    else sd.seen[key] = now;\n  } catch (e) { /* dedup is best-effort */ }\n}\n\n// Build the AI enrich + score request (structured JSON output).\nconst sys = 'You are a lead-qualification assistant for ' + cfg.companyName + ', a home-services company '\n  + '(HVAC, plumbing, electrical) serving these areas: ' + cfg.serviceAreas + '. '\n  + 'Analyze the new lead and return JSON. Guidance: '\n  + 'serviceType from the message; '\n  + 'urgency = \"Emergency\" for no heat/cooling, burst or leaking pipes, sewage, sparking outlets, no power, or wording like ASAP/now/emergency; '\n  + '\"Soon\" if they want service within days; \"Planning\" if just pricing or exploring. '\n  + 'inServiceArea = true if the ZIP/city is in the service-area list, false if clearly outside it, true if unknown (give benefit of the doubt). '\n  + 'valueBand: \"High\" = installs/replacements, panel upgrades, repipes, water-heater replacement; \"Medium\" = repairs; \"Low\" = questions/minor. '\n  + 'leadScore 0-100 weighing urgency, in-area, value, and how complete/serious the request is. '\n  + 'temperature: \"Hot\" if score >= ' + (cfg.hotThreshold || 70) + ', \"Warm\" if 40-' + ((cfg.hotThreshold || 70) - 1) + ', else \"Cold\". '\n  + 'emailSubject + emailBody: a warm, personal acknowledgment to the homeowner that references their SPECIFIC issue. '\n  + 'IF inServiceArea is TRUE: reassure them and set expectations (a specialist will follow up shortly; for anything urgent call ' + cfg.phone + '). '\n  + 'IF inServiceArea is FALSE: do NOT promise any visit, follow-up, or specialist call. Instead write a warm, apologetic decline that thanks them, '\n  + 'explains that ' + cfg.companyName + ' currently only serves the Greater Portland metro area and is unable to take their job, and wishes them well; '\n  + 'you may add ONE line inviting them to call ' + cfg.phone + ' only if they believe their address is actually within Greater Portland. '\n  + 'Either way: plain text, 4-6 sentences, no markdown, sign off as the ' + cfg.companyName + ' team. '\n  + 'suggestedReply: one short line for the human rep. If inServiceArea is FALSE, it should say no dispatch is needed because the lead is outside the service area (the auto-reply already declined politely).';\n\nconst userMsg = 'NEW LEAD:\\n'\n  + 'Name: ' + name + '\\n'\n  + 'Email: ' + (email || '(none)') + '\\n'\n  + 'Phone: ' + (phone || '(none)') + '\\n'\n  + 'ZIP/City: ' + (zip || '(none)') + '\\n'\n  + 'Service selected: ' + (service || '(none)') + '\\n'\n  + 'How soon: ' + (urgency || '(none)') + '\\n'\n  + 'Message: ' + (message || '(none)');\n\nconst geminiBody = {\n  systemInstruction: { parts: [{ text: sys }] },\n  contents: [{ role: 'user', parts: [{ text: userMsg }] }],\n  generationConfig: {\n    temperature: 0.3,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        summary: { type: 'STRING' },\n        serviceType: { type: 'STRING', enum: ['HVAC', 'Plumbing', 'Electrical', 'Other'] },\n        urgency: { type: 'STRING', enum: ['Emergency', 'Soon', 'Planning'] },\n        inServiceArea: { type: 'BOOLEAN' },\n        valueBand: { type: 'STRING', enum: ['High', 'Medium', 'Low'] },\n        leadScore: { type: 'INTEGER' },\n        temperature: { type: 'STRING', enum: ['Hot', 'Warm', 'Cold'] },\n        reason: { type: 'STRING' },\n        emailSubject: { type: 'STRING' },\n        emailBody: { type: 'STRING' },\n        suggestedReply: { type: 'STRING' },\n      },\n      required: ['summary', 'serviceType', 'urgency', 'inServiceArea', 'valueBand', 'leadScore', 'temperature', 'reason', 'emailSubject', 'emailBody', 'suggestedReply'],\n    },\n  },\n};\n\nreturn [{ json: {\n  valid, process, reason,\n  lead: { name, email, phone, zip, service, urgency, message },\n  geminiBody,\n} }];\n"
+      },
+      "id": "n-validate",
+      "name": "Validate & Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $('Validate & Prepare').first().json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifvalid",
+      "name": "Valid input?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $('Validate & Prepare').first().json.process }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifprocess",
+      "name": "Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        620,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.geminiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-ai",
+      "name": "AI Enrich + Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Parse AI — Code node (no credentials). Parses the enrich+score JSON and builds\n// the Sheet row, the homeowner email, and the Slack alert. Falls back gracefully\n// if the AI response is unusable so a lead is never silently lost.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst v = $('Validate & Prepare').first().json;\nconst lead = v.lead;\nconst chat = $json; // generateContent response\n\nlet ai = {};\ntry {\n  const text = chat.candidates[0].content.parts.map((p) => p.text || '').join('');\n  ai = JSON.parse(text);\n} catch (e) {\n  ai = {};\n}\n\n// Defensive defaults — if AI failed, treat as a warm lead needing human review.\nconst summary = ai.summary || (lead.message ? lead.message.slice(0, 140) : 'New lead');\nconst serviceType = ai.serviceType || lead.service || 'Other';\nconst urgency = ai.urgency || 'Soon';\nconst inArea = typeof ai.inServiceArea === 'boolean' ? ai.inServiceArea : true;\nconst valueBand = ai.valueBand || 'Medium';\nconst score = Number.isFinite(ai.leadScore) ? ai.leadScore : 50;\nconst temperature = ai.temperature || (score >= (cfg.hotThreshold || 70) ? 'Hot' : score >= 40 ? 'Warm' : 'Cold');\nconst reason = ai.reason || 'Auto-scored (AI unavailable) — please review.';\nconst suggestedReply = ai.suggestedReply || 'Call the customer to confirm details and book.';\nconst emailSubject = ai.emailSubject || ('Thanks for contacting ' + cfg.companyName + '!');\nconst emailBody = ai.emailBody\n  || ('Hi ' + (lead.name || 'there') + ',\\n\\nThanks for reaching out to ' + cfg.companyName\n      + '. We received your request and a specialist will follow up shortly. For anything urgent, please call us at '\n      + cfg.phone + '.\\n\\n— The ' + cfg.companyName + ' Team');\n\nconst now = new Date();\nconst timestamp = now.toISOString();\n\n// Google Sheets row (must match the header order in Set Headers).\nconst row = [\n  timestamp,\n  lead.name,\n  lead.email,\n  lead.phone,\n  lead.zip,\n  lead.service,\n  lead.urgency,\n  lead.message,\n  summary,\n  serviceType,\n  urgency,\n  inArea ? 'Yes' : 'No',\n  valueBand,\n  score,\n  temperature,\n  reason,\n  'New',\n];\n\nconst tempIcon = temperature === 'Hot' ? '🔥' : temperature === 'Warm' ? '🌤️' : '❄️';\nconst contact = [lead.email, lead.phone].filter(Boolean).join(' · ') || '(no contact given)';\nconst slackText = tempIcon + ' *' + temperature.toUpperCase() + ' lead* · score ' + score + '/100 · ' + serviceType + ' · ' + urgency\n  + (inArea ? '' : ' · ⚠️ OUT OF AREA')\n  + '\\n*' + (lead.name || 'Unknown') + '* — ' + contact\n  + (lead.zip ? ' · ' + lead.zip : '')\n  + '\\n> ' + (lead.message || '(no message)')\n  + '\\n*Why:* ' + reason\n  + '\\n*Next step:* ' + suggestedReply;\n\nreturn [{ json: {\n  row,\n  email: { to: lead.email, subject: emailSubject, body: emailBody },\n  slackText,\n  summary, serviceType, urgency, inArea, valueBand, score, temperature,\n  name: lead.name,\n} }];\n"
+      },
+      "id": "n-parse",
+      "name": "Parse AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Config').first().json.sheetId + ':batchUpdate' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: [{ addSheet: { properties: { title: $('Config').first().json.sheetTab } } }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-tab",
+      "name": "Ensure Sheet Tab",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        160
+      ],
+      "retryOnFail": false,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "AYzUUEYWUCPKxHFI",
+          "name": "Google Sheets - Content Log"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Config').first().json.sheetId + '/values/' + $('Config').first().json.sheetTab + '!A1?valueInputOption=RAW' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[\"Timestamp\",\"Name\",\"Email\",\"Phone\",\"ZIP\",\"Service (form)\",\"How soon\",\"Message\",\"AI Summary\",\"Service Type\",\"Urgency\",\"In Area\",\"Value\",\"Score\",\"Temperature\",\"Reason\",\"Status\"]] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-headers",
+      "name": "Set Headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "AYzUUEYWUCPKxHFI",
+          "name": "Google Sheets - Content Log"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Config').first().json.sheetId + '/values/' + $('Config').first().json.sheetTab + '!A:Q:append?valueInputOption=USER_ENTERED' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $('Parse AI').first().json.row ] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-append",
+      "name": "Append Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        160
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "AYzUUEYWUCPKxHFI",
+          "name": "Google Sheets - Content Log"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').first().json.fromEmail }}",
+        "toEmail": "={{ $('Parse AI').first().json.email.to }}",
+        "subject": "={{ $('Parse AI').first().json.email.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $('Parse AI').first().json.email.body }}",
+        "options": {}
+      },
+      "id": "n-email",
+      "name": "Email Homeowner",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1940,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "smtp": {
+          "id": "rBlnSWuFVlszoV1S",
+          "name": "Gmail SMTP - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.leadChannel }}",
+          "mode": "id"
+        },
+        "text": "={{ $('Parse AI').first().json.slackText }}",
+        "otherOptions": {}
+      },
+      "id": "n-slack",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2160,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "n-ok",
+      "name": "Respond OK (fast)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: $('Validate & Prepare').first().json.reason }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "n-invalid",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        620,
+        460
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Validate & Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Prepare": {
+      "main": [
+        [
+          {
+            "node": "Valid input?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid input?": {
+      "main": [
+        [
+          {
+            "node": "Respond OK (fast)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond OK (fast)": {
+      "main": [
+        [
+          {
+            "node": "Process?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process?": {
+      "main": [
+        [
+          {
+            "node": "AI Enrich + Score",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "AI Enrich + Score": {
+      "main": [
+        [
+          {
+            "node": "Parse AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI": {
+      "main": [
+        [
+          {
+            "node": "Ensure Sheet Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Sheet Tab": {
+      "main": [
+        [
+          {
+            "node": "Set Headers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Headers": {
+      "main": [
+        [
+          {
+            "node": "Append Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Lead": {
+      "main": [
+        [
+          {
+            "node": "Email Homeowner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Homeowner": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

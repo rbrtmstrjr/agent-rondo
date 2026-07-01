@@ -1,0 +1,601 @@
+{
+  "name": "FishPin Support Chatbot (RAG) — Live",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-fishpin",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "node-webhook",
+      "name": "Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        300
+      ],
+      "webhookId": "chat-fishpin-hook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "companyName",
+              "value": "FishPin",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "supportContact",
+              "value": "fishpinsupport@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "embedModel",
+              "value": "gemini-embedding-001",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "chatModel",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "minScore",
+              "value": 0.45,
+              "type": "number"
+            },
+            {
+              "id": "c6",
+              "name": "topK",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "c11",
+              "name": "chatTemperature",
+              "value": 0.55,
+              "type": "number"
+            },
+            {
+              "id": "c7",
+              "name": "memoryMaxTurns",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "c12",
+              "name": "memorySummarizeAt",
+              "value": 16,
+              "type": "number"
+            },
+            {
+              "id": "c13",
+              "name": "memoryKeep",
+              "value": 12,
+              "type": "number"
+            },
+            {
+              "id": "c10",
+              "name": "memoryTtlMin",
+              "value": 180,
+              "type": "number"
+            },
+            {
+              "id": "c8",
+              "name": "logChannel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "escalateChannel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Prepare — Code node (no credentials). FishPin knowledge base + a single\n// batchEmbedContents request (all KB chunks + the user's question).\n// KB content is drawn faithfully from the live site's source of truth:\n// fishpin-web/lib/{site,faqs,features,comparison}.ts — keep in sync if the site changes.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst wh = $('Chat Webhook').first().json;\nconst body = (wh && wh.body) ? wh.body : {};\n\nconst message = String(body.message || body.query || body.text || '').trim();\nconst sessionId = String(body.sessionId || body.session_id || 'anonymous').trim();\n\nconst KB = [\n  { title: 'What is FishPin', text: 'FishPin is an offline marine navigation app built for Filipino fishermen. It combines offline marine maps, real-time GPS navigation, saved fishing hotspots, trail recording, weather and marine conditions, and an AI fish guide. The goal: everything you need to head out and come home safely, with no internet signal required. Tagline: marine navigation for Filipino fishermen.' },\n  { title: 'Price and cost', text: 'FishPin costs 499 Philippine pesos (₱499), paid once on Google Play before you download. There is no subscription, no in-app purchases, no premium unlock, and no recurring fees. For comparison: Navionics is about ₱3,250 per year, Fishbrain Pro about ₱4,200 per year, and a Garmin chartplotter is roughly ₱8,000 to ₱30,000 in hardware.' },\n  { title: 'Works offline without internet', text: 'Yes, FishPin works fully without internet. Once you download a region, it uses your phone\\'s built-in GPS chip, which works without any signal, and renders the cached map tiles offline. It is offline-first and designed for life at sea, so no data plan is needed once you are out.' },\n  { title: 'Supported devices and platform', text: 'FishPin is Android-first and runs on virtually any modern Android phone. iOS (iPhone) support is planned for later in the year. There is no special hardware required.' },\n  { title: 'How to download and get FishPin', text: 'You can get FishPin on the Google Play Store at https://play.google.com/store/apps/details?id=com.fishpin.app. You pay ₱499 once on Google Play before downloading, and there are no further charges after that.' },\n  { title: 'Privacy of your fishing spots', text: 'Your fishing spots stay private. Pins are stored on your phone in a private database tied to your account. They are never shared with other fishermen and never sold to anyone.' },\n  { title: 'Why FishPin focuses on Filipino fishermen', text: 'FishPin is built specifically for Filipino fishermen because small-scale fishing in the Philippines is dominated by fishermen who cannot afford an ₱8,000 to ₱30,000 marine GPS device. FishPin is affordable and designed with Philippine species, local conditions, and an offline-first design.' },\n  { title: 'Partnership, sponsorship and contributing', text: 'FishPin works with fishing cooperatives, LGUs (local government units), NGOs, and individual sponsors to put the app in more hands, including sponsoring devices and training for fishermen who cannot afford it. To help, sponsor, partner, or contribute, email fishpinsupport@gmail.com.' },\n  { title: 'Real-time GPS, compass and speed', text: 'FishPin provides real-time GPS, a compass, and speed. It gives continuous GPS at 4 fixes per second (4 Hz), a true magnetic compass, and a live speed readout in knots, so every movement appears instantly with no laggy refresh.' },\n  { title: 'Background trail recording', text: 'FishPin records your fishing trip trail in the background, even with the screen off, using a persistent foreground service. You can lock the phone to save battery and pick up exactly where you left off.' },\n  { title: 'Save and re-follow paths', text: 'You can save full trips with distance, average speed, and duration, then pick any saved path later. FishPin overlays it on the map so you can re-follow and re-fish the same productive route.' },\n  { title: 'Custom spot pinning', text: 'FishPin lets you mark hotspots with custom pins. Long-press anywhere on the map to drop a pin, choose from 8 colors and 8 marine icons (anchor, fish, palm, sailboat and more), and add a private note.' },\n  { title: 'AI fish scanner', text: 'FishPin has an AI fish scanner. Snap a photo of your catch and the app uses AI to identify the species, suggest a size estimate, and link straight into the local fish guide.' },\n  { title: 'Philippine fish species guide', text: 'FishPin includes a Philippine fish species guide: a searchable guide focused on species found in Philippine waters, with local names, seasons, baits, and notes. It works fully offline.' },\n  { title: 'Weather and marine conditions', text: 'FishPin shows weather and marine conditions: an hourly Open-Meteo forecast tied to your current GPS spot (temperature, wind, visibility) plus wave height, wind direction, and current strength in plain language, so you know before leaving shore whether today is a go or a no-go.' },\n  { title: 'Fishing score', text: 'FishPin\\'s Fishing Score reads the live weather for your current spot (wind, pressure, temperature, visibility, and conditions) and turns it into a single 0 to 100 score, so one glance tells you whether to go fishing or stay in, with no guesswork and no wasted fuel.' },\n  { title: 'Emergency SOS alert', text: 'FishPin has an Emergency SOS alert. In an emergency, tap SOS to broadcast your last known GPS position, boat name, and contact details to your trusted contacts and nearby rescue channels, even with limited signal.' },\n  { title: 'Nautical charts with depth zones', text: 'FishPin includes nautical charts with depth zones: a nautical map layer with bathymetric depth contours, seamarks, and depth shading, powered by MapTiler Ocean and OpenSeaMap data.' },\n  { title: 'Offline map downloads', text: 'You can download offline map regions before you sail. Pick any rectangle on the map and download street or satellite tiles to your phone. FishPin shows the estimated download size before you commit.' },\n  { title: 'Route planning with ETA', text: 'FishPin offers route planning with ETA (estimated time of arrival). Tap any pin to start navigation and FishPin draws a heading line and shows live distance, bearing, and an ETA based on your current speed.' },\n  { title: 'How FishPin compares to Navionics, Fishbrain and Garmin', text: 'Compared to alternatives, FishPin is ₱499 once with no subscription; Navionics is about ₱3,250 per year; Fishbrain about ₱4,200 per year; Garmin GPS is ₱8,000 to ₱30,000 in hardware. FishPin works fully offline, has AI fish identification, a Philippine species guide, nautical depth charts, offline map downloads, and emergency SOS, and runs on any Android phone with no special hardware. Over five years FishPin costs about ₱499 versus roughly ₱16,250 for Navionics or ₱21,000 for Fishbrain.' },\n  { title: 'Contact and support', text: 'You can contact FishPin support by email at fishpinsupport@gmail.com. The website is https://www.fishpin.app and the app is on the Google Play Store.' },\n];\n\n// ---- Conversation memory: load recent history for this session ----\n// Stored in the workflow's persistent static data, keyed by sessionId, with a\n// TTL so old chats expire. Best-effort: never break the flow if it fails.\nlet history = [];\nlet summary = '';\ntry {\n  const sd = $getWorkflowStaticData('global');\n  sd.sessions = sd.sessions || {};\n  const now = Date.now();\n  const ttlMs = Number(cfg.memoryTtlMin || 120) * 60000;\n  for (const k of Object.keys(sd.sessions)) {\n    if (now - (sd.sessions[k].updated || 0) > ttlMs) delete sd.sessions[k];\n  }\n  const sess = sd.sessions[sessionId];\n  history = (sess && Array.isArray(sess.turns)) ? sess.turns : [];\n  summary = (sess && sess.summary) ? sess.summary : '';\n} catch (e) {\n  history = [];\n  summary = '';\n}\n\n// Retrieval query = recent user turns + current message, so follow-ups like\n// \"does it work offline too?\" still retrieve the right KB chunks.\nconst recentUser = history.filter((t) => t.role === 'user').slice(-2).map((t) => t.text);\nconst retrievalQuery = [...recentUser, message].join(' \\n ').trim() || 'hello';\n\nconst model = 'models/' + cfg.embedModel;\nconst texts = KB.map((c) => c.title + '. ' + c.text);\ntexts.push(retrievalQuery);\n\nconst requests = texts.map((t) => ({ model, content: { parts: [{ text: String(t).slice(0, 8000) }] } }));\n\nreturn [{ json: {\n  message,\n  sessionId,\n  kb: KB.map((c) => ({ title: c.title, text: c.text })),\n  history,\n  summary,\n  embedBody: { requests },\n} }];\n"
+      },
+      "id": "node-prepare",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.embedModel + ':batchEmbedContents' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.embedBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "node-embed",
+      "name": "Batch Embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Retrieve — Code node (no credentials). Ranks KB chunks by cosine similarity,\n// injects the rolling memory note + recent turns, and builds a grounded,\n// human-feeling Gemini chat request.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst prep = $('Prepare').first().json;\nconst emb = $json; // batchEmbedContents response\n\nconst message = prep.message;\nconst kb = prep.kb || [];\nconst vecs = (emb && Array.isArray(emb.embeddings)) ? emb.embeddings : [];\n\nconst cosine = (a, b) => {\n  let dot = 0, na = 0, nb = 0;\n  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }\n  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-9);\n};\n\nlet context = '';\nlet score = 0;\nlet sources = [];\n\nif (vecs.length >= kb.length + 1) {\n  const qv = vecs[kb.length].values;\n  const topK = Number(cfg.topK || 4);\n  const ranked = kb\n    .map((c, i) => ({ title: c.title, text: c.text, s: cosine(qv, vecs[i].values) }))\n    .sort((a, b) => b.s - a.s);\n  const top = ranked.slice(0, topK);\n  score = top.length ? top[0].s : 0;\n  sources = top.map((t) => t.title);\n  context = top.map((c) => '[' + c.title + ']\\n' + c.text).join('\\n\\n');\n}\n\n// ---- Persona: warm, intelligent, human — not a robotic FAQ ----\nconst persona = 'You are FishPin Assistant, a warm and genuinely helpful guide on the FishPin website. '\n  + 'FishPin is an affordable, offline marine navigation Android app built for Filipino fishermen (₱499 one-time on Google Play). '\n  + 'You care about fishermen — their safety at sea, their livelihood, and getting good value. You speak like a friendly, knowledgeable person '\n  + '(think of a helpful kuya/ate), not like a machine. '\n  + 'You can help with: what FishPin is, pricing, how to download, offline use, GPS / compass / speed, background trail recording, saved paths, '\n  + 'custom spot pinning, the AI fish scanner, the Philippine species guide, weather & marine conditions, the fishing score, emergency SOS, '\n  + 'nautical charts, offline map downloads, route planning / ETA, privacy, device support, comparisons with Navionics / Fishbrain / Garmin, and partnerships.';\n\nconst memoryNote = prep.summary\n  ? '\\n\\nMEMORY NOTE — durable facts from earlier in this same conversation (treat as true and use naturally):\\n' + prep.summary\n  : '';\n\nconst style = '\\n\\nHOW TO TALK (be human and intelligent):\\n'\n  + '- Be warm, natural, and personable. Vary your wording; never sound canned or repeat the same sentences.\\n'\n  + '- Once you know the user\\'s name, use it occasionally and naturally. Mirror their language and tone.\\n'\n  + '- Show genuine empathy for their situation (safety at sea, budget, long days fishing).\\n'\n  + '- REASON about what they really need: connect FishPin features to their specific situation. '\n  + 'E.g. if they fish at night or far out, naturally highlight SOS, trail recording, or offline maps.\\n'\n  + '- If a question is ambiguous, ask one short, friendly clarifying question instead of guessing.\\n'\n  + '- For multi-part questions, address each part. Keep replies focused (usually 2-5 sentences) — helpful, not a wall of text.\\n'\n  + '- Never say \"as an AI\" or dismiss yourself as \"just a bot\". Be confident and personable.';\n\nconst rules = '\\n\\nIMPORTANT RULES:\\n'\n  + '1. FACTS: For concrete FishPin facts (prices, features, platforms, dates, policies) use ONLY the CONTEXT below. Never invent or guess them. You MAY reason, empathize, and make natural suggestions around those facts.\\n'\n  + '2. MEMORY: Use the MEMORY NOTE and the conversation history. Remember the user\\'s name, location, boat, and what they asked. If they ask whether you remember them or what they told you, recall it confidently. NEVER claim you cannot remember things from this conversation.\\n'\n  + '3. Greetings, thanks, self-introductions, and questions about you — respond warmly. Do NOT escalate.\\n'\n  + '4. Truly unrelated topics (other apps, general trivia, jokes, weather elsewhere, coding) — gently steer back to FishPin. Do NOT escalate. (A user sharing their name, location, or that they fish is NOT off-topic — welcome it.)\\n'\n  + '5. HUMAN HAND-OFF — for a genuine support or business matter that needs a real person (billing or refund, \"I paid but can\\'t download\", an app crash/bug, wrong GPS, account help, partnership / investor / sponsorship / press, or anything you genuinely cannot resolve from the facts): do NOT just deflect. FIRST reply warmly and helpfully — acknowledge their specific question, share anything relevant you do know (e.g. for investment/partnership, that FishPin works with cooperatives, LGUs, NGOs and sponsors), and let them know you are connecting them with the FishPin team and that they can reach us at ' + cfg.supportContact + '. THEN add a final line containing ONLY the marker [[HANDOFF]] — this marker line is removed before the user sees it, so never explain it.\\n'\n  + '6. Do not mention the word \"context\" or say you are reading from documents.\\n'\n  + '7. When it fits naturally, invite the user to download FishPin on Google Play.\\n'\n  + '8. Reply in the user\\'s language (English or Filipino/Tagalog), matching how they wrote.';\n\nconst sys = persona + memoryNote + style + rules;\n\n// ---- Recent verbatim turns (the rolling summary covers older history) ----\nlet history = Array.isArray(prep.history) ? prep.history.slice() : [];\nwhile (history.length && history[0].role !== 'user') history.shift(); // Gemini needs a user-first turn\nconst historyContents = history.map((t) => ({\n  role: t.role === 'model' ? 'model' : 'user',\n  parts: [{ text: String(t.text || '') }],\n}));\n\nconst chatBody = {\n  systemInstruction: { parts: [{ text: sys }] },\n  contents: [\n    ...historyContents,\n    { role: 'user', parts: [{ text: 'CONTEXT (FishPin facts you may use):\\n' + (context || '(no relevant information found)') + '\\n\\nUSER MESSAGE: ' + message }] },\n  ],\n  generationConfig: {\n    temperature: Number(cfg.chatTemperature || 0.55),\n    topP: 0.95,\n    maxOutputTokens: 700,\n  },\n};\n\nreturn [{ json: { message, sessionId: prep.sessionId, score: Number(score.toFixed(3)), sources, chatBody } }];\n"
+      },
+      "id": "node-retrieve",
+      "name": "Retrieve",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.chatBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "node-chat",
+      "name": "Gemini Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Decide — Code node (no credentials). Parses Gemini's answer; escalates to a\n// human when the model said ESCALATE, returned nothing, or retrieval was weak.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst ret = $('Retrieve').first().json;\nconst chat = $json;\n\nlet answer = '';\ntry {\n  answer = chat.candidates[0].content.parts.map((p) => p.text || '').join('').trim();\n} catch (e) {\n  answer = '';\n}\n\n// Escalation is INTENT-based. The model writes a warm, contextual reply and appends\n// a [[HANDOFF]] marker line when a human should follow up — we strip the marker but\n// KEEP the helpful reply, so the customer is answered first, never cold-deflected.\n// Bare \"ESCALATE\" (legacy) or an empty answer falls back to a friendly default.\nconst HANDOFF_RE = /\\[\\[\\s*hand\\s*-?\\s*off\\s*\\]\\]/gi;\nconst norm = answer.toUpperCase().replace(/[^A-Z]/g, '');\nlet escalate = false;\n\nif (HANDOFF_RE.test(answer)) {\n  escalate = true;\n  answer = answer.replace(HANDOFF_RE, '').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nif (!answer || norm === 'ESCALATE') {\n  escalate = true;\n  answer = 'Thanks for your question! I want to make sure you get an accurate answer, so I\\'ve passed this to the '\n    + cfg.companyName + ' team. You can also reach us anytime at ' + cfg.supportContact + ' and we\\'ll be glad to help.';\n}\n\n// Safety net: if we're handing off but the reply didn't say how to reach us, add it.\nif (escalate && answer && !answer.includes('@') && cfg.supportContact) {\n  answer += '\\n\\nYou can also reach our team directly at ' + cfg.supportContact + '.';\n}\n\n// ---- Conversation memory: persist this exchange for the session ----\n// Best-effort; never let a memory write break the reply.\ntry {\n  const sd = $getWorkflowStaticData('global');\n  sd.sessions = sd.sessions || {};\n  const sess = sd.sessions[ret.sessionId] || { turns: [], summary: '' };\n  sess.turns = sess.turns || [];\n  sess.turns.push({ role: 'user', text: ret.message });\n  sess.turns.push({ role: 'model', text: answer });\n  // Hard safety cap; the post-response summarizer folds older turns into a\n  // rolling summary so durable facts survive even very long conversations.\n  const maxTurns = Number(cfg.memoryMaxTurns || 24);\n  if (sess.turns.length > maxTurns) sess.turns = sess.turns.slice(-maxTurns);\n  sess.updated = Date.now();\n  sd.sessions[ret.sessionId] = sess;\n  // Cap total stored sessions (prune oldest) so static data can't grow forever.\n  const keys = Object.keys(sd.sessions);\n  if (keys.length > 500) {\n    keys.sort((a, b) => (sd.sessions[a].updated || 0) - (sd.sessions[b].updated || 0));\n    for (let i = 0; i < keys.length - 500; i++) delete sd.sessions[keys[i]];\n  }\n} catch (e) {\n  /* memory is best-effort */\n}\n\nreturn [{ json: {\n  reply: answer,\n  escalate,\n  score: ret.score,\n  sources: ret.sources,\n  message: ret.message,\n  sessionId: ret.sessionId,\n} }];\n"
+      },
+      "id": "node-decide",
+      "name": "Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.logChannel }}",
+          "mode": "id"
+        },
+        "text": "={{ \"🐟 *FishPin Chatbot* | session `\" + $('Decide').first().json.sessionId + \"` | score \" + $('Decide').first().json.score + ($('Decide').first().json.escalate ? \" | ⚠️ ESCALATED\" : \"\") + \"\\n*Q:* \" + $('Decide').first().json.message + \"\\n*A:* \" + $('Decide').first().json.reply }}",
+        "otherOptions": {}
+      },
+      "id": "node-log",
+      "name": "Log to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1340,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $('Decide').first().json.escalate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if",
+      "name": "Escalate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.escalateChannel }}",
+          "mode": "id"
+        },
+        "text": "={{ \"🚨 *FishPin — human handoff needed* — the bot could not answer this from the knowledge base.\\n*Session:* `\" + $('Decide').first().json.sessionId + \"`\\n*User asked:* \" + $('Decide').first().json.message + \"\\n*Top match score:* \" + $('Decide').first().json.score + \"\\nPlease follow up.\" }}",
+        "otherOptions": {}
+      },
+      "id": "node-escalate",
+      "name": "Notify Support (Human)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1780,
+        180
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $('Decide').first().json.reply, escalate: $('Decide').first().json.escalate, sources: $('Decide').first().json.sources }) }}",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Respond to Widget",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Memory Maintenance — Code node (no credentials). Runs AFTER the reply is sent.\n// If the verbatim turn buffer has grown past the summarize threshold, it builds\n// a prompt to fold the older turns into a rolling MEMORY NOTE (durable facts).\n// Outputs { skip:true } when no summarization is needed.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst ret = $('Decide').first().json;\nconst sid = ret.sessionId;\n\nlet out = { skip: true, sessionId: sid };\ntry {\n  const sd = $getWorkflowStaticData('global');\n  sd.sessions = sd.sessions || {};\n  const sess = sd.sessions[sid] || { turns: [], summary: '' };\n  const turns = sess.turns || [];\n\n  const summarizeAt = Number(cfg.memorySummarizeAt || 16);\n  const keep = Number(cfg.memoryKeep || 12);\n\n  if (turns.length > summarizeAt) {\n    const overflow = turns.slice(0, turns.length - keep); // older turns to fold in\n    const convoText = overflow\n      .map((t) => (t.role === 'user' ? 'User: ' : 'Assistant: ') + String(t.text || ''))\n      .join('\\n');\n\n    const prompt = 'You maintain a concise running MEMORY NOTE for an ongoing customer-support chat for the FishPin app. '\n      + 'Rewrite the memory note so it captures the durable facts worth remembering about THIS user and conversation: '\n      + 'their name, location, boat or role, what they have asked about, their concerns or sentiment, and anything you promised or recommended. '\n      + 'Be factual and third-person, no fluff, under 150 words. Merge the existing note with the new lines; drop nothing important.\\n\\n'\n      + 'EXISTING MEMORY NOTE:\\n' + (sess.summary || '(none yet)') + '\\n\\n'\n      + 'NEW CONVERSATION LINES TO FOLD IN:\\n' + convoText + '\\n\\nUPDATED MEMORY NOTE:';\n\n    out = {\n      skip: false,\n      sessionId: sid,\n      summaryBody: {\n        contents: [{ role: 'user', parts: [{ text: prompt }] }],\n        generationConfig: { temperature: 0.2, maxOutputTokens: 320 },\n      },\n    };\n  }\n} catch (e) {\n  out = { skip: true, sessionId: sid, error: String((e && e.message) || e) };\n}\n\nreturn [{ json: out }];\n"
+      },
+      "id": "node-memmaint",
+      "name": "Memory Maintenance",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condS",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-needsum",
+      "name": "Needs Summary?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.summaryBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "node-summarize",
+      "name": "Summarize Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2660,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Apply Summary — Code node (no credentials). Runs after the summarizer LLM call.\n// Writes the updated MEMORY NOTE and trims the verbatim turn buffer to the last\n// `memoryKeep` turns. Best-effort; never throws.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst mm = $('Memory Maintenance').first().json;\nconst sid = mm.sessionId;\nconst chat = $json; // Summarize response\n\nlet newSummary = '';\ntry {\n  newSummary = chat.candidates[0].content.parts.map((p) => p.text || '').join('').trim();\n} catch (e) {\n  newSummary = '';\n}\n\ntry {\n  if (newSummary) {\n    const sd = $getWorkflowStaticData('global');\n    sd.sessions = sd.sessions || {};\n    const sess = sd.sessions[sid];\n    if (sess) {\n      const keep = Number(cfg.memoryKeep || 12);\n      sess.summary = newSummary.slice(0, 1500);\n      sess.turns = (sess.turns || []).slice(-keep);\n      sess.updated = Date.now();\n      sd.sessions[sid] = sess;\n    }\n  }\n} catch (e) {\n  /* best-effort */\n}\n\nreturn [{ json: { ok: true, sessionId: sid, summaryUpdated: Boolean(newSummary) } }];\n"
+      },
+      "id": "node-applysum",
+      "name": "Apply Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare": {
+      "main": [
+        [
+          {
+            "node": "Batch Embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Embed": {
+      "main": [
+        [
+          {
+            "node": "Retrieve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve": {
+      "main": [
+        [
+          {
+            "node": "Gemini Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat": {
+      "main": [
+        [
+          {
+            "node": "Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide": {
+      "main": [
+        [
+          {
+            "node": "Log to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Slack": {
+      "main": [
+        [
+          {
+            "node": "Escalate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Notify Support (Human)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Widget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Support (Human)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Widget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Widget": {
+      "main": [
+        [
+          {
+            "node": "Memory Maintenance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Maintenance": {
+      "main": [
+        [
+          {
+            "node": "Needs Summary?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Summary?": {
+      "main": [
+        [
+          {
+            "node": "Summarize Memory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Summarize Memory": {
+      "main": [
+        [
+          {
+            "node": "Apply Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

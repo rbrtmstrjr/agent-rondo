@@ -1,0 +1,279 @@
+{
+  "name": "AI Email Triage + Draft Replies (Northwind)",
+  "nodes": [
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "format": "simple",
+        "options": {}
+      },
+      "id": "n-imap",
+      "name": "Email Trigger (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ],
+      "credentials": {
+        "imap": {
+          "id": "H4ZBCIAEow9jq3rg",
+          "name": "Gmail IMAP - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "companyName",
+              "value": "Northwind Home Services",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "phone",
+              "value": "(555) 010-4729",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "chatModel",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "channel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "facts",
+              "value": "Repairs carry an $89 diagnostic fee (waived for Care Club members; applied to the repair if approved). New-install estimates (e.g. furnace or AC replacement) are free with a written quote. Hours are Monday-Saturday 7am-7pm, plus 24/7 emergency service. Service area is the Greater Portland metro. The Care Club maintenance plan is $19/month. Main phone: (555) 010-4729. Services: HVAC, plumbing, electrical.",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "maxAgeHours",
+              "value": 72,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Prepare Triage — Code node (runOnceForAllItems, no credentials). For each new\n// email from the IMAP trigger, extracts from/subject/body, dedups by messageId,\n// and builds a Gemini triage+draft request (structured JSON output).\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst emails = $('Email Trigger (IMAP)').all();\n\nlet sd = {};\ntry { sd = $getWorkflowStaticData('global'); } catch (e) { sd = {}; }\nsd.seen = sd.seen || {};\nconst now = Date.now();\nfor (const k of Object.keys(sd.seen)) { if (now - sd.seen[k] > 7 * 86400000) delete sd.seen[k]; }\n\nconst extractFrom = (e) => {\n  const f = e.from;\n  if (!f) return String(e.fromText || '');\n  if (typeof f === 'string') return f;\n  if (f.text) return f.text;\n  if (f.value && f.value[0]) { const v = f.value[0]; return (v.name ? v.name + ' ' : '') + '<' + (v.address || '') + '>'; }\n  return '';\n};\nconst extractBody = (e) => {\n  let b = e.text || e.textPlain || e.body || '';\n  if (!b && (e.textHtml || e.html)) b = String(e.textHtml || e.html).replace(/<[^>]+>/g, ' ');\n  return String(b).replace(/\\r/g, '').replace(/[ \\t]{2,}/g, ' ').trim().slice(0, 4000);\n};\n\nconst maxAgeMs = Number(cfg.maxAgeHours || 72) * 3600000;\n\nconst out = [];\nfor (const it of emails) {\n  const e = it.json;\n  // Skip old backlog (e.g. on activation) so we never flood on unread promo mail.\n  const ts = Date.parse(e.date || e.receivedDate || '') || now;\n  if (now - ts > maxAgeMs) continue;\n\n  const from = extractFrom(e);\n  const subject = String(e.subject || '(no subject)');\n  const body = extractBody(e);\n  const messageId = String(e.messageId || e.uid || (from + '|' + subject)).slice(0, 250);\n  const dup = !!sd.seen[messageId];\n  if (!dup) sd.seen[messageId] = now;\n\n  const sys = 'You are the email assistant for ' + cfg.companyName + ', a home-services company (HVAC, plumbing, electrical) serving the Greater Portland area. '\n    + 'Triage this incoming email and return JSON. '\n    + 'category is one of: \"Lead reply\", \"New inquiry\", \"Booking/scheduling\", \"Question\", \"Not interested\", \"Spam/Promo\", \"Other\". '\n    + 'needsReply = true ONLY if a real person (a customer, lead, or genuine inquiry) would expect a reply from the business; '\n    + 'false for newsletters, promotions, no-reply/automated messages, receipts, or internal notices. '\n    + 'summary: 1-2 sentences on what they want. sentiment: one of Positive/Neutral/Negative/Urgent. '\n    + 'If needsReply is true, write draftBody: a warm, professional reply in the voice of a ' + cfg.companyName + ' rep that moves the conversation forward — '\n    + 'answer what you can, and invite them to book or call ' + cfg.phone + '. '\n    + 'Use these facts and NEVER contradict or invent beyond them: ' + cfg.facts + ' '\n    + 'Keep the draft concise (4-7 sentences), plain text, and sign off \"The ' + cfg.companyName + ' Team\". draftSubject = \"Re: \" + their subject. '\n    + 'If needsReply is false, draftSubject and draftBody must be empty strings. reason: one short line on why you classified it this way.';\n\n  const geminiBody = {\n    systemInstruction: { parts: [{ text: sys }] },\n    contents: [{ role: 'user', parts: [{ text: 'FROM: ' + from + '\\nSUBJECT: ' + subject + '\\n\\nBODY:\\n' + (body || '(empty)') }] }],\n    generationConfig: {\n      temperature: 0.4,\n      responseMimeType: 'application/json',\n      responseSchema: {\n        type: 'OBJECT',\n        properties: {\n          category: { type: 'STRING' },\n          needsReply: { type: 'BOOLEAN' },\n          summary: { type: 'STRING' },\n          sentiment: { type: 'STRING' },\n          draftSubject: { type: 'STRING' },\n          draftBody: { type: 'STRING' },\n          reason: { type: 'STRING' },\n        },\n        required: ['category', 'needsReply', 'summary', 'sentiment', 'draftSubject', 'draftBody', 'reason'],\n      },\n    },\n  };\n\n  out.push({ json: { from, subject, messageId, dup, geminiBody } });\n}\n\nreturn out.length ? out : [{ json: { from: '', subject: '', messageId: '', dup: true, geminiBody: null, empty: true } }];\n"
+      },
+      "id": "n-prep",
+      "name": "Prepare Triage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.geminiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-ai",
+      "name": "AI Triage + Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ============================================================================\n// Parse Triage — Code node (runOnceForEachItem, no credentials). Parses the\n// triage JSON for THIS email and builds the Slack review card. needsReply gates\n// whether it gets posted.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst p = $('Prepare Triage').item.json;\nconst chat = $json; // generateContent response for this item\n\nlet ai = {};\ntry { ai = JSON.parse(chat.candidates[0].content.parts.map((x) => x.text || '').join('')); } catch (e) { ai = {}; }\n\nconst category = ai.category || 'Other';\nconst sentiment = ai.sentiment || 'Neutral';\nconst summary = ai.summary || '';\nconst draft = ai.draftBody || '';\nconst needsReply = !p.dup && !p.empty && ai.needsReply === true && draft.trim() !== '';\n\nconst slackText = '📨 *New email* · ' + category + ' · ' + sentiment\n  + '\\n*From:* ' + p.from\n  + '\\n*Subject:* ' + p.subject\n  + '\\n*Summary:* ' + summary\n  + (needsReply\n      ? '\\n\\n*Suggested reply* _(review, tweak, then send from Gmail)_:\\n>>> ' + draft\n      : '\\n_No reply needed._');\n\nreturn { json: { needsReply, category, sentiment, slackText, from: p.from, subject: p.subject } };\n"
+      },
+      "id": "n-parse",
+      "name": "Parse Triage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.needsReply }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-if",
+      "name": "Needs reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.channel }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.slackText }}",
+        "otherOptions": {}
+      },
+      "id": "n-slack",
+      "name": "Post Draft to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1080,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Triage": {
+      "main": [
+        [
+          {
+            "node": "AI Triage + Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Triage + Draft": {
+      "main": [
+        [
+          {
+            "node": "Parse Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Triage": {
+      "main": [
+        [
+          {
+            "node": "Needs reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs reply?": {
+      "main": [
+        [
+          {
+            "node": "Post Draft to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

@@ -1,0 +1,823 @@
+﻿{
+    "updatedAt":  "2025-12-13T05:25:20.373Z",
+    "createdAt":  "2025-12-13T05:25:20.373Z",
+    "id":  "CahEGDJEONjNhKEJ",
+    "name":  "House Renovation",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -80,
+                                       48
+                                   ],
+                      "id":  "af3959b0-3232-467b-93dc-137da2a7531c",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are generating a 15-frame transformation sequence for an AI model that edits images frame-by-frame.\nThe goal is to turn a ruined balcony into an elegant modern balcony.\n\nRULE UPDATE FOR FRAME 1:\n- Frame 1 MUST be a full, richly detailed image-generation prompt describing the ruined balcony scene.\n- It must NOT be an \"edit instruction\" for frame 1.\n- Frame 1 should describe the visual scene completely: environment, camera angle, lighting, damage, debris, textures.\n\nFOR FRAME 1 RETURN BOTH FIELDS:\n- \"generate_prompt\": a complete image-generation prompt\n- \"edit_instruction\": leave empty \"\"\n\nFOR FRAMES 2–15:\n- These must be edit instructions ONLY.\n- They must progressively edit the balcony without changing camera angle or composition.\n- They do NOT need a generation prompt.\n\nOUTPUT FORMAT:\n[\n  {\n    \"frame\": number,\n    \"step_name\": \"\",\n    \"description\": \"\",\n    \"generate_prompt\": \"\",\n    \"edit_instruction\": \"\"\n  }\n]\n\nRULES:\n- Frame 1 → generate_prompt filled, edit_instruction empty.\n- Frames 2–15 → edit_instruction filled, generate_prompt empty.\n- No camera movement.\n- No sudden visual jumps.\n- Modern minimalist style target for final frame.\n\nReturn JSON only.\n"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       112,
+                                       48
+                                   ],
+                      "id":  "a21b0050-b8a4-410f-8ac2-a8830d61850e",
+                      "name":  "Generate 15 Frame Prompts"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $json.generate_prompt_1 }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       800,
+                                       48
+                                   ],
+                      "id":  "6a8edd2e-1286-40a1-9fa1-c95e7d3764d7",
+                      "name":  "Generate first frame"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Extract raw JSON from LLM\nconst raw = $input.first().json.content.parts[0].text;\n\n// Parse into array\nlet frames = JSON.parse(raw);\n\n// Create a single output object\nlet output = {};\n\nframes.forEach(f =\u003e {\n  const index = f.frame; // 1..15\n  output[`edit_instruction_${index}`] = f.edit_instruction;\n  output[`description_${index}`] = f.description;\n  output[`step_name_${index}`] = f.step_name;\n  output[`generate_prompt_${index}`] = f.generate_prompt;\n});\n\nreturn [\n  {\n    json: output\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       416,
+                                       48
+                                   ],
+                      "id":  "11d3f0e1-faa2-4715-9e88-efee239f0bbb",
+                      "name":  "Code in JavaScript1"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Ensure this node runs once (Run Once for All Items)\n\n// 1) Read all items produced by the earlier node that parsed the LLM\n// Replace \"Code in JavaScript1\" with the exact node name if different\nconst itemsFromParser = $items(\"Code in JavaScript1\");\n\n// Convert node items to raw JSON frames\nconst allFrames = itemsFromParser.map(it =\u003e it.json);\n\n// Safety check\nif (!Array.isArray(allFrames) || allFrames.length === 0) {\n  throw new Error(\"No frames found from Code in JavaScript1. Check upstream node.\");\n}\n\n// 2) Find frame 1 (fall back to first item)\nconst frame1 = allFrames.find(f =\u003e Number(f.frame) === 1) || allFrames[0];\n\n// 3) Return ONLY frame1 so the Generate-first-frame node receives a single clean object\nreturn [\n  {\n    json: frame1\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       608,
+                                       48
+                                   ],
+                      "id":  "f106dbc7-0f4c-4d96-81c7-e2b5f081dd4c",
+                      "name":  "Code in JavaScript2"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "resize",
+                                         "width":  1080,
+                                         "height":  1920,
+                                         "resizeOption":  "ignoreAspectRatio",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.editImage",
+                      "typeVersion":  1,
+                      "position":  [
+                                       992,
+                                       48
+                                   ],
+                      "id":  "f729b326-00b2-4078-ae07-d103aed8ed60",
+                      "name":  "Edit Image"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_2 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -48,
+                                       304
+                                   ],
+                      "id":  "82b3629f-f0f9-48a0-9a78-0ee9fed2f4bf",
+                      "name":  "Frame 2"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_3 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       144,
+                                       304
+                                   ],
+                      "id":  "9ae57c8a-dcd2-4af3-a35e-19205536c7ed",
+                      "name":  "Frame 3"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_4 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       336,
+                                       304
+                                   ],
+                      "id":  "62197a93-0949-4269-a117-6901faa22fa3",
+                      "name":  "Frame 4"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_5 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       528,
+                                       304
+                                   ],
+                      "id":  "ed26e333-d3bd-4c49-a561-46c64978dd5e",
+                      "name":  "Frame 5"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_9 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -48,
+                                       544
+                                   ],
+                      "id":  "77951642-d18c-4bbb-8e7b-b5bb4557c4af",
+                      "name":  "Frame 9"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_10 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       144,
+                                       544
+                                   ],
+                      "id":  "a1c4df57-4835-455b-b605-e375baf48478",
+                      "name":  "Frame 10"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_11 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       336,
+                                       544
+                                   ],
+                      "id":  "0c95c50a-32aa-4a6b-8171-5cdc5f3ae9d7",
+                      "name":  "Frame 11"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_13 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       528,
+                                       544
+                                   ],
+                      "id":  "ea9a63c5-ae15-4d69-9bb7-2da7bb3663e6",
+                      "name":  "Frame 12"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_15 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1088,
+                                       544
+                                   ],
+                      "id":  "96938338-456b-48f5-865a-f109399b2451",
+                      "name":  "Frame 15"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_14 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       896,
+                                       544
+                                   ],
+                      "id":  "26650e52-6bfb-4fe3-84ec-6609b16f7646",
+                      "name":  "Frame 14"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_13 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       704,
+                                       544
+                                   ],
+                      "id":  "edf1dfd8-bbbc-4f0c-b198-152042ed9920",
+                      "name":  "Frame 13"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_8 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1088,
+                                       304
+                                   ],
+                      "id":  "de66e357-c82f-4bd2-a44b-4ea2f8b09370",
+                      "name":  "Frame 8"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_7 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       896,
+                                       304
+                                   ],
+                      "id":  "4ce66b32-304c-4fb3-8843-56afcff99d1c",
+                      "name":  "Frame 7"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "mode":  "list",
+                                                         "value":  ""
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_6 }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       704,
+                                       304
+                                   ],
+                      "id":  "3d5c62c5-5c5e-41be-ab98-59ab048ab4db",
+                      "name":  "Frame 6"
+                  }
+              ],
+    "connections":  {
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Generate 15 Frame Prompts",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Generate 15 Frame Prompts":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Code in JavaScript1",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Generate first frame":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Edit Image",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Code in JavaScript1":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Code in JavaScript2",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Code in JavaScript2":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Generate first frame",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Edit Image":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Frame 2",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Frame 2":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 3",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 3":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 4",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 4":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 5",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 5":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 6",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 9":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 10",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 10":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 11",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 11":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 12",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 12":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 13",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 14":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 15",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 13":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 14",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 8":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 9",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 7":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 8",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 6":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 7",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "661cc8d8-4197-46c9-bb25-3cfe181551d9",
+    "activeVersionId":  null,
+    "versionCounter":  1,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-13T05:25:20.375Z",
+                       "createdAt":  "2025-12-13T05:25:20.375Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "CahEGDJEONjNhKEJ",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

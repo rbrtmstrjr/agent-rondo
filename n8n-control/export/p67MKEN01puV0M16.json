@@ -1,0 +1,1198 @@
+﻿{
+    "updatedAt":  "2026-06-26T06:42:00.929Z",
+    "createdAt":  "2026-06-25T13:39:10.218Z",
+    "id":  "p67MKEN01puV0M16",
+    "name":  "Job Feed → Slack (skill-matched)",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 💼 Job Feed → Slack\n\nGathers remote jobs + freelance gigs from **Remotive, RemoteOK, Arbeitnow, Freelancer.com, OnlineJobs.ph** (free) + **JSearch** (Indeed/LinkedIn/Glassdoor/ZipRecruiter via RapidAPI), keeps only the ones matching your skills (UI/UX, React/Next web dev, AI automation, graphic design), de-duplicates across runs, and posts a digest to your Slack channel.\n\nRuns daily at 8:00 AM. Click Execute to test now.",
+                                         "height":  320,
+                                         "width":  520,
+                                         "color":  4
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -1040,
+                                       -360
+                                   ],
+                      "id":  "sticky-overview",
+                      "name":  "Overview"
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## ⚙️ SETUP\n\n**Slack:** posts to channel ID set in Config → channelIdOverride (already set to C0BD3AX4ZLN). Make sure the bot is invited to that channel (`/invite @your-bot`).\n\n**RapidAPI key:** stored in credential “RapidAPI - JSearch”. ⚠️ Your current plan only enables `/job-details`, NOT `/search` — so JSearch is skipped until you subscribe to a JSearch plan that includes the **Search** endpoint. The 3 free boards work regardless.\n\n**Run:** click Execute to test, or it runs daily at 8 AM.",
+                                         "height":  320,
+                                         "width":  520,
+                                         "color":  3
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -500,
+                                       -360
+                                   ],
+                      "id":  "sticky-setup",
+                      "name":  "Setup"
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "days",
+                                                                           "triggerAtHour":  8
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       -1040,
+                                       80
+                                   ],
+                      "id":  "trg-schedule",
+                      "name":  "Every day 8AM"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -1040,
+                                       260
+                                   ],
+                      "id":  "trg-manual",
+                      "name":  "When clicking \u0027Execute workflow\u0027"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "c-chan",
+                                                                                     "name":  "channelName",
+                                                                                     "value":  "job-matches",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "c-chanid",
+                                                                                     "name":  "channelIdOverride",
+                                                                                     "value":  "C0BD3AX4ZLN",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "c-host",
+                                                                                     "name":  "rapidApiHost",
+                                                                                     "value":  "jsearch.p.rapidapi.com",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "c-age",
+                                                                                     "name":  "maxAgeDays",
+                                                                                     "value":  10,
+                                                                                     "type":  "number"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       -820,
+                                       160
+                                   ],
+                      "id":  "cfg",
+                      "name":  "Config",
+                      "notes":  "channelName = Slack channel to create/post. channelIdOverride = paste an existing channel ID to skip auto-create."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nconst cfg = $(\u0027Config\u0027).first().json;\nconst override = String(cfg.channelIdOverride || \u0027\u0027).trim();\nif (override) return [{ json: { channelId: override, channelName: cfg.channelName, resolvedBy: \u0027override\u0027 } }];\nconst resp = $json || {};\nconst channels = Array.isArray(resp.channels) ? resp.channels : [];\nconst want = String(cfg.channelName || \u0027job-matches\u0027).toLowerCase();\nconst found = channels.find(c =\u003e String(c.name || \u0027\u0027).toLowerCase() === want);\nif (!found) {\n  throw new Error(\u0027Could not find or create #\u0027 + cfg.channelName + \u0027. Fix: either (a) add Slack scopes channels:manage + channels:read to the bot app and reinstall it, or (b) create the channel manually in Slack and paste its ID into the Config node -\u003e channelIdOverride.\u0027);\n}\nreturn [{ json: { channelId: found.id, channelName: found.name, resolvedBy: \u0027list\u0027 } }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -420,
+                                       160
+                                   ],
+                      "id":  "ch-resolve",
+                      "name":  "Resolve Channel ID",
+                      "notes":  "Uses channelIdOverride from Config. (Auto-create-by-name path kept in code for portability if override is cleared.)"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\nconst out = [];\n// 1) Remotive (free, keyless, all-remote)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://remotive.com/api/remote-jobs?limit=200\u0027, json: true, timeout: 20000 });\n  (r \u0026\u0026 Array.isArray(r.jobs) ? r.jobs : []).forEach(j =\u003e\n    out.push(norm(\u0027Remotive\u0027, j.id, j.title, j.company_name, j.url, j.candidate_required_location, j.tags, j.description, j.publication_date)));\n} catch (e) { /* skip source on failure */ }\n// 2) RemoteOK (free, needs a User-Agent; first array element is metadata)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://remoteok.com/api\u0027, json: true, timeout: 20000, headers: { \u0027User-Agent\u0027: \u0027Mozilla/5.0 (n8n job-feed bot)\u0027 } });\n  (Array.isArray(r) ? r : []).filter(j =\u003e j \u0026\u0026 j.id \u0026\u0026 j.position).forEach(j =\u003e\n    out.push(norm(\u0027RemoteOK\u0027, j.id, j.position, j.company, j.url, j.location, j.tags, j.description, j.date)));\n} catch (e) { /* skip */ }\n// 3) Arbeitnow (free, keyless)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://www.arbeitnow.com/api/job-board-api\u0027, json: true, timeout: 20000 });\n  (r \u0026\u0026 Array.isArray(r.data) ? r.data : []).forEach(j =\u003e\n    out.push(norm(\u0027Arbeitnow\u0027, j.slug, j.title, j.company_name, j.url, j.location, j.tags, j.description, j.created_at)));\n} catch (e) { /* skip */ }\n// 4) Freelancer.com (free public projects API — real freelance gigs, skill tags included)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://www.freelancer.com/api/projects/0.1/projects/active/?limit=50\u0026job_details=true\u0027, json: true, timeout: 20000, headers: { \u0027User-Agent\u0027: \u0027Mozilla/5.0 (n8n job-feed bot)\u0027 } });\n  const projects = (r \u0026\u0026 r.result \u0026\u0026 Array.isArray(r.result.projects)) ? r.result.projects : [];\n  projects.forEach(p =\u003e {\n    const bud = (p.budget \u0026\u0026 (p.budget.minimum || p.budget.maximum))\n      ? ((((p.currency \u0026\u0026 p.currency.code) || \u0027\u0027) + \u0027 \u0027 + (p.budget.minimum || \u0027?\u0027) + \u0027-\u0027 + (p.budget.maximum || \u0027?\u0027)).trim() + \u0027 (gig)\u0027)\n      : \u0027Freelance gig\u0027;\n    const tags = Array.isArray(p.jobs) ? p.jobs.map(j =\u003e j.name) : [];\n    out.push(norm(\u0027Freelancer.com\u0027, p.id, p.title, bud, \u0027https://www.freelancer.com/projects/\u0027 + (p.seo_url || p.id), \u0027Remote\u0027, tags, p.preview_description || p.description, p.time_submitted));\n  });\n} catch (e) { /* skip */ }\nreturn out.map(json =\u003e ({ json }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       40,
+                                       40
+                                   ],
+                      "id":  "src-free",
+                      "name":  "Fetch Free Boards",
+                      "notes":  "Remotive + RemoteOK + Arbeitnow + Freelancer.com (freelance gigs). Each in try/catch so one failing never breaks the run."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\n// OnlineJobs.ph — scrape public job search HTML (best-effort; may break if OLJ redesigns).\nconst KEYWORDS = [\u0027web developer\u0027, \u0027ui ux designer\u0027, \u0027graphic designer\u0027, \u0027automation\u0027];\nconst UA = \u0027Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36\u0027;\nconst out = [];\nfor (const kw of KEYWORDS) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      url: \u0027https://www.onlinejobs.ph/jobseekers/jobsearch?jobkeyword=\u0027 + encodeURIComponent(kw),\n      headers: { \u0027User-Agent\u0027: UA }, timeout: 25000\n    });\n    const body = (typeof resp === \u0027string\u0027) ? resp : JSON.stringify(resp);\n    const cards = body.split(\u0027\u003c!-- Start --\u003e\u0027);\n    for (const card of cards) {\n      const hrefM = card.match(/href=\"(\\/jobseekers\\/job\\/[^\"]+)\"/);\n      if (!hrefM) continue;\n      const href = hrefM[1];\n      const idM = href.match(/(\\d+)\\s*$/);\n      const id = idM ? idM[1] : href;\n      const h4M = card.match(/\u003ch4[^\u003e]*\u003e([\\s\\S]*?)\u003c\\/h4\u003e/);\n      let title = \u0027\u0027;\n      if (h4M) title = stripHtml(h4M[1].replace(/\u003cspan[^\u003e]*class=\"badge[^\"]*\"[^\u003e]*\u003e[\\s\\S]*?\u003c\\/span\u003e/gi, \u0027\u0027)).trim();\n      if (!title) continue;\n      const salM = card.match(/\u003cdd class=\"col\"\u003e\\s*([^\u003c]*?)\\s*\u003c\\/dd\u003e/);\n      const salary = salM ? salM[1].trim() : \u0027\u0027;\n      const dateM = card.match(/data-temp=\"([^\"]+)\"/);\n      const descM = card.match(/\u003cdiv class=\"desc[^\"]*\"\u003e([\\s\\S]*?)\u003c\\/div\u003e/);\n      const tags = []; const tagRe = /class=[\u0027\"]badge[\u0027\"][^\u003e]*\u003e([^\u003c]+)\u003c/g; let tm;\n      while ((tm = tagRe.exec(card)) !== null) tags.push(tm[1].trim());\n      out.push(norm(\u0027OnlineJobs.ph\u0027, id, title, salary || \u0027OnlineJobs.ph\u0027, \u0027https://www.onlinejobs.ph\u0027 + href, \u0027Philippines / Remote\u0027, tags, descM ? descM[1] : \u0027\u0027, dateM ? dateM[1] : \u0027\u0027));\n    }\n  } catch (e) { /* skip this keyword */ }\n}\nreturn out.map(json =\u003e ({ json }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       40,
+                                       460
+                                   ],
+                      "id":  "src-olj",
+                      "name":  "Fetch OnlineJobs.ph",
+                      "onError":  "continueRegularOutput",
+                      "notes":  "Scrapes OLJ public job search (4 keyword pages) and parses listings. Best-effort: may break if OLJ changes their HTML. onError=continue so a block/redesign never breaks the run."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\n// One JSearch call per query. Keep the list small to respect the free tier (~200 calls/month).\nconst queries = [\n  \u0027react next.js frontend developer\u0027,\n  \u0027ui ux designer\u0027,\n  \u0027ai automation n8n zapier\u0027,\n  \u0027graphic designer\u0027\n];\nreturn queries.map(q =\u003e ({ json: { q } }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       40,
+                                       280
+                                   ],
+                      "id":  "js-queries",
+                      "name":  "JSearch Queries",
+                      "notes":  "One search query per item. Edit this list to tune what JSearch looks for."
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "=https://jsearch.p.rapidapi.com/search?query={{ encodeURIComponent($json.q) }}\u0026page=1\u0026num_pages=1\u0026date_posted=month\u0026remote_jobs_only=true",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "x-rapidapi-host",
+                                                                                         "value":  "={{ $(\u0027Config\u0027).first().json.rapidApiHost }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       260,
+                                       280
+                                   ],
+                      "id":  "js-search",
+                      "name":  "JSearch Search",
+                      "retryOnFail":  true,
+                      "maxTries":  2,
+                      "waitBetweenTries":  4000,
+                      "onError":  "continueRegularOutput",
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "DLiVG0dXPkFHjOvZ",
+                                                                 "name":  "RapidAPI - JSearch"
+                                                             }
+                                      },
+                      "notes":  "Aggregates Indeed/LinkedIn/Glassdoor/ZipRecruiter. Secret key via the RapidAPI credential; host header is non-secret."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const data = (it.json \u0026\u0026 Array.isArray(it.json.data)) ? it.json.data : [];\n  for (const j of data) {\n    const tags = [j.job_employment_type, j.job_publisher].filter(Boolean);\n    out.push(norm(\n      \u0027JSearch:\u0027 + (j.job_publisher || \u0027?\u0027),\n      j.job_id, j.job_title, j.employer_name,\n      j.job_apply_link || j.job_google_link,\n      j.job_city || j.job_country || (j.job_is_remote ? \u0027Remote\u0027 : \u0027\u0027),\n      tags, j.job_description, j.job_posted_at_datetime_utc\n    ));\n  }\n}\nreturn out.map(json =\u003e ({ json }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       480,
+                                       280
+                                   ],
+                      "id":  "js-norm",
+                      "name":  "Normalize JSearch",
+                      "notes":  "Flattens JSearch results into the common job shape."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nconst SKILLS = {\n  \u0027Web Dev (React/Next)\u0027: [\u0027react\u0027,\u0027reactjs\u0027,\u0027react.js\u0027,\u0027next.js\u0027,\u0027nextjs\u0027,\u0027next js\u0027,\u0027javascript\u0027,\u0027 js \u0027,\u0027typescript\u0027,\u0027frontend\u0027,\u0027front-end\u0027,\u0027front end\u0027,\u0027html\u0027,\u0027css\u0027,\u0027tailwind\u0027,\u0027web developer\u0027,\u0027web development\u0027,\u0027jamstack\u0027,\u0027vue\u0027,\u0027node.js\u0027,\u0027nodejs\u0027],\n  \u0027UI/UX Design\u0027: [\u0027ui/ux\u0027,\u0027ui ux\u0027,\u0027uiux\u0027,\u0027ui design\u0027,\u0027ux design\u0027,\u0027user interface\u0027,\u0027user experience\u0027,\u0027figma\u0027,\u0027product design\u0027,\u0027web design\u0027,\u0027wireframe\u0027,\u0027prototype\u0027,\u0027prototyping\u0027,\u0027design system\u0027],\n  \u0027AI Automation\u0027: [\u0027ai automation\u0027,\u0027automation\u0027,\u0027n8n\u0027,\u0027make.com\u0027,\u0027zapier\u0027,\u0027integromat\u0027,\u0027workflow automation\u0027,\u0027ai agent\u0027,\u0027ai agents\u0027,\u0027llm\u0027,\u0027chatbot\u0027,\u0027no-code\u0027,\u0027no code\u0027,\u0027nocode\u0027,\u0027rpa\u0027],\n  \u0027Graphic Design\u0027: [\u0027graphic design\u0027,\u0027graphic designer\u0027,\u0027photoshop\u0027,\u0027illustrator\u0027,\u0027adobe\u0027,\u0027canva\u0027,\u0027premiere\u0027,\u0027video editing\u0027,\u0027video editor\u0027,\u0027motion graphics\u0027,\u0027branding\u0027,\u0027visual design\u0027,\u0027after effects\u0027]\n};\nconst all = $input.all().map(i =\u003e i.json).filter(j =\u003e j \u0026\u0026 j.url \u0026\u0026 j.title);\n// dedup within this run\nconst byKey = {};\nfor (const j of all) {\n  const k = (String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase()) || (String(j.title) + String(j.company)).toLowerCase();\n  if (!byKey[k]) byKey[k] = j;\n}\nlet jobs = Object.values(byKey);\nconst totalDeduped = jobs.length;\n// recency filter — keep only jobs posted within the last maxAgeDays (undated jobs are kept as a safety net)\nconst maxAgeDays = Number(($(\u0027Config\u0027).first().json || {}).maxAgeDays) || 10;\nconst NOW = Date.now();\nconst cutoff = NOW - maxAgeDays * 86400000;\njobs = jobs.filter(j =\u003e !j.ts || j.ts \u003e= cutoff);\nconst tooOld = totalDeduped - jobs.length;\n// score against skills\nfunction score(j) {\n  const txt = \u0027 \u0027 + (j.match_text || \u0027\u0027) + \u0027 \u0027;\n  const matched = []; let hits = 0;\n  for (const grp of Object.keys(SKILLS)) {\n    let g = false;\n    for (const kw of SKILLS[grp]) { if (txt.indexOf(kw) !== -1) { hits++; g = true; } }\n    if (g) matched.push(grp);\n  }\n  return { hits, matched };\n}\njobs = jobs.map(j =\u003e { const s = score(j); return Object.assign({}, j, { score: s.hits, matched_skills: s.matched, age_days: j.ts ? Math.floor((NOW - j.ts) / 86400000) : null }); })\n           .filter(j =\u003e j.matched_skills.length \u003e 0);\n// cross-run dedup so the same job is never posted twice (persists on scheduled runs)\nconst store = $getWorkflowStaticData(\u0027global\u0027);\nlet seen = store.seenJobs || {};\nconst fresh = [];\nfor (const j of jobs) {\n  const k = String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase();\n  if (seen[k]) continue;\n  fresh.push(j);\n}\n// newest first (undated jobs sink to the bottom); score breaks ties on same timestamp\nfresh.sort((a, b) =\u003e ((b.ts || 0) - (a.ts || 0)) || (b.score - a.score));\nconst stamp = Date.now();\nfor (const j of fresh) { const k = String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase(); seen[k] = stamp; }\n// prune memory to the newest 1500 keys\nconst entries = Object.keys(seen).map(k =\u003e [k, seen[k]]).sort((a, b) =\u003e b[1] - a[1]).slice(0, 1500);\nseen = {}; for (const e of entries) seen[e[0]] = e[1];\nstore.seenJobs = seen;\nreturn [{ json: { count: fresh.length, total_scanned: all.length, too_old_skipped: tooOld, max_age_days: maxAgeDays, jobs: fresh } }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       940,
+                                       160
+                                   ],
+                      "id":  "filter",
+                      "name":  "Filter \u0026 Score by Skills",
+                      "notes":  "Dedups, scores each job against your skills, drops non-matches, and remembers what was already posted (no repeats)."
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "has",
+                                                                                   "leftValue":  "={{ $json.count }}",
+                                                                                   "rightValue":  0,
+                                                                                   "operator":  {
+                                                                                                    "type":  "number",
+                                                                                                    "operation":  "gt"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       1160,
+                                       160
+                                   ],
+                      "id":  "has-matches",
+                      "name":  "Has Matches?"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "\nconst d = $json;\nconst jobs = Array.isArray(d.jobs) ? d.jobs : [];\nconst show = jobs.slice(0, 30);\nconst lines = show.map((j, i) =\u003e {\n  const skills = (j.matched_skills || []).join(\u0027, \u0027);\n  const age = (j.age_days === null || j.age_days === undefined) ? \u0027recent\u0027 : (j.age_days \u003c= 0 ? \u0027today\u0027 : j.age_days + \u0027d ago\u0027);\n  return (i + 1) + \u0027. *\u003c\u0027 + j.url + \u0027|\u0027 + j.title + \u0027\u003e*\\n\u0027 +\n         \u0027   \u0027 + j.company + \u0027 · _\u0027 + j.source + \u0027_ · 📍 \u0027 + j.location + \u0027 · 🕐 \u0027 + age + \u0027\\n\u0027 +\n         \u0027   🎯 \u0027 + skills + \u0027  (score \u0027 + j.score + \u0027)\u0027;\n});\nlet text = \u0027:briefcase: *\u0027 + d.count + \u0027 new job match\u0027 + (d.count === 1 ? \u0027\u0027 : \u0027es\u0027) + \u0027* (posted in last \u0027 + d.max_age_days + \u0027 days)  ·  scanned \u0027 + d.total_scanned + \u0027\\n\\n\u0027 + lines.join(\u0027\\n\\n\u0027);\nif (jobs.length \u003e show.length) text += \u0027\\n\\n…and \u0027 + (jobs.length - show.length) + \u0027 more matches not shown.\u0027;\nreturn [{ json: { text } }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1380,
+                                       60
+                                   ],
+                      "id":  "format",
+                      "name":  "Format Digest"
+                  },
+                  {
+                      "parameters":  {
+                                         "select":  "channel",
+                                         "channelId":  {
+                                                           "__rl":  true,
+                                                           "value":  "={{ $(\u0027Resolve Channel ID\u0027).first().json.channelId }}",
+                                                           "mode":  "id"
+                                                       },
+                                         "text":  "={{ $json.text }}",
+                                         "otherOptions":  {
+
+                                                          }
+                                     },
+                      "type":  "n8n-nodes-base.slack",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       1600,
+                                       60
+                                   ],
+                      "id":  "post-jobs",
+                      "name":  "Post Jobs to Slack",
+                      "credentials":  {
+                                          "slackApi":  {
+                                                           "id":  "DnfgaCSu303JPlI3",
+                                                           "name":  "Slack - n8n Bot"
+                                                       }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "select":  "channel",
+                                         "channelId":  {
+                                                           "__rl":  true,
+                                                           "value":  "={{ $(\u0027Resolve Channel ID\u0027).first().json.channelId }}",
+                                                           "mode":  "id"
+                                                       },
+                                         "text":  "=🔍 No new job matches in this run (scanned {{ $json.total_scanned }} postings).",
+                                         "otherOptions":  {
+
+                                                          }
+                                     },
+                      "type":  "n8n-nodes-base.slack",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       1380,
+                                       280
+                                   ],
+                      "id":  "post-none",
+                      "name":  "Post No Matches",
+                      "credentials":  {
+                                          "slackApi":  {
+                                                           "id":  "DnfgaCSu303JPlI3",
+                                                           "name":  "Slack - n8n Bot"
+                                                       }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Every day 8AM":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Config",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "When clicking \u0027Execute workflow\u0027":  {
+                                                                           "main":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "Config",
+                                                                                                "type":  "main",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                       },
+                        "Config":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Resolve Channel ID",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "Resolve Channel ID":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Fetch Free Boards",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    },
+                                                                    {
+                                                                        "node":  "Fetch OnlineJobs.ph",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    },
+                                                                    {
+                                                                        "node":  "JSearch Queries",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Fetch Free Boards":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Filter \u0026 Score by Skills",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Fetch OnlineJobs.ph":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Filter \u0026 Score by Skills",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "JSearch Queries":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "JSearch Search",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "JSearch Search":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Normalize JSearch",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Normalize JSearch":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Filter \u0026 Score by Skills",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Filter \u0026 Score by Skills":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Has Matches?",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Has Matches?":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Format Digest",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Post No Matches",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Format Digest":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Post Jobs to Slack",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "errorWorkflow":  "660Xkpo164VSNTDZ",
+                     "callerPolicy":  "workflowsFromSameOwner",
+                     "availableInMCP":  false
+                 },
+    "staticData":  {
+                       "node:Every day 8AM":  {
+                                                  "recurrenceRules":  [
+
+                                                                      ]
+                                              },
+                       "global":  {
+                                      "seenJobs":  {
+                                                       "https://www.onlinejobs.ph/jobseekers/job/hiring-graphic-designer-ecommerce-email-marketing-full-time-1675676":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/hiring-motion-designer-42k-monthlywfh-1536957":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/hiring-motion-designer-42kmo-1567593":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/hiring-motion-designer-wfh-1563122":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/wfh-motion-designer-wanted-1641199":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/motion-graphic-designer-wanted-wfh42k-monthly-1641127":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/shopify-senior-full-stack-engineer-luxury-ecommerce-1588924":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-astro-react-supabase-1675446":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/apply-now-web-developer-full-time-front-back-end-role-1600307":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/junior-lead-uiux-designer-mobile-product-experience-1672106":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/uiux-designer-1669635":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-desinger-1676295":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/marketing-graphic-designer-raster-vector-ai-1280712":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/t-shirt-graphic-designer-photoshop-illustrator-ai-tools-1676832":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-graphic-designer-ala-1676735":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/full-stack-ai-automation-cloud-systems-developer-1675629":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/part-time-seo-web-developer-virtual-assistant-1675561":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-cro-automation-1675479":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-full-stack-mobileweb-developer-1657946":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/programmer-web-developer-1671976":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-part-time-remote-1665291":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/founding-full-stack-engineer-aviation-software-connected-hardware-1674476":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/website-designer-graphic-design-1331156":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-designer-uxui-gig-1669776":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/uiux-designer-figma-1669446":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/brand-and-social-media-graphic-designer-1676912":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/full-time-graphic-designer-1676902":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-e-commerce-1486416":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/e-commerce-graphic-designer-1493729":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-production-brand-1676591":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/front-end-web-wordpress-dev-ph-1676410":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/gohighlevel-ghl-automation-specialist-1675963":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/gohighlevel-ghl-expert-web-designer-automation-engineer-1676913":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/wordpress-and-woocommerce-web-developer-1676597":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-gohighlevel-integrations-php-css-wordpress-1676463":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/shopify-web-developer-1676267":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-geo-ai-search-technical-specialist-1676143":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-gohighlevel-experience-1675589":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/frontend-web-developer-landing-pages-1674091":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/shopify-web-developer-cro-specialist-digital-products-1673780":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/mobile-app-developer-shopify-web-developer-1589841":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/credit-repair-site-front-end-web-developer-creative-website-designer-1642550":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-website-compliance-audit-consent-setup-contract-1670891":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/head-of-seo-ai-native-developer-1634394":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-uiux-designer-ai-website-visualisation-specialist-1660043":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-emails-and-ads-1676956":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-direct-response-static-ads-remote-1676940":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/full-time-graphic-designer-600-per-month-1515192":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-project-manager-1634829":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-graphic-designer-d2c-health-1676792":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-for-e-commerce-ads-and-creatives-1364340":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-ai-graphic-designer-direct-response-meta-ads-health-niche-1573628":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/graphic-designer-1676561":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/ghl-website-builder-onboarding-va-1676453":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/social-media-manager-video-editor-1676375":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/meta-ads-specialist-ai-creative-video-producer-remote-1675461":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/high-ticket-sales-cold-caller-closer-us-market-ai-automation-services-1676909":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/airtable-and-automation-specialist-1655167":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/manufacturing-excellence-manager-1676879":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/hubspot-cms-uxui-web-developer-1664942":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-sqaurespace-and-circle-1676930":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/website-designer-web-developer-needed-for-healthcare-wellness-clinic-website-1676659":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-technical-seo-with-ssh-claude-code-1675469":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-full-stack-react-developer-finish-launch-web-app-vercelsupabase-1675296":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-1673301":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/web-developer-seo-word-press-square-space-kajabi-1672274":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/virtual-assistant-content-operations-part-time-1670759":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/uxui-designer-wordpress-woocommerce-1663278":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/senior-video-editor-e-commerce-full-time-3000mo-1676949":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/autocad-drafter-industrial-warehouse-racking-construction-projects-1676934":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/google-ads-seo-gohighlevel-expert-for-home-services-lead-generation-1676105":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/gohighlevel-specialist-1676086":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/gohighlevel-solutions-engineer-1675807":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/gohighlevel-ghl-saas-expert-1675805":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/digital-ads-specialist-1675795":  1782453653916,
+                                                       "https://www.onlinejobs.ph/jobseekers/job/account-executive-1675789":  1782453653916,
+                                                       "https://remotive.com/remote-jobs/software-development/frontend-developer-2090991":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/product/staff-product-engineer-sao-paulo-2091000":  1782453646542,
+                                                       "https://www.freelancer.com/projects/adobe-illustrator/product-standee-design-needed":  1782453646542,
+                                                       "https://www.freelancer.com/projects/web-design/therapy-clinic-booking-website":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/artificial-intelligence/mid-senior-ai-cinematic-video-editor-2090887":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/cannaleo-digital-gmbh/full-stack-developer-typescript-nodejs-headless-commerce-saarbrucken-448529":  1782453646542,
+                                                       "https://www.freelancer.com/projects/email-marketing/email-marketing-agent":  1782453646542,
+                                                       "https://www.freelancer.com/projects/html5/long-term-wordpress-dev-maintenance":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/qa/senior-quality-engineer-florianopolis-2090994":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/qa/senior-quality-engineer-sao-paulo-2090995":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/qa/senior-quality-engineer-belo-horizonte-2090996":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/qa/senior-quality-engineer-campinas-2090998":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/qa/senior-quality-engineer-porto-alegre-2090997":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/fastrocket-gmbh/senior-java-angular-fullstack-developer-regen-222990":  1782453646542,
+                                                       "https://www.freelancer.com/projects/api/multi-carrier-prepaid-recharge-system":  1782453646542,
+                                                       "https://www.freelancer.com/projects/2d-animation/fitness-character-vector-illustrator":  1782453646542,
+                                                       "https://www.freelancer.com/projects/game-development/next-generation-fivem-qbcore-roleplay":  1782453646542,
+                                                       "https://www.freelancer.com/projects/amazon-web-services/laravel-expert-needed-route-fixes":  1782453646542,
+                                                       "https://www.freelancer.com/projects/web-development/wordpress-site-content-refresh-40540955":  1782453646542,
+                                                       "https://remotive.com/remote-jobs/software-development/senior-independent-ai-engineer-architect-1919266":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-job-vacancies-green-hills-cleaning-limited-1134087":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-junior-ux-ui-designer-work-force-nexus-1134022":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-mid-senior-ai-cinematic-video-editor-everai-1134014":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-patient-advocate-cedar-1134007":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-application-support-specialist-internova-travel-group-1134111":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-social-media-video-editor-adoreal-1134001":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-senior-backend-software-developer-bitpay-1133985":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-canva-design-specialist-real-estate-stratifyiq-1133978":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-change-management-lead-inizio-1134113":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-freelance-website-copywriter-content-strategist-n4-studior-1133968":  1782453646542,
+                                                       "https://remoteok.com/remote-jobs/remote-online-consumer-research-panelist-data-entry-clerk-welcome-apexfocusgroup-llc-1134083":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/dp-markets-gmbh/marketing-manager-growth-google-ads-berlin-181968":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/bodyfokus-gmbh/ki-automation-manager-ai-operator-koln-317696":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/finanzmaxx/nebenjob-im-haushalts-verbraucherpanel-einkaufe-dokumentieren-und-pramien-erhalten-leipzig-157603":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/srt-echterhoff-gmbh/sps-programmierer-hovelhof-467928":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/quantum-systems-gmbh/production-test-engineer-gilching-316869":  1782453646542,
+                                                       "https://www.arbeitnow.com/jobs/companies/wabcon/messtechnikerin-entwicklung-von-prufablaufen-in-python-hybrid-berlin-55000-75000-195386":  1782453646542,
+                                                       "https://www.freelancer.com/projects/instagram/social-media-marketing-executive":  1782453646542,
+                                                       "https://www.freelancer.com/projects/logo-design/fresh-impactful-logo-needed-edt":  1782453646542,
+                                                       "https://www.freelancer.com/projects/content-creation/fashion-content-creator-for-elegance":  1782453646542,
+                                                       "https://www.freelancer.com/projects/industrial-design/industrial-product-design-project":  1782453646542
+                                                   }
+                                  }
+                   },
+    "meta":  null,
+    "pinData":  null,
+    "versionId":  "32a0941e-dc3f-4044-bbf8-69b97fc1411b",
+    "activeVersionId":  "32a0941e-dc3f-4044-bbf8-69b97fc1411b",
+    "versionCounter":  13,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-06-25T13:39:10.220Z",
+                       "createdAt":  "2026-06-25T13:39:10.220Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "p67MKEN01puV0M16",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-26T06:00:54.382Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  true,
+                                                                                                  "easyAIWorkflowOnboarded":  true,
+                                                                                                  "firstSuccessfulWorkflowId":  "p67MKEN01puV0M16",
+                                                                                                  "userActivatedAt":  1782453644047
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-25",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-06-26T06:42:00.931Z",
+                          "createdAt":  "2026-06-26T06:42:00.931Z",
+                          "versionId":  "32a0941e-dc3f-4044-bbf8-69b97fc1411b",
+                          "workflowId":  "p67MKEN01puV0M16",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "content":  "## 💼 Job Feed → Slack\n\nGathers remote jobs + freelance gigs from **Remotive, RemoteOK, Arbeitnow, Freelancer.com, OnlineJobs.ph** (free) + **JSearch** (Indeed/LinkedIn/Glassdoor/ZipRecruiter via RapidAPI), keeps only the ones matching your skills (UI/UX, React/Next web dev, AI automation, graphic design), de-duplicates across runs, and posts a digest to your Slack channel.\n\nRuns daily at 8:00 AM. Click Execute to test now.",
+                                                               "height":  320,
+                                                               "width":  520,
+                                                               "color":  4
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -1040,
+                                                             -360
+                                                         ],
+                                            "id":  "sticky-overview",
+                                            "name":  "Overview"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "## ⚙️ SETUP\n\n**Slack:** posts to channel ID set in Config → channelIdOverride (already set to C0BD3AX4ZLN). Make sure the bot is invited to that channel (`/invite @your-bot`).\n\n**RapidAPI key:** stored in credential “RapidAPI - JSearch”. ⚠️ Your current plan only enables `/job-details`, NOT `/search` — so JSearch is skipped until you subscribe to a JSearch plan that includes the **Search** endpoint. The 3 free boards work regardless.\n\n**Run:** click Execute to test, or it runs daily at 8 AM.",
+                                                               "height":  320,
+                                                               "width":  520,
+                                                               "color":  3
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -500,
+                                                             -360
+                                                         ],
+                                            "id":  "sticky-setup",
+                                            "name":  "Setup"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rule":  {
+                                                                            "interval":  [
+                                                                                             {
+                                                                                                 "field":  "days",
+                                                                                                 "triggerAtHour":  8
+                                                                                             }
+                                                                                         ]
+                                                                        }
+                                                           },
+                                            "type":  "n8n-nodes-base.scheduleTrigger",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             -1040,
+                                                             80
+                                                         ],
+                                            "id":  "trg-schedule",
+                                            "name":  "Every day 8AM"
+                                        },
+                                        {
+                                            "parameters":  {
+
+                                                           },
+                                            "type":  "n8n-nodes-base.manualTrigger",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -1040,
+                                                             260
+                                                         ],
+                                            "id":  "trg-manual",
+                                            "name":  "When clicking \u0027Execute workflow\u0027"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "c-chan",
+                                                                                                           "name":  "channelName",
+                                                                                                           "value":  "job-matches",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "c-chanid",
+                                                                                                           "name":  "channelIdOverride",
+                                                                                                           "value":  "C0BD3AX4ZLN",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "c-host",
+                                                                                                           "name":  "rapidApiHost",
+                                                                                                           "value":  "jsearch.p.rapidapi.com",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "c-age",
+                                                                                                           "name":  "maxAgeDays",
+                                                                                                           "value":  10,
+                                                                                                           "type":  "number"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             -820,
+                                                             160
+                                                         ],
+                                            "id":  "cfg",
+                                            "name":  "Config",
+                                            "notes":  "channelName = Slack channel to create/post. channelIdOverride = paste an existing channel ID to skip auto-create."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nconst cfg = $(\u0027Config\u0027).first().json;\nconst override = String(cfg.channelIdOverride || \u0027\u0027).trim();\nif (override) return [{ json: { channelId: override, channelName: cfg.channelName, resolvedBy: \u0027override\u0027 } }];\nconst resp = $json || {};\nconst channels = Array.isArray(resp.channels) ? resp.channels : [];\nconst want = String(cfg.channelName || \u0027job-matches\u0027).toLowerCase();\nconst found = channels.find(c =\u003e String(c.name || \u0027\u0027).toLowerCase() === want);\nif (!found) {\n  throw new Error(\u0027Could not find or create #\u0027 + cfg.channelName + \u0027. Fix: either (a) add Slack scopes channels:manage + channels:read to the bot app and reinstall it, or (b) create the channel manually in Slack and paste its ID into the Config node -\u003e channelIdOverride.\u0027);\n}\nreturn [{ json: { channelId: found.id, channelName: found.name, resolvedBy: \u0027list\u0027 } }];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -420,
+                                                             160
+                                                         ],
+                                            "id":  "ch-resolve",
+                                            "name":  "Resolve Channel ID",
+                                            "notes":  "Uses channelIdOverride from Config. (Auto-create-by-name path kept in code for portability if override is cleared.)"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\nconst out = [];\n// 1) Remotive (free, keyless, all-remote)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://remotive.com/api/remote-jobs?limit=200\u0027, json: true, timeout: 20000 });\n  (r \u0026\u0026 Array.isArray(r.jobs) ? r.jobs : []).forEach(j =\u003e\n    out.push(norm(\u0027Remotive\u0027, j.id, j.title, j.company_name, j.url, j.candidate_required_location, j.tags, j.description, j.publication_date)));\n} catch (e) { /* skip source on failure */ }\n// 2) RemoteOK (free, needs a User-Agent; first array element is metadata)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://remoteok.com/api\u0027, json: true, timeout: 20000, headers: { \u0027User-Agent\u0027: \u0027Mozilla/5.0 (n8n job-feed bot)\u0027 } });\n  (Array.isArray(r) ? r : []).filter(j =\u003e j \u0026\u0026 j.id \u0026\u0026 j.position).forEach(j =\u003e\n    out.push(norm(\u0027RemoteOK\u0027, j.id, j.position, j.company, j.url, j.location, j.tags, j.description, j.date)));\n} catch (e) { /* skip */ }\n// 3) Arbeitnow (free, keyless)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://www.arbeitnow.com/api/job-board-api\u0027, json: true, timeout: 20000 });\n  (r \u0026\u0026 Array.isArray(r.data) ? r.data : []).forEach(j =\u003e\n    out.push(norm(\u0027Arbeitnow\u0027, j.slug, j.title, j.company_name, j.url, j.location, j.tags, j.description, j.created_at)));\n} catch (e) { /* skip */ }\n// 4) Freelancer.com (free public projects API — real freelance gigs, skill tags included)\ntry {\n  const r = await this.helpers.httpRequest({ url: \u0027https://www.freelancer.com/api/projects/0.1/projects/active/?limit=50\u0026job_details=true\u0027, json: true, timeout: 20000, headers: { \u0027User-Agent\u0027: \u0027Mozilla/5.0 (n8n job-feed bot)\u0027 } });\n  const projects = (r \u0026\u0026 r.result \u0026\u0026 Array.isArray(r.result.projects)) ? r.result.projects : [];\n  projects.forEach(p =\u003e {\n    const bud = (p.budget \u0026\u0026 (p.budget.minimum || p.budget.maximum))\n      ? ((((p.currency \u0026\u0026 p.currency.code) || \u0027\u0027) + \u0027 \u0027 + (p.budget.minimum || \u0027?\u0027) + \u0027-\u0027 + (p.budget.maximum || \u0027?\u0027)).trim() + \u0027 (gig)\u0027)\n      : \u0027Freelance gig\u0027;\n    const tags = Array.isArray(p.jobs) ? p.jobs.map(j =\u003e j.name) : [];\n    out.push(norm(\u0027Freelancer.com\u0027, p.id, p.title, bud, \u0027https://www.freelancer.com/projects/\u0027 + (p.seo_url || p.id), \u0027Remote\u0027, tags, p.preview_description || p.description, p.time_submitted));\n  });\n} catch (e) { /* skip */ }\nreturn out.map(json =\u003e ({ json }));\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             40,
+                                                             40
+                                                         ],
+                                            "id":  "src-free",
+                                            "name":  "Fetch Free Boards",
+                                            "notes":  "Remotive + RemoteOK + Arbeitnow + Freelancer.com (freelance gigs). Each in try/catch so one failing never breaks the run."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\n// OnlineJobs.ph — scrape public job search HTML (best-effort; may break if OLJ redesigns).\nconst KEYWORDS = [\u0027web developer\u0027, \u0027ui ux designer\u0027, \u0027graphic designer\u0027, \u0027automation\u0027];\nconst UA = \u0027Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36\u0027;\nconst out = [];\nfor (const kw of KEYWORDS) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      url: \u0027https://www.onlinejobs.ph/jobseekers/jobsearch?jobkeyword=\u0027 + encodeURIComponent(kw),\n      headers: { \u0027User-Agent\u0027: UA }, timeout: 25000\n    });\n    const body = (typeof resp === \u0027string\u0027) ? resp : JSON.stringify(resp);\n    const cards = body.split(\u0027\u003c!-- Start --\u003e\u0027);\n    for (const card of cards) {\n      const hrefM = card.match(/href=\"(\\/jobseekers\\/job\\/[^\"]+)\"/);\n      if (!hrefM) continue;\n      const href = hrefM[1];\n      const idM = href.match(/(\\d+)\\s*$/);\n      const id = idM ? idM[1] : href;\n      const h4M = card.match(/\u003ch4[^\u003e]*\u003e([\\s\\S]*?)\u003c\\/h4\u003e/);\n      let title = \u0027\u0027;\n      if (h4M) title = stripHtml(h4M[1].replace(/\u003cspan[^\u003e]*class=\"badge[^\"]*\"[^\u003e]*\u003e[\\s\\S]*?\u003c\\/span\u003e/gi, \u0027\u0027)).trim();\n      if (!title) continue;\n      const salM = card.match(/\u003cdd class=\"col\"\u003e\\s*([^\u003c]*?)\\s*\u003c\\/dd\u003e/);\n      const salary = salM ? salM[1].trim() : \u0027\u0027;\n      const dateM = card.match(/data-temp=\"([^\"]+)\"/);\n      const descM = card.match(/\u003cdiv class=\"desc[^\"]*\"\u003e([\\s\\S]*?)\u003c\\/div\u003e/);\n      const tags = []; const tagRe = /class=[\u0027\"]badge[\u0027\"][^\u003e]*\u003e([^\u003c]+)\u003c/g; let tm;\n      while ((tm = tagRe.exec(card)) !== null) tags.push(tm[1].trim());\n      out.push(norm(\u0027OnlineJobs.ph\u0027, id, title, salary || \u0027OnlineJobs.ph\u0027, \u0027https://www.onlinejobs.ph\u0027 + href, \u0027Philippines / Remote\u0027, tags, descM ? descM[1] : \u0027\u0027, dateM ? dateM[1] : \u0027\u0027));\n    }\n  } catch (e) { /* skip this keyword */ }\n}\nreturn out.map(json =\u003e ({ json }));\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             40,
+                                                             460
+                                                         ],
+                                            "id":  "src-olj",
+                                            "name":  "Fetch OnlineJobs.ph",
+                                            "onError":  "continueRegularOutput",
+                                            "notes":  "Scrapes OLJ public job search (4 keyword pages) and parses listings. Best-effort: may break if OLJ changes their HTML. onError=continue so a block/redesign never breaks the run."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\n// One JSearch call per query. Keep the list small to respect the free tier (~200 calls/month).\nconst queries = [\n  \u0027react next.js frontend developer\u0027,\n  \u0027ui ux designer\u0027,\n  \u0027ai automation n8n zapier\u0027,\n  \u0027graphic designer\u0027\n];\nreturn queries.map(q =\u003e ({ json: { q } }));\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             40,
+                                                             280
+                                                         ],
+                                            "id":  "js-queries",
+                                            "name":  "JSearch Queries",
+                                            "notes":  "One search query per item. Edit this list to tune what JSearch looks for."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "GET",
+                                                               "url":  "=https://jsearch.p.rapidapi.com/search?query={{ encodeURIComponent($json.q) }}\u0026page=1\u0026num_pages=1\u0026date_posted=month\u0026remote_jobs_only=true",
+                                                               "authentication":  "genericCredentialType",
+                                                               "genericAuthType":  "httpHeaderAuth",
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "x-rapidapi-host",
+                                                                                                               "value":  "={{ $(\u0027Config\u0027).first().json.rapidApiHost }}"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             260,
+                                                             280
+                                                         ],
+                                            "id":  "js-search",
+                                            "name":  "JSearch Search",
+                                            "retryOnFail":  true,
+                                            "maxTries":  2,
+                                            "waitBetweenTries":  4000,
+                                            "onError":  "continueRegularOutput",
+                                            "credentials":  {
+                                                                "httpHeaderAuth":  {
+                                                                                       "id":  "DLiVG0dXPkFHjOvZ",
+                                                                                       "name":  "RapidAPI - JSearch"
+                                                                                   }
+                                                            },
+                                            "notes":  "Aggregates Indeed/LinkedIn/Glassdoor/ZipRecruiter. Secret key via the RapidAPI credential; host header is non-secret."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nfunction stripHtml(s){ return String(s||\u0027\u0027).replace(/\u003c[^\u003e]*\u003e/g,\u0027 \u0027).replace(/\u0026[a-z#0-9]+;/gi,\u0027 \u0027).replace(/\\s+/g,\u0027 \u0027).trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v===\u0027\u0027) return 0;\n  if(typeof v===\u0027number\u0027) return v\u003c1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n\u003c1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(\u0027 \u0027,\u0027T\u0027));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=\u003eString(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||\u0027\u0027).trim()) || \u0027—\u0027,\n    url: String(url||\u0027\u0027).trim(),\n    location: (String(location||\u0027\u0027).trim()) || \u0027Remote\u0027,\n    tags: tagArr,\n    date: date || \u0027\u0027,\n    ts: toMs(date),\n    match_text: (t + \u0027 \u0027 + tagArr.join(\u0027 \u0027) + \u0027 \u0027 + d).toLowerCase()\n  };\n}\n\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const data = (it.json \u0026\u0026 Array.isArray(it.json.data)) ? it.json.data : [];\n  for (const j of data) {\n    const tags = [j.job_employment_type, j.job_publisher].filter(Boolean);\n    out.push(norm(\n      \u0027JSearch:\u0027 + (j.job_publisher || \u0027?\u0027),\n      j.job_id, j.job_title, j.employer_name,\n      j.job_apply_link || j.job_google_link,\n      j.job_city || j.job_country || (j.job_is_remote ? \u0027Remote\u0027 : \u0027\u0027),\n      tags, j.job_description, j.job_posted_at_datetime_utc\n    ));\n  }\n}\nreturn out.map(json =\u003e ({ json }));\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             480,
+                                                             280
+                                                         ],
+                                            "id":  "js-norm",
+                                            "name":  "Normalize JSearch",
+                                            "notes":  "Flattens JSearch results into the common job shape."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nconst SKILLS = {\n  \u0027Web Dev (React/Next)\u0027: [\u0027react\u0027,\u0027reactjs\u0027,\u0027react.js\u0027,\u0027next.js\u0027,\u0027nextjs\u0027,\u0027next js\u0027,\u0027javascript\u0027,\u0027 js \u0027,\u0027typescript\u0027,\u0027frontend\u0027,\u0027front-end\u0027,\u0027front end\u0027,\u0027html\u0027,\u0027css\u0027,\u0027tailwind\u0027,\u0027web developer\u0027,\u0027web development\u0027,\u0027jamstack\u0027,\u0027vue\u0027,\u0027node.js\u0027,\u0027nodejs\u0027],\n  \u0027UI/UX Design\u0027: [\u0027ui/ux\u0027,\u0027ui ux\u0027,\u0027uiux\u0027,\u0027ui design\u0027,\u0027ux design\u0027,\u0027user interface\u0027,\u0027user experience\u0027,\u0027figma\u0027,\u0027product design\u0027,\u0027web design\u0027,\u0027wireframe\u0027,\u0027prototype\u0027,\u0027prototyping\u0027,\u0027design system\u0027],\n  \u0027AI Automation\u0027: [\u0027ai automation\u0027,\u0027automation\u0027,\u0027n8n\u0027,\u0027make.com\u0027,\u0027zapier\u0027,\u0027integromat\u0027,\u0027workflow automation\u0027,\u0027ai agent\u0027,\u0027ai agents\u0027,\u0027llm\u0027,\u0027chatbot\u0027,\u0027no-code\u0027,\u0027no code\u0027,\u0027nocode\u0027,\u0027rpa\u0027],\n  \u0027Graphic Design\u0027: [\u0027graphic design\u0027,\u0027graphic designer\u0027,\u0027photoshop\u0027,\u0027illustrator\u0027,\u0027adobe\u0027,\u0027canva\u0027,\u0027premiere\u0027,\u0027video editing\u0027,\u0027video editor\u0027,\u0027motion graphics\u0027,\u0027branding\u0027,\u0027visual design\u0027,\u0027after effects\u0027]\n};\nconst all = $input.all().map(i =\u003e i.json).filter(j =\u003e j \u0026\u0026 j.url \u0026\u0026 j.title);\n// dedup within this run\nconst byKey = {};\nfor (const j of all) {\n  const k = (String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase()) || (String(j.title) + String(j.company)).toLowerCase();\n  if (!byKey[k]) byKey[k] = j;\n}\nlet jobs = Object.values(byKey);\nconst totalDeduped = jobs.length;\n// recency filter — keep only jobs posted within the last maxAgeDays (undated jobs are kept as a safety net)\nconst maxAgeDays = Number(($(\u0027Config\u0027).first().json || {}).maxAgeDays) || 10;\nconst NOW = Date.now();\nconst cutoff = NOW - maxAgeDays * 86400000;\njobs = jobs.filter(j =\u003e !j.ts || j.ts \u003e= cutoff);\nconst tooOld = totalDeduped - jobs.length;\n// score against skills\nfunction score(j) {\n  const txt = \u0027 \u0027 + (j.match_text || \u0027\u0027) + \u0027 \u0027;\n  const matched = []; let hits = 0;\n  for (const grp of Object.keys(SKILLS)) {\n    let g = false;\n    for (const kw of SKILLS[grp]) { if (txt.indexOf(kw) !== -1) { hits++; g = true; } }\n    if (g) matched.push(grp);\n  }\n  return { hits, matched };\n}\njobs = jobs.map(j =\u003e { const s = score(j); return Object.assign({}, j, { score: s.hits, matched_skills: s.matched, age_days: j.ts ? Math.floor((NOW - j.ts) / 86400000) : null }); })\n           .filter(j =\u003e j.matched_skills.length \u003e 0);\n// cross-run dedup so the same job is never posted twice (persists on scheduled runs)\nconst store = $getWorkflowStaticData(\u0027global\u0027);\nlet seen = store.seenJobs || {};\nconst fresh = [];\nfor (const j of jobs) {\n  const k = String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase();\n  if (seen[k]) continue;\n  fresh.push(j);\n}\n// newest first (undated jobs sink to the bottom); score breaks ties on same timestamp\nfresh.sort((a, b) =\u003e ((b.ts || 0) - (a.ts || 0)) || (b.score - a.score));\nconst stamp = Date.now();\nfor (const j of fresh) { const k = String(j.url || \u0027\u0027).split(\u0027?\u0027)[0].toLowerCase(); seen[k] = stamp; }\n// prune memory to the newest 1500 keys\nconst entries = Object.keys(seen).map(k =\u003e [k, seen[k]]).sort((a, b) =\u003e b[1] - a[1]).slice(0, 1500);\nseen = {}; for (const e of entries) seen[e[0]] = e[1];\nstore.seenJobs = seen;\nreturn [{ json: { count: fresh.length, total_scanned: all.length, too_old_skipped: tooOld, max_age_days: maxAgeDays, jobs: fresh } }];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             940,
+                                                             160
+                                                         ],
+                                            "id":  "filter",
+                                            "name":  "Filter \u0026 Score by Skills",
+                                            "notes":  "Dedups, scores each job against your skills, drops non-matches, and remembers what was already posted (no repeats)."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "loose",
+                                                                                                  "version":  2
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "has",
+                                                                                                         "leftValue":  "={{ $json.count }}",
+                                                                                                         "rightValue":  0,
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "number",
+                                                                                                                          "operation":  "gt"
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.2,
+                                            "position":  [
+                                                             1160,
+                                                             160
+                                                         ],
+                                            "id":  "has-matches",
+                                            "name":  "Has Matches?"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "\nconst d = $json;\nconst jobs = Array.isArray(d.jobs) ? d.jobs : [];\nconst show = jobs.slice(0, 30);\nconst lines = show.map((j, i) =\u003e {\n  const skills = (j.matched_skills || []).join(\u0027, \u0027);\n  const age = (j.age_days === null || j.age_days === undefined) ? \u0027recent\u0027 : (j.age_days \u003c= 0 ? \u0027today\u0027 : j.age_days + \u0027d ago\u0027);\n  return (i + 1) + \u0027. *\u003c\u0027 + j.url + \u0027|\u0027 + j.title + \u0027\u003e*\\n\u0027 +\n         \u0027   \u0027 + j.company + \u0027 · _\u0027 + j.source + \u0027_ · 📍 \u0027 + j.location + \u0027 · 🕐 \u0027 + age + \u0027\\n\u0027 +\n         \u0027   🎯 \u0027 + skills + \u0027  (score \u0027 + j.score + \u0027)\u0027;\n});\nlet text = \u0027:briefcase: *\u0027 + d.count + \u0027 new job match\u0027 + (d.count === 1 ? \u0027\u0027 : \u0027es\u0027) + \u0027* (posted in last \u0027 + d.max_age_days + \u0027 days)  ·  scanned \u0027 + d.total_scanned + \u0027\\n\\n\u0027 + lines.join(\u0027\\n\\n\u0027);\nif (jobs.length \u003e show.length) text += \u0027\\n\\n…and \u0027 + (jobs.length - show.length) + \u0027 more matches not shown.\u0027;\nreturn [{ json: { text } }];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             1380,
+                                                             60
+                                                         ],
+                                            "id":  "format",
+                                            "name":  "Format Digest"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "select":  "channel",
+                                                               "channelId":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  "={{ $(\u0027Resolve Channel ID\u0027).first().json.channelId }}",
+                                                                                 "mode":  "id"
+                                                                             },
+                                                               "text":  "={{ $json.text }}",
+                                                               "otherOptions":  {
+
+                                                                                }
+                                                           },
+                                            "type":  "n8n-nodes-base.slack",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             1600,
+                                                             60
+                                                         ],
+                                            "id":  "post-jobs",
+                                            "name":  "Post Jobs to Slack",
+                                            "credentials":  {
+                                                                "slackApi":  {
+                                                                                 "id":  "DnfgaCSu303JPlI3",
+                                                                                 "name":  "Slack - n8n Bot"
+                                                                             }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "select":  "channel",
+                                                               "channelId":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  "={{ $(\u0027Resolve Channel ID\u0027).first().json.channelId }}",
+                                                                                 "mode":  "id"
+                                                                             },
+                                                               "text":  "=🔍 No new job matches in this run (scanned {{ $json.total_scanned }} postings).",
+                                                               "otherOptions":  {
+
+                                                                                }
+                                                           },
+                                            "type":  "n8n-nodes-base.slack",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             1380,
+                                                             280
+                                                         ],
+                                            "id":  "post-none",
+                                            "name":  "Post No Matches",
+                                            "credentials":  {
+                                                                "slackApi":  {
+                                                                                 "id":  "DnfgaCSu303JPlI3",
+                                                                                 "name":  "Slack - n8n Bot"
+                                                                             }
+                                                            }
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Every day 8AM":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Config",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "When clicking \u0027Execute workflow\u0027":  {
+                                                                                                 "main":  [
+                                                                                                              [
+                                                                                                                  {
+                                                                                                                      "node":  "Config",
+                                                                                                                      "type":  "main",
+                                                                                                                      "index":  0
+                                                                                                                  }
+                                                                                                              ]
+                                                                                                          ]
+                                                                                             },
+                                              "Config":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Resolve Channel ID",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                                              "Resolve Channel ID":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "Fetch Free Boards",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          },
+                                                                                          {
+                                                                                              "node":  "Fetch OnlineJobs.ph",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          },
+                                                                                          {
+                                                                                              "node":  "JSearch Queries",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "Fetch Free Boards":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Filter \u0026 Score by Skills",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "Fetch OnlineJobs.ph":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Filter \u0026 Score by Skills",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "JSearch Queries":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "JSearch Search",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "JSearch Search":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Normalize JSearch",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "Normalize JSearch":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Filter \u0026 Score by Skills",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "Filter \u0026 Score by Skills":  {
+                                                                                    "main":  [
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "Has Matches?",
+                                                                                                         "type":  "main",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ]
+                                                                                             ]
+                                                                                },
+                                              "Has Matches?":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Format Digest",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ],
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Post No Matches",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                                              "Format Digest":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Post Jobs to Slack",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                }
+                                          },
+                          "authors":  "ROBERT MAESTRO",
+                          "name":  null,
+                          "description":  null
+                      }
+}

@@ -1,0 +1,208 @@
+﻿{
+    "updatedAt":  "2026-01-28T06:37:46.000Z",
+    "createdAt":  "2025-12-14T10:44:55.175Z",
+    "id":  "FXyByod48puMGfiX",
+    "name":  "Science Facts",
+    "description":  null,
+    "active":  false,
+    "isArchived":  true,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -288,
+                                       0
+                                   ],
+                      "id":  "2d21e45f-0039-4bf6-81df-2c8ec972bbad",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-pro",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-pro"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are a science content generator for viral social media.\n\nYour task is to generate ONE piece of science content with THREE clearly separated outputs:\n\n1. SHORT FACT (for image text overlay)\n   - Extremely short (max 12 words)\n   - Mind-blowing and curiosity-driven\n   - Simple language\n   - No emojis\n   - No punctuation at the end\n\n2. SUPPORTING CAPTION (for Facebook post caption)\n   - Explains or expands the short fact\n   - 1–2 short sentences\n   - Engaging, clear, scientifically accurate\n   - Written for a general audience\n   - No hashtags\n   - No emojis\n\n3. IMAGE PROMPT (for AI image generation)\n   - Ultra-realistic or cinematic\n   - Visually represents the science concept\n   - Clean or dark background\n   - Strong subject in the center or top\n   - CLEAR EMPTY SPACE at the BOTTOM for text overlay\n   - Must include the phrase: \"bottom text overlay space, no text rendered\"\n   - High detail, sharp focus, dramatic lighting\n\n⚠️ Output format MUST be exactly this and nothing else:\n\nSHORT_FACT:\n\u003cshort fact here\u003e\n\nSUPPORTING_CAPTION:\n\u003csupporting caption here\u003e\n\nIMAGE_PROMPT:\n\u003cimage generation prompt here\u003e\n"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -112,
+                                       0
+                                   ],
+                      "id":  "c9497c63-21ed-4cc1-8671-b8de57268120",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image (Nano Banana)"
+                                                     },
+                                         "prompt":  "=Generate me this image: {{ $json.image_prompt }}\n\nThis is the overlay text:\n{{ $json.short_fact }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       368,
+                                       0
+                                   ],
+                      "id":  "b4a3dd92-74f2-48f9-8097-95b3612efc29",
+                      "name":  "Generate an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = $json.content.parts[0].text;\n\nconst shortFactMatch = raw.match(/SHORT_FACT:\\s*([\\s\\S]*?)\\n\\nSUPPORTING_CAPTION:/);\nconst captionMatch = raw.match(/SUPPORTING_CAPTION:\\s*([\\s\\S]*?)\\n\\nIMAGE_PROMPT:/);\nconst imagePromptMatch = raw.match(/IMAGE_PROMPT:\\s*([\\s\\S]*)$/);\n\nreturn {\n  short_fact: shortFactMatch ? shortFactMatch[1].trim() : \"\",\n  supporting_caption: captionMatch ? captionMatch[1].trim() : \"\",\n  image_prompt: imagePromptMatch ? imagePromptMatch[1].trim() : \"\"\n};\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       192,
+                                       0
+                                   ],
+                      "id":  "15f2c6c9-c410-47be-9715-3bdb53d3d96d",
+                      "name":  "Code in JavaScript"
+                  }
+              ],
+    "connections":  {
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Message a model",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Generate an image",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "96a62038-81a6-4b66-a16e-ad83495b6e73",
+    "activeVersionId":  null,
+    "versionCounter":  4,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-14T10:44:55.180Z",
+                       "createdAt":  "2025-12-14T10:44:55.180Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "FXyByod48puMGfiX",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

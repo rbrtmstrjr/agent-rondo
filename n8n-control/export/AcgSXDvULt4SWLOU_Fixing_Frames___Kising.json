@@ -1,0 +1,192 @@
+﻿{
+    "updatedAt":  "2026-04-14T12:45:19.804Z",
+    "createdAt":  "2026-01-11T04:53:45.153Z",
+    "id":  "AcgSXDvULt4SWLOU",
+    "name":  "Fixing Frames | Kising",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image (Nano Banana)"
+                                                     },
+                                         "prompt":  "=Keep the woman from the reference image exactly as she is — same face, same identity, same hairstyle, same pose, same body position, same lighting, and same dark background. Only change her outfit and accessories to the following:\n\nReplace her gold sequined floral dress and silk neck scarf with a long-sleeved cream/ivory bohemian dress featuring an all-over autumn leaves pattern — scattered maple leaves, oak leaves, acorns, and small wheat sprigs in warm autumn tones (burnt orange, rust red, golden yellow, olive green, and brown) on a soft beige/off-white base fabric.\nThe dress should have a relaxed, flowy silhouette with gathered long sleeves, a modest round neckline, and a white crochet/lace waistband detail at the midsection.\nRemove the diamond earrings.\nAdd a beige woven straw sunhat with a wide, slightly floppy brim and a flat crown, sitting naturally on her head, tilted to match her pose.\n\nMaintain photorealistic quality, soft studio lighting, sharp focus on fabric texture and hat weave, and preserve the original portrait framing and dark backdrop. Do not alter her facial features, skin tone, or expression.",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       400,
+                                       0
+                                   ],
+                      "id":  "ba3b5888-72f7-4318-a328-b85ed9678faa",
+                      "name":  "Frame 2",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "epic catch api"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "52d50cc9-49cb-4a24-b44c-9299eb625765",
+                      "name":  "Form",
+                      "webhookId":  "287ad4d9-d5d7-4cef-aa2f-30397d43dbaf"
+                  },
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Upload image",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "749ee55e-f462-417e-b8ba-e777c2e0e4fe",
+                      "name":  "On form submission",
+                      "webhookId":  "aac09443-d823-4b0d-a114-3aff44967004"
+                  }
+              ],
+    "connections":  {
+                        "Frame 2":  {
+                                        "main":  [
+                                                     [
+
+                                                     ]
+                                                 ]
+                                    },
+                        "Form":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Frame 2",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Form",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "748ed0ea-2dc8-4abb-ba0d-ed20e610911c",
+    "activeVersionId":  null,
+    "versionCounter":  17,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-01-11T04:53:45.160Z",
+                       "createdAt":  "2026-01-11T04:53:45.160Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "AcgSXDvULt4SWLOU",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

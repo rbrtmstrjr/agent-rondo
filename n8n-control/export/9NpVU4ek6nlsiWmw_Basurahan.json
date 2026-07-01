@@ -1,0 +1,352 @@
+﻿{
+    "updatedAt":  "2025-12-24T11:42:18.708Z",
+    "createdAt":  "2025-12-24T10:55:18.474Z",
+    "id":  "9NpVU4ek6nlsiWmw",
+    "name":  "Basurahan",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-preview"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are generating prompts for an automated environmental restoration workflow.\n\nYou MUST output ALL sections below.\nYou MUST include EVERY section label exactly as written.\nDo NOT add introductions.\nDo NOT add explanations.\nDo NOT skip any section.\nDo NOT merge sections.\nDo NOT output JSON.\n\nEach section must contain detailed content.\n\n==============================\nFRAME_1_IMAGE_PROMPT\n==============================\nGenerate a ruined urban river or flood control channel scene in the United States:\n\n- A US urban flood control channel running between American residential houses and low-rise city buildings\n- Concrete-lined flood control walls on both sides that are visibly damaged and deteriorated\n- Cracked concrete, broken edges, dark stains, discoloration, moss, algae growth, and weathered surfaces along the flood control walls\n- The CENTER of the river is densely clogged with trash and debris, forming thick floating piles that dominate the middle channel\n- Garbage includes plastic bottles, plastic bags, food containers, tires, broken furniture, metal scraps, and mixed urban waste\n- Trash accumulation clearly blocks and disrupts the natural water flow in the center of the river\n- Water appears dark, stagnant, polluted, and unhealthy\n- Additional scattered debris stuck along the concrete slopes and riverbanks\n- Surrounding US urban neighborhood remains realistic and unchanged\n- Overcast sky with flat, gloomy daylight\n- No people\n- No cleanup activity\n- No machinery or tools\n- Camera positioned at human eye level or slightly elevated from a bridge or riverbank\n- NOT an aerial view\n- NOT a drone shot\n- Perspective feels grounded and realistic\n- Ultra-realistic, documentary-style photography\n- Natural color grading\n\n==============================\nFRAME_2_IMAGE_EDIT_PROMPT\n==============================\nEdit FRAME 1 only. Do NOT generate a new image.\n\n- Remove all garbage, trash, and debris from the river and flood control channel\n- Fully clear the clogged center channel so water can flow naturally again\n- Repair and restore damaged concrete flood control walls\n- Reduce cracks, stains, and discoloration while keeping realistic wear\n- Restore water clarity to a natural clean state (not overly blue)\n- Subtle, realistic vegetation recovery only\n- Preserve all buildings, houses, roads, and urban structures exactly as they are\n- Preserve the exact river shape, concrete geometry, framing, and camera perspective\n- No people\n- No animals\n- No tools or machinery visible\n- Result should look like a realistically restored US urban flood control channel\n\n==============================\nFRAME_3_IMAGE_EDIT_PROMPT\n==============================\nEdit FRAME 2 only. Do NOT change the environment.\n\n- Add 2 to 5 people maximum\n- People casually enjoying the restored urban flood control channel\n- Activities include sitting on concrete embankments, walking, relaxing, or light interaction near the water\n- Swimming only if realistic for a concrete flood control channel\n- Natural, candid behavior\n- No posing\n- No looking at the camera\n- Casual American clothing appropriate for a US neighborhood\n- Slightly warmer and more vibrant lighting than Frame 2\n- Calm, community-focused atmosphere\n- Do not overcrowd the scene\n\n==============================\nVEO_VIDEO_PROMPT_CLEANUP\n==============================\nCreate a realistic environmental cleanup timelapse video.\n\n- Start frame: polluted flood control channel (Frame 1)\n- End frame: clean restored flood control channel (Frame 2)\n- Cleanup progresses gradually in multiple visible stages\n- Workers appear temporarily performing cleanup\n- Workers use realistic tools such as trash bags, nets, cranes, and cleanup equipment\n- Trash removal focuses on clearing the clogged center channel first\n- Workers fade out naturally as cleanup completes\n- Cleanup respects concrete flood control infrastructure\n- No camera movement\n- Natural daylight progression\n- Documentary realism\n- No magical or instant transformation\n\n==============================\nVEO_VIDEO_PROMPT_ENJOYMENT\n==============================\nCreate a calm, real-time scene showing people enjoying the restored US urban flood control channel.\n\n- Start frame: clean flood control channel (Frame 2)\n- End frame: people enjoying the area (Frame 3)\n- This is NOT a timelapse\n- Real-time motion only\n- Flowing water, subtle human movement, casual interaction\n- Warm, inviting, community-focused atmosphere\n- Feels like a real captured moment in a US neighborhood\n- No dramatic transitions\n- No camera movement\n"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -256,
+                                       -48
+                                   ],
+                      "id":  "83161e39-672b-44ad-8244-b862169005e6",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Get raw text from Gemini Message a Model node\nconst rawText = $json?.content?.parts?.[0]?.text || \u0027\u0027;\n\n// All required section headers (must match LLM exactly)\nconst HEADERS = [\n  \u0027FRAME_1_IMAGE_PROMPT\u0027,\n  \u0027FRAME_2_IMAGE_EDIT_PROMPT\u0027,\n  \u0027FRAME_3_IMAGE_EDIT_PROMPT\u0027,\n  \u0027VEO_VIDEO_PROMPT_CLEANUP\u0027,\n  \u0027VEO_VIDEO_PROMPT_ENJOYMENT\u0027\n];\n\n// Extract text between headers\nfunction extractSection(text, header) {\n  const start = text.indexOf(header);\n  if (start === -1) return \u0027\u0027;\n\n  const afterStart = start + header.length;\n  let end = text.length;\n\n  for (const h of HEADERS) {\n    if (h === header) continue;\n    const idx = text.indexOf(h, afterStart);\n    if (idx !== -1 \u0026\u0026 idx \u003c end) {\n      end = idx;\n    }\n  }\n\n  return text.substring(afterStart, end).trim();\n}\n\n// Extract all sections\nconst frame1_prompt = extractSection(rawText, \u0027FRAME_1_IMAGE_PROMPT\u0027);\nconst frame2_edit_prompt = extractSection(rawText, \u0027FRAME_2_IMAGE_EDIT_PROMPT\u0027);\nconst frame3_edit_prompt = extractSection(rawText, \u0027FRAME_3_IMAGE_EDIT_PROMPT\u0027);\nconst veo_cleanup_prompt = extractSection(rawText, \u0027VEO_VIDEO_PROMPT_CLEANUP\u0027);\nconst veo_enjoyment_prompt = extractSection(rawText, \u0027VEO_VIDEO_PROMPT_ENJOYMENT\u0027);\n\n// Return structured output\nreturn [\n  {\n    json: {\n      frame1_prompt,\n      frame2_edit_prompt,\n      frame3_edit_prompt,\n      veo_cleanup_prompt,\n      veo_enjoyment_prompt\n    }\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       32,
+                                       -48
+                                   ],
+                      "id":  "d8d5a56a-d7ff-4cad-a94d-f437b7921e11",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "=Edit and fill this transparent image using this prompt. make sure all the transparent part is filled.\n\n{{ $(\u0027Code in JavaScript\u0027).item.json.frame1_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       352,
+                                       -48
+                                   ],
+                      "id":  "7cc48956-15e6-40ab-9143-a0a4153e1b70",
+                      "name":  "Frame1",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript\u0027).item.json.frame2_edit_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       512,
+                                       -48
+                                   ],
+                      "id":  "130e1f37-89e1-4ae6-875c-dbb2b1b20f87",
+                      "name":  "Frame2",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-image-preview (Nano Banana Pro)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript\u0027).item.json.frame3_edit_prompt }}",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       672,
+                                       -48
+                                   ],
+                      "id":  "c8112925-71a0-404d-9adc-1a46603fbc5a",
+                      "name":  "Frame3",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Upload Image",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -432,
+                                       -48
+                                   ],
+                      "id":  "de215092-ac99-4242-8c8c-e080e0179ae8",
+                      "name":  "On form submission",
+                      "webhookId":  "060ab867-ffca-4aca-be10-99f6c886924e"
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       192,
+                                       -48
+                                   ],
+                      "id":  "70f18b5b-1d44-4f61-addd-b7db8a623b76",
+                      "name":  "Form",
+                      "webhookId":  "425719c2-b50e-4548-bb42-e9df8fa75f7f"
+                  }
+              ],
+    "connections":  {
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Form",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Frame1":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Frame2",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "Frame2":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Frame3",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Message a model",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Form":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Frame1",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "97d3b189-879b-4c48-a0fa-bdd155b97842",
+    "activeVersionId":  null,
+    "versionCounter":  12,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-24T10:55:18.481Z",
+                       "createdAt":  "2025-12-24T10:55:18.481Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "9NpVU4ek6nlsiWmw",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

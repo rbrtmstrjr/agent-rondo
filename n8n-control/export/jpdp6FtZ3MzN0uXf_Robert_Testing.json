@@ -1,0 +1,530 @@
+﻿{
+    "updatedAt":  "2025-12-20T09:58:17.860Z",
+    "createdAt":  "2025-12-20T05:16:44.255Z",
+    "id":  "jpdp6FtZ3MzN0uXf",
+    "name":  "Robert Testing",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Ruined Restoration",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -320,
+                                       32
+                                   ],
+                      "id":  "3146c276-ac8a-4ca7-aa2f-aae09eb5180f",
+                      "name":  "On form submission",
+                      "webhookId":  "c4a99fdf-cc4f-48a8-8101-32e99d19a8a9"
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -144,
+                                       32
+                                   ],
+                      "id":  "1e18e1b3-d276-4dff-8bf2-3bbe11e80829",
+                      "name":  "Form (ruined image)",
+                      "webhookId":  "178b09c9-f189-4f7c-ba97-05aef894c82e"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "analyze",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-pro",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-pro"
+                                                     },
+                                         "text":  "You are a visual restoration analyst.\n\nCarefully analyze the uploaded image. This image represents a ruined or abandoned subject that will be restored gradually over multiple frames.\n\nYour task is ONLY to analyze the image.  \nDO NOT generate restoration steps yet.  \nDO NOT suggest improvements or fixes.\n\nIdentify and describe the following in a structured, factual way:\n\n1. Subject classification  \n- Determine whether the subject is a HOUSE, CAR, or SCENE (environment/place).\n\n2. Overall condition  \n- Describe the general state (abandoned, neglected, damaged, weathered, etc.).\n\n3. Visible damage and decay  \n- List all clearly visible issues such as:\n  - Rust\n  - Dirt\n  - Broken or missing parts\n  - Structural damage\n  - Overgrowth\n  - Faded paint\n  - Cracks\n  - Debris\n  - Water damage\n  - Environmental wear\n\n4. Elements that appear intact  \n- Identify parts that should likely remain unchanged during restoration.\n\n5. Environmental context  \n- Describe surroundings (street, driveway, field, town, rural, suburban, etc.).\n- Note weather, lighting, and atmosphere.\n\n6. Critical constraints (VERY IMPORTANT)  \nExplicitly list elements that MUST NOT change during restoration:\n- Camera angle\n- Framing\n- Perspective\n- Subject position\n- Environment layout\n- Time of day\n- Weather conditions\n\n7. Realism boundaries  \n- State what would be unrealistic or inappropriate to add (e.g. luxury upgrades, new structures, dramatic redesigns).\n\n---\n\n### OUTPUT FORMAT (STRICT)\n\nReturn the result ONLY in valid JSON using this exact structure:\n\n{\n  \"subject_type\": \"house | car | scene\",\n  \"overall_condition\": \"short description\",\n  \"damage_list\": [\n    \"damage item 1\",\n    \"damage item 2\"\n  ],\n  \"intact_elements\": [\n    \"element 1\",\n    \"element 2\"\n  ],\n  \"environment_context\": {\n    \"location_type\": \"suburban | rural | urban | roadside | other\",\n    \"surroundings\": \"short description\",\n    \"lighting\": \"short description\",\n    \"weather\": \"short description\"\n  },\n  \"do_not_change\": [\n    \"camera angle\",\n    \"framing\",\n    \"perspective\",\n    \"environment layout\"\n  ],\n  \"realism_constraints\": [\n    \"constraint 1\",\n    \"constraint 2\"\n  ]\n}\n\nDo not include explanations, commentary, or extra text outside the JSON.",
+                                         "inputType":  "binary",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       80,
+                                       -64
+                                   ],
+                      "id":  "c74df421-5099-42db-8d1f-ec56a9d9afb2",
+                      "name":  "Analyze an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-pro",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-pro"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You will receive a JSON object produced by a previous image analysis step.\n\nThis JSON is the ONLY source of truth.\nYou must strictly base your output on it.\n\nHere is the analysis JSON:\n{{ $json }}\n\n---\n\nYou are a frame-by-frame restoration planner.\n\nTASK:\nGenerate a gradual, realistic restoration plan that will be executed one frame at a time using image-editing instructions.\n\nSTRICT RULES:\n- Use ONLY the damage_list and overall_condition from the analysis JSON.\n- Do NOT invent new damage.\n- Do NOT change anything listed in do_not_change.\n- Do NOT violate realism_constraints.\n- Do NOT change camera angle, framing, perspective, lighting, or environment.\n- Do NOT add new objects, people, vehicles, or luxury elements.\n\nFRAME RULES (VERY IMPORTANT):\n- Generate a MINIMUM of 10 steps.\n- Generate a MAXIMUM of 15 steps.\n- Each step represents ONE frame.\n- Each step must modify ONLY ONE small visual element.\n- Changes must be subtle and progressive.\n- Restoration order must be logical:\n  1. Cleaning and debris removal\n  2. Minor repairs\n  3. Structural stabilization\n  4. Surface refinement\n  5. Subtle life cues (only in final steps, if appropriate)\n\nSUBJECT-SPECIFIC GUIDANCE:\n- If subject_type = \"house\":\n  Focus on exterior surfaces, roof, windows, siding, vegetation, and warmth.\n- If subject_type = \"car\":\n  Focus on dirt removal, rust reduction, panel repair, paint recovery.\n- If subject_type = \"scene\":\n  Focus on cleanup, environmental repair, and subtle revival.\n\nFINAL STATE:\n- The final frame should look naturally restored.\n- It must NOT look brand new, modernized, or redesigned.\n\n---\n\n### OUTPUT FORMAT (STRICT — NO EXTRA TEXT)\n\nReturn ONLY valid JSON in this structure:\n\n{\n  \"steps\": [\n    {\n      \"step_number\": 1,\n      \"edit_instruction\": \"exact visual change for this frame only\",\n      \"visual_focus\": \"specific area being modified\"\n    }\n  ]\n}\n\nFINAL CHECK BEFORE RETURNING:\n- Confirm there are between 10 and 15 steps.\n- Confirm each step modifies only one element.\n- Confirm all constraints are respected.\n\nReturn ONLY the JSON. No explanations. No markdown."
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       224,
+                                       -64
+                                   ],
+                      "id":  "12b8d815-de4c-4b4a-8d6e-1dfd5993184f",
+                      "name":  "Prompt generator",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Read raw text output from Prompt Generator\nconst rawText = $input.first().json.content.parts[0].text;\n\n// Parse JSON safely\nlet parsed;\ntry {\n  parsed = JSON.parse(rawText);\n} catch (error) {\n  throw new Error(\"Gemini output is not valid JSON\");\n}\n\n// Validate steps array\nif (!parsed.steps || !Array.isArray(parsed.steps)) {\n  throw new Error(\"Gemini output does not contain a valid steps array\");\n}\n\n// Normalize step numbering (optional but recommended)\nparsed.steps = parsed.steps.map((step, index) =\u003e ({\n  ...step,\n  step_number: index + 1\n}));\n\n// Return clean output for Split Out\nreturn [\n  {\n    json: {\n      steps: parsed.steps\n    }\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       496,
+                                       -64
+                                   ],
+                      "id":  "0a6a15af-58c6-4a02-a079-5a3565a37eca",
+                      "name":  "Enforce minimum 10 frames"
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "steps",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       656,
+                                       -64
+                                   ],
+                      "id":  "b7db1d44-d93e-4c77-a198-e8005bc1bf1c",
+                      "name":  "Split Out"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
+                                         "sendQuery":  true,
+                                         "queryParameters":  {
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "key",
+                                                                                        "value":  "AIzaSyC7OO04Bwh9Mv9f2icbipIeONhEmyu1M_k"
+                                                                                    }
+                                                                                ]
+                                                             },
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": \"{{ $json.edit_instruction }}\"\n        },\n        {\n          \"inlineData\": {\n            \"mimeType\": \"image/jpeg\",\n            \"data\": \"{{ $items(\u0027Merge\u0027).find(i =\u003e i.json.data)?.json.data }}\"\n          }\n        }\n      ]\n    }\n  ]\n}\n",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.3,
+                      "position":  [
+                                       752,
+                                       160
+                                   ],
+                      "id":  "9c8d09aa-31b5-4006-a9b3-cca909d0b1fc",
+                      "name":  "HTTP Request"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "binaryToPropery",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.extractFromFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       96,
+                                       176
+                                   ],
+                      "id":  "8aec4253-eb25-44c5-aa77-2e59b54f3579",
+                      "name":  "Extract from File"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       592,
+                                       160
+                                   ],
+                      "id":  "75fea44a-3145-47c5-bdbb-5221e7c5d35f",
+                      "name":  "Merge"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "toBinary",
+                                         "sourceProperty":  "data",
+                                         "binaryPropertyName":  "image",
+                                         "options":  {
+                                                         "fileName":  "=frame_{{$itemIndex + 1}}.jpg",
+                                                         "mimeType":  "image/jpeg"
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.convertToFile",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       1488,
+                                       160
+                                   ],
+                      "id":  "305fb30e-9dbd-43b0-85d8-18421f4715f2",
+                      "name":  "Convert to File"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "830fbd84-ff26-4d98-bedd-f2090d1cc32d",
+                                                                                     "name":  "data",
+                                                                                     "value":  "={{ \n  (() =\u003e {\n    const candidates = $json.candidates || [];\n    const images = [];\n\n    for (const c of candidates) {\n      const parts = c.content?.parts || [];\n      for (const p of parts) {\n        if (p.inlineData?.data) {\n          images.push({\n            data: p.inlineData.data,\n            mimeType: p.inlineData.mimeType || \u0027image/png\u0027\n          });\n        }\n      }\n    }\n\n    return images;\n  })()\n}}\n",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       928,
+                                       160
+                                   ],
+                      "id":  "43e63fd1-0199-4609-9c08-57924f491185",
+                      "name":  "Edit Fields"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "de1e8ec4-fb15-4a3a-9312-1765abda84fc",
+                                                                                   "leftValue":  "data",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "notEmpty",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.filter",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       1280,
+                                       160
+                                   ],
+                      "id":  "a77ab192-9e37-42f0-b07c-ab5b55860207",
+                      "name":  "Filter"
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "data",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1104,
+                                       160
+                                   ],
+                      "id":  "3ce6b1b0-db0e-4ee2-b8f5-176e5d2c4c41",
+                      "name":  "Split Out1"
+                  }
+              ],
+    "connections":  {
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Form (ruined image)",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Form (ruined image)":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Analyze an image",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     },
+                                                                     {
+                                                                         "node":  "Extract from File",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Analyze an image":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Prompt generator",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Prompt generator":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Enforce minimum 10 frames",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Enforce minimum 10 frames":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Split Out",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Split Out":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "Merge",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "HTTP Request":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Edit Fields",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Extract from File":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Merge",
+                                                                       "type":  "main",
+                                                                       "index":  1
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Merge":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "HTTP Request",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Convert to File":  {
+                                                "main":  [
+                                                             [
+
+                                                             ]
+                                                         ]
+                                            },
+                        "Edit Fields":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Split Out1",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Filter":  {
+                                       "main":  [
+                                                    [
+                                                        {
+                                                            "node":  "Convert to File",
+                                                            "type":  "main",
+                                                            "index":  0
+                                                        }
+                                                    ]
+                                                ]
+                                   },
+                        "Split Out1":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Filter",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "a0169b15-e650-4962-91b8-66de7553d049",
+    "activeVersionId":  null,
+    "versionCounter":  25,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-20T05:16:44.259Z",
+                       "createdAt":  "2025-12-20T05:16:44.259Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "jpdp6FtZ3MzN0uXf",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

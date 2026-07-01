@@ -1,0 +1,76 @@
+{
+  "name": "[Ops] Error Handler -> Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🚨 [Ops] Error Handler → Slack\n\n**Reusable error notifier for your whole n8n instance.**\n\nWhenever a workflow that points to this one fails, n8n triggers it\nautomatically and posts the failure details to Slack:\nworkflow name, the node that failed, the error message, and a link\nto the failed execution.\n\n### How to attach it to a workflow\nOpen any workflow → **Settings (3 dots) → Settings → Error Workflow**\n→ select **[Ops] Error Handler → Slack**.\n\n### Setup\n- Pick your Slack credential + alert channel on the **Send Slack Alert** node.\n- That's it — no trigger to run manually; it fires on failures.",
+        "height": 300,
+        "width": 560,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-360, -360],
+      "id": "sticky-err-overview",
+      "name": "Sticky Error Overview"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-300, 0],
+      "id": "err-trigger-0001",
+      "name": "On Error",
+      "notes": "Fires automatically when any workflow that has this set as its Error Workflow fails. Receives the failed execution + error details."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a readable Slack alert from the Error Trigger payload\nconst d = $json || {};\nconst e = d.execution || {};\nconst w = d.workflow || {};\nconst err = e.error || {};\n\nconst text = [\n  '\\uD83D\\uDD34 *n8n workflow FAILED*',\n  `*Workflow:* ${w.name || 'unknown'}  (${w.id || '-'})`,\n  `*Failed at node:* ${e.lastNodeExecuted || 'unknown'}`,\n  `*Mode:* ${e.mode || '-'}`,\n  `*Error:* ${err.message || 'no message'}`,\n  e.url ? `*Open execution:* ${e.url}` : ''\n].filter(Boolean).join('\\n');\n\nreturn [{ json: { text } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "id": "err-format-0002",
+      "name": "Format Error Message",
+      "notes": "Turns the raw error payload into a readable Slack message."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0BCDBS0WNA",
+          "mode": "id",
+          "cachedResultName": "all-slack-automation"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [120, 0],
+      "id": "err-slack-0003",
+      "name": "Send Slack Alert",
+      "notes": "Sends the failure alert to Slack.",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On Error": {
+      "main": [[{ "node": "Format Error Message", "type": "main", "index": 0 }]]
+    },
+    "Format Error Message": {
+      "main": [[{ "node": "Send Slack Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

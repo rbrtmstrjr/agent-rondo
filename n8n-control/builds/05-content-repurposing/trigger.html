@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!-- Northwind — Content Studio (demo trigger page for build #5). Paste a topic,
+     blog text, or URL → get platform drafts + image filed to Airtable for approval. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Northwind — Content Studio</title>
+  <style>
+    :root { --bg:#070a11; --surface:#0f1420; --line:#273044; --ink:#f4f7fc; --muted:#9aa6ba; --brand:#4c83ff; }
+    * { box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
+    body { margin:0; background:radial-gradient(90% 60% at 50% -10%,rgba(76,131,255,.12),transparent 60%),var(--bg); color:var(--ink); min-height:100vh; }
+    .wrap { max-width:720px; margin:0 auto; padding:52px 20px; }
+    h1 { font-size:26px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 22px; }
+    textarea { width:100%; min-height:120px; background:var(--surface); border:1px solid var(--line); border-radius:14px; color:var(--ink); padding:14px; font-size:14px; outline:none; resize:vertical; }
+    textarea:focus { border-color:var(--brand); }
+    button { margin-top:14px; background:linear-gradient(180deg,#5b8def,#2f6bff); color:#fff; border:0; border-radius:12px; padding:12px 22px; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:default; }
+    .spin { display:none; color:var(--muted); margin-top:18px; } .spin.show { display:block; }
+    .out { display:none; margin-top:22px; } .out.show { display:block; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:12px; }
+    .card h3 { margin:0 0 8px; font-size:13px; color:var(--brand); letter-spacing:.5px; text-transform:uppercase; }
+    .card pre { margin:0; white-space:pre-wrap; font-family:inherit; font-size:14px; line-height:1.55; color:#dfe6f2; }
+    .pill { display:inline-block; background:rgba(255,176,102,.15); color:#ffb066; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; }
+    a { color:var(--brand); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>✍️ Content Studio <span style="font-size:13px;color:var(--muted);font-weight:400">· Northwind</span></h1>
+    <p class="sub">Paste a topic, a blog post, or a URL — get ready-to-post drafts for every channel + an image, queued for approval.</p>
+    <textarea id="in" placeholder="e.g. 5 warning signs your furnace is about to fail   —or—   https://yourblog.com/post   —or— paste full article text"></textarea>
+    <button id="go">Generate content →</button>
+    <div class="spin" id="spin">⏳ Writing posts &amp; generating an image… (~15–25s)</div>
+    <div class="out" id="out"></div>
+  </div>
+  <script>
+    const WEBHOOK_URL = "https://n8n.srv1193790.hstgr.cloud/webhook/content-northwind";
+    const inp = document.getElementById("in"), go = document.getElementById("go"), spin = document.getElementById("spin"), out = document.getElementById("out");
+    go.onclick = async () => {
+      const input = inp.value.trim(); if (!input) return;
+      go.disabled = true; out.classList.remove("show"); spin.classList.add("show");
+      try {
+        const r = await fetch(WEBHOOK_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ input }) });
+        const d = await r.json(); spin.classList.remove("show"); go.disabled = false;
+        if (!d.ok) { out.innerHTML = '<div class="card">⚠️ ' + (d.error || "Something went wrong.") + '</div>'; out.classList.add("show"); return; }
+        const c = d.drafts || {};
+        out.innerHTML =
+          '<div class="card"><span class="pill">Pending approval</span> &nbsp; <b>' + (d.title||"") + '</b> · ' +
+          (d.imageAttached ? "🖼️ image attached" : "no image") + ' · <a href="' + d.airtableUrl + '" target="_blank">open in Airtable →</a></div>' +
+          card("LinkedIn", c.linkedin) + card("X / Twitter", c.twitter) + card("Facebook", c.facebook) + card("Instagram", c.instagram) +
+          '<p style="color:var(--muted);font-size:13px">Approve or reject it from the Slack message to set its status.</p>';
+        out.classList.add("show");
+      } catch (e) { spin.classList.remove("show"); go.disabled = false; out.innerHTML = '<div class="card">Couldn\'t reach the server.</div>'; out.classList.add("show"); }
+    };
+    function card(label, text) { return '<div class="card"><h3>' + label + '</h3><pre>' + (text||"").replace(/</g,"&lt;") + '</pre></div>'; }
+  </script>
+</body>
+</html>

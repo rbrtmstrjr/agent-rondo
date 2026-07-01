@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!--
+  Northwind — Invoice Inbox (demo upload page for portfolio build #4).
+  Drag-drop or pick a PDF/image invoice → it's read by Gemini Vision, validated,
+  and filed to Airtable. Open this file in a browser to demo.
+  Set WEBHOOK_URL below if the n8n path changes.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Northwind — Invoice Inbox</title>
+  <style>
+    :root { --bg:#070a11; --surface:#0f1420; --line:#273044; --ink:#f4f7fc; --muted:#9aa6ba; --brand:#4c83ff; --ok:#36d399; --warn:#ffb066; }
+    * { box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
+    body { margin:0; background:radial-gradient(90% 60% at 50% -10%,rgba(76,131,255,.12),transparent 60%),var(--bg); color:var(--ink); min-height:100vh; }
+    .wrap { max-width:640px; margin:0 auto; padding:56px 20px; }
+    h1 { font-size:28px; margin:0 0 4px; }
+    .sub { color:var(--muted); margin:0 0 28px; }
+    .drop { border:2px dashed var(--line); border-radius:18px; background:var(--surface); padding:44px 24px; text-align:center; cursor:pointer; transition:.2s; }
+    .drop:hover, .drop.over { border-color:var(--brand); background:#121a2b; }
+    .drop strong { display:block; font-size:17px; margin-bottom:6px; }
+    .drop span { color:var(--muted); font-size:13px; }
+    .card { margin-top:22px; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:22px; display:none; }
+    .card.show { display:block; }
+    .badge { display:inline-block; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; }
+    .badge.ok { background:rgba(54,211,153,.15); color:var(--ok); }
+    .badge.warn { background:rgba(255,176,102,.15); color:var(--warn); }
+    .row { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
+    .row span:first-child { color:var(--muted); }
+    .reasons { margin-top:12px; background:rgba(255,176,102,.08); border:1px solid rgba(255,176,102,.3); border-radius:10px; padding:10px 14px; color:var(--warn); font-size:13px; }
+    .spin { display:none; text-align:center; color:var(--muted); margin-top:22px; }
+    .spin.show { display:block; }
+    .saved { margin-top:14px; color:var(--ok); font-size:13px; }
+    .file { color:var(--brand); font-size:12px; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📥 Invoice Inbox <span style="font-size:13px;color:var(--muted);font-weight:400">· Northwind Home Services</span></h1>
+    <p class="sub">Drop a supplier invoice — it gets read, checked, and filed to Airtable automatically.</p>
+
+    <label class="drop" id="drop">
+      <strong>Drop a PDF or image here</strong>
+      <span>or click to choose a file · invoices &amp; receipts</span>
+      <input type="file" id="file" accept="application/pdf,image/*" hidden />
+    </label>
+
+    <div class="spin" id="spin">⏳ Reading the invoice with AI…</div>
+
+    <div class="card" id="card"></div>
+  </div>
+
+  <script>
+    const WEBHOOK_URL = "https://n8n.srv1193790.hstgr.cloud/webhook/invoice-northwind";
+    const drop = document.getElementById("drop"), fileEl = document.getElementById("file");
+    const spin = document.getElementById("spin"), card = document.getElementById("card");
+
+    ["dragover","dragenter"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave","drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", ev => { if (ev.dataTransfer.files[0]) handle(ev.dataTransfer.files[0]); });
+    fileEl.addEventListener("change", () => { if (fileEl.files[0]) handle(fileEl.files[0]); });
+
+    function handle(file) {
+      card.classList.remove("show"); spin.classList.add("show");
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await fetch(WEBHOOK_URL, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: file.name, mimeType: file.type, data: reader.result }),
+          });
+          const d = await res.json();
+          spin.classList.remove("show");
+          if (!d.ok) { renderError(d.error || "Could not read that file."); return; }
+          show(d, file.name);
+        } catch (e) { spin.classList.remove("show"); renderError("Couldn't reach the server."); }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function renderError(msg) {
+      card.innerHTML = '<span class="badge warn">Error</span><p style="margin-top:12px">' + msg + '</p>';
+      card.classList.add("show");
+    }
+
+    function show(d, name) {
+      const ok = d.status === "OK";
+      const rows = [
+        ["Vendor", d.vendor || "—"],
+        ["Invoice #", d.invoiceNumber || "—"],
+        ["Total", (d.currency || "USD") + " " + Number(d.total || 0).toFixed(2)],
+        ["Due date", d.dueDate || "—"],
+        ["Line items", d.itemCount],
+        ["AI confidence", (d.confidence || 0) + "%"],
+      ].map(r => '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>').join("");
+      card.innerHTML =
+        '<span class="badge ' + (ok ? "ok" : "warn") + '">' + (ok ? "✅ Logged" : "⚠️ Needs review") + '</span>' +
+        '<div style="margin-top:14px">' + rows + '</div>' +
+        (d.reasons && d.reasons.length ? '<div class="reasons">Flagged: ' + d.reasons.join("; ") + '</div>' : "") +
+        '<div class="saved">✓ Saved to Airtable' + (ok ? "" : " (marked for review)") + '</div>' +
+        '<div class="file">' + name + '</div>';
+      card.classList.add("show");
+    }
+  </script>
+</body>
+</html>

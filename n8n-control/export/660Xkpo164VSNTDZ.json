@@ -1,0 +1,182 @@
+﻿{
+    "updatedAt":  "2026-06-23T05:04:38.183Z",
+    "createdAt":  "2026-06-23T03:54:59.276Z",
+    "id":  "660Xkpo164VSNTDZ",
+    "name":  "[Ops] Error Handler -\u003e Slack",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## 🚨 [Ops] Error Handler → Slack\n\n**Reusable error notifier for your whole n8n instance.**\n\nWhenever a workflow that points to this one fails, n8n triggers it\nautomatically and posts the failure details to Slack:\nworkflow name, the node that failed, the error message, and a link\nto the failed execution.\n\n### How to attach it to a workflow\nOpen any workflow → **Settings (3 dots) → Settings → Error Workflow**\n→ select **[Ops] Error Handler → Slack**.\n\n### Setup\n- Pick your Slack credential + alert channel on the **Send Slack Alert** node.\n- That\u0027s it — no trigger to run manually; it fires on failures.",
+                                         "height":  300,
+                                         "width":  560,
+                                         "color":  2
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -360,
+                                       -360
+                                   ],
+                      "id":  "sticky-err-overview",
+                      "name":  "Sticky Error Overview"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.errorTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -300,
+                                       0
+                                   ],
+                      "id":  "err-trigger-0001",
+                      "name":  "On Error",
+                      "notes":  "Fires automatically when any workflow that has this set as its Error Workflow fails. Receives the failed execution + error details."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Build a readable Slack alert from the Error Trigger payload\nconst d = $json || {};\nconst e = d.execution || {};\nconst w = d.workflow || {};\nconst err = e.error || {};\n\nconst text = [\n  \u0027\\uD83D\\uDD34 *n8n workflow FAILED*\u0027,\n  `*Workflow:* ${w.name || \u0027unknown\u0027}  (${w.id || \u0027-\u0027})`,\n  `*Failed at node:* ${e.lastNodeExecuted || \u0027unknown\u0027}`,\n  `*Mode:* ${e.mode || \u0027-\u0027}`,\n  `*Error:* ${err.message || \u0027no message\u0027}`,\n  e.url ? `*Open execution:* ${e.url}` : \u0027\u0027\n].filter(Boolean).join(\u0027\\n\u0027);\n\nreturn [{ json: { text } }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -100,
+                                       0
+                                   ],
+                      "id":  "err-format-0002",
+                      "name":  "Format Error Message",
+                      "notes":  "Turns the raw error payload into a readable Slack message."
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "message",
+                                         "operation":  "post",
+                                         "select":  "channel",
+                                         "channelId":  {
+                                                           "__rl":  true,
+                                                           "value":  "C0BCDBS0WNA",
+                                                           "mode":  "id",
+                                                           "cachedResultName":  "all-slack-automation"
+                                                       },
+                                         "text":  "={{ $json.text }}",
+                                         "otherOptions":  {
+
+                                                          }
+                                     },
+                      "type":  "n8n-nodes-base.slack",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       120,
+                                       0
+                                   ],
+                      "id":  "err-slack-0003",
+                      "name":  "Send Slack Alert",
+                      "notes":  "Sends the failure alert to Slack.",
+                      "credentials":  {
+                                          "slackApi":  {
+                                                           "id":  "DnfgaCSu303JPlI3",
+                                                           "name":  "Slack - n8n Bot"
+                                                       }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "On Error":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Format Error Message",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Format Error Message":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Send Slack Alert",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "callerPolicy":  "workflowsFromSameOwner",
+                     "availableInMCP":  false
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  null,
+    "versionId":  "7f2c1ac5-da9f-427d-91ec-5655c160d058",
+    "activeVersionId":  null,
+    "versionCounter":  3,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-06-23T03:54:59.278Z",
+                       "createdAt":  "2026-06-23T03:54:59.278Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "660Xkpo164VSNTDZ",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-25T03:47:54.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-24",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

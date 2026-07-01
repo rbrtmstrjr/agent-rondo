@@ -1,0 +1,237 @@
+﻿{
+    "updatedAt":  "2026-02-26T14:01:20.241Z",
+    "createdAt":  "2026-02-26T12:32:23.390Z",
+    "id":  "O9nt7zYgswYQIQ57",
+    "name":  "Daily Quotes | Unique Names",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-pro",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-pro"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "=You are generating cinematic inspirational image prompts.\n\nYour task is to return EXACTLY 3 items in a valid JSON array.\n\nEach item must contain:\n{\n  \"prompt\": \"full combined image generation prompt\"\n}\n\nEach prompt must include:\n\n1. A short HOPE-FILLED inspirational message (maximum 20 words).\n   - Deeply uplifting.\n   - Reassuring.\n   - Encouraging strength, healing, growth, new beginnings.\n   - May gently reference God in a comforting way (not preachy).\n   - Must feel powerful and emotionally warm.\n   - No emojis.\n   - No hashtags.\n   - Each message must be different.\n\n2. A cinematic indoor background scene ONLY.\n   - Indoor setting (quiet bedroom, warm living room, soft curtain window light, gentle morning light through window, warm lamp glow, minimalist peaceful interior).\n   - Calm, quiet, hopeful atmosphere.\n   - Soft natural lighting preferred.\n   - Dark cinematic tones but gentle and warm.\n   - Realistic photography.\n   - Subtle film grain.\n   - Shallow depth of field.\n   - No outdoor elements.\n   - Each background must be different.\n\nSTRICT DESIGN REQUIREMENTS (MUST FOLLOW):\n\nQUOTE TEXT:\n- Centered in the middle.\n- Typewriter-style font.\n- Font size: 120px.\n- Font color: pure white (#FFFFFF).\n- No background.\n- No border.\n- No outline.\n- No stroke.\n- No shadow.\n- No glow.\n- Plain solid white text only.\n- Must be the dominant visual element.\n\nWATERMARK:\n- Text must be EXACTLY: @unique_names\n- Preserve the underscore.\n- Do NOT modify the text.\n- Bottom center placement.\n- Same typewriter-style font.\n- Font size: 24px.\n- Font color: white (#FFFFFF).\n- Opacity: 30%.\n- No shadow.\n- No outline.\n- Subtle watermark appearance only.\n\nOUTPUT RULES:\n- Return ONLY a valid JSON array.\n- No explanation.\n- No markdown.\n- No text before or after the JSON.\n- The array must contain exactly 3 objects.\n- Each object must contain only the \"prompt\" field."
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1872,
+                                       512
+                                   ],
+                      "id":  "a1f7b26d-74c3-4a2c-b5a9-76d78e8e044f",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "epic catch api"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "name, meaning, prompt",
+                                         "include":  "allOtherFields",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       2320,
+                                       512
+                                   ],
+                      "id":  "036c6991-7557-4955-a46d-edacf0f62739",
+                      "name":  "Split Out"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "return JSON.parse($input.first().json.content.parts[0].text);"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2160,
+                                       512
+                                   ],
+                      "id":  "60c52229-2b20-40aa-a34a-6ed069595d76",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1696,
+                                       512
+                                   ],
+                      "id":  "bcce6e40-2827-4e50-8a7f-b606a046eb66",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $json.prompt }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       2496,
+                                       512
+                                   ],
+                      "id":  "ef409349-d2a4-48d6-9953-09a5b684d45f",
+                      "name":  "Generate an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "epic catch api"
+                                                            }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Split Out":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "Generate an image",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Split Out",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Message a model",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "4541325b-d4d2-4635-b8a1-2255f392bbf4",
+    "activeVersionId":  null,
+    "versionCounter":  13,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-02-26T12:32:23.398Z",
+                       "createdAt":  "2026-02-26T12:32:23.398Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "O9nt7zYgswYQIQ57",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

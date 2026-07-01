@@ -1,0 +1,353 @@
+{
+  "name": "Educational Reel - Storyboard + Images (Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🎬 Educational Reel — full pipeline\n\nStoryboard (Gemini 2.5 Pro) -> B&W single-scene images (Gemini 3.1 Flash Image) -> assembled video (JSON2Video) + voiceover (Gemini TTS).\n\nOutput: ONE clean summary message in Slack (Automation #, Title, Voiceover text + link, Images list, Video link). No more one-by-one image posts.",
+        "height": 260,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-620, -360],
+      "id": "edu-sticky-1",
+      "name": "Overview"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-560, 20],
+      "id": "edu-trigger",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "c-topic", "name": "topic", "value": "auto", "type": "string" },
+            { "id": "c-scenes", "name": "maxScenes", "value": 40, "type": "number" },
+            { "id": "c-page", "name": "pageId", "value": "559642567232550", "type": "string" },
+            { "id": "c-ver", "name": "graphVersion", "value": "v21.0", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-360, 20],
+      "id": "edu-config",
+      "name": "Config",
+      "notes": "topic = the parenting lesson; numScenes = number of images (30 ~= 1:30-2:00)."
+    },
+    {
+      "parameters": {
+        "modelId": { "__rl": true, "value": "models/gemini-3.1-pro-preview", "mode": "list", "cachedResultName": "models/gemini-3.1-pro-preview" },
+        "messages": {
+          "values": [
+            { "content": "=You are a world-class parenting content creator who has studied the highest-performing parenting short-videos. Write SHORT, punchy, DIRECT expert advice for an English-speaking parenting audience (US/UK/CA/AU). The narration is authoritative, practical advice spoken in SECOND PERSON ('you', 'your child') — it is NOT a personal memoir. Do NOT use first-person lines like 'when my children were small', 'what I do', or 'I learned'. (A warm grandmother voice will read it aloud, so the words just need to be clear, confident, relatable advice — plain English, no emojis, no hashtags.)\n\nTopic: {{ $('Config').first().json.topic }} — IMPORTANT: if this is blank or says 'auto', CHOOSE a fresh, broadly-appealing, high-engagement parenting topic yourself. Cover the FULL breadth of parenting (newborns, babies, toddlers, school-age kids, tweens, teens; sleep, tantrums, discipline, screen time, emotional intelligence, confidence, communication, sibling rivalry, picky eating, anxiety, independence, raising boys, raising girls, for dads and for moms). Do NOT default to the same scenario every time — think like a real content creator chasing variety and reach.\n\nWrite a COHESIVE storyboard for a 90-120 second (1:30 to 2:00) vertical Reel told with STATIC images (one still image per scene, NO animation), featuring the SAME recurring characters in every scene. Structure (proven viral format): HOOK (a scroll-stopping opener addressed to the viewer — a counterintuitive claim, a NAMED method/'trick', or 'the secret to...'; 4-6 FAST scenes) -> call out the common MISTAKE most parents make -> 'here is what actually works' -> 3 practical tips, each with a SPECIFIC thing to SAY or DO (give the exact words, e.g. 'instead of X, say Y'), shown across several real-moment scenes -> a reframe close ('it's not about X, it's about Y') -> a signature tagline. Keep it concrete and direct like a confident expert — NOT a personal story. The visual arc should still feel cohesive and build to a warm payoff.\n\nPACING & COUNT (CRITICAL): Write the COMPLETE narration for a 90-120 second (1:30 to 2:00) video at a warm pace (about 230-300 words total). Break it into SHORT phrases of 6-10 words each (hook even shorter) — ONE image per phrase, so cuts stay fast with zero dead space. The NUMBER of scenes is DETERMINED BY THE SCRIPT: produce as many short-phrase scenes as the narration naturally needs to fill 90-120 seconds (roughly 25-40). Do NOT pad and do NOT force a round number. Hard limit: never more than {{ $('Config').first().json.maxScenes }} scenes.\n\nCRITICAL for visual consistency:\n- Define ONE recurring cast that FITS THIS TOPIC — a parent and a child of the appropriate gender and age for the subject (e.g. a dad and his teenage son, a mom and her baby, a father and a school-age daughter, two parents and a tween). Do NOT always use a mother and a toddler; vary the cast to match the topic. Give EXACT, fixed physical detail (age, hairstyle, build, clothing style and shapes) so they look identical in every image. The art is BLACK AND WHITE, so describe shapes and styles only and do NOT mention any colors.\n- Define ONE fixed visual style (lighting, palette, lens, mood, setting).\n- Each scene's image must visually MATCH that scene's narration and advance the arc.\n\nReturn ONLY valid JSON (no markdown, no code fences) in EXACTLY this shape:\n{\n  \"title\": \"<short internal title>\",\n  \"method_name\": \"<a memorable named technique, or null>\",\n  \"style_guide\": \"<one rich sentence of fixed visual style>\",\n  \"cast\": { \"adult\": \"<exact fixed description of the parent>\", \"child\": \"<exact fixed description of the child>\" },\n  \"scenes\": [\n    { \"beat\": \"<hook|tip1|tip2|tip3|close>\", \"narration\": \"<the short, direct advice phrase spoken in this scene (second person, no first-person memoir)>\", \"on_screen_text\": \"<short caption, max 6 words>\", \"image_action\": \"<what the characters are doing + composition for THIS scene; action, emotion, framing only; leave clear empty space top and bottom for captions>\" }\n  ],\n  \"tagline\": \"<warm signature sign-off line>\",\n  \"fb_caption\": \"<hooky first line, 1-2 value lines, soft CTA to follow the page>\",\n  \"hashtags\": [\"<5-8 english parenting hashtags>\"]\n}\nThe number of scenes follows the script (one image per short phrase), up to {{ $('Config').first().json.maxScenes }} scenes." }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [-160, 20],
+      "id": "edu-storyboard",
+      "name": "Storyboard Generator",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": { "googlePalmApi": { "id": "0eINQFptxG4T1uH7", "name": "Google Gemini(PaLM) Api account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the storyboard JSON\nconst text = $json.content.parts[0].text;\nlet clean = text.trim().replace(/^```json\\s*/i,'').replace(/^```\\s*/,'').replace(/```$/,'').trim();\nlet d;\ntry { d = JSON.parse(clean); } catch (e) { throw new Error('Storyboard model returned invalid JSON. Raw: ' + clean); }\nif (!Array.isArray(d.scenes) || d.scenes.length < 2) throw new Error('Storyboard needs at least 2 scenes.');\nconst full_narration = (d.scenes || []).map(s => String(s.narration || '').trim()).filter(Boolean).join(' ');\nreturn [{ json: { ...d, full_narration } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 20],
+      "id": "edu-parse",
+      "name": "Parse Storyboard",
+      "notes": "Validates JSON + builds full_narration. Output is ONE item with the full parsed storyboard."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fan out one item per scene; inject the SAME cast + style into every image prompt for consistency\nconst d = $('Parse Storyboard').first().json;\nconst style = d.style_guide || '';\nconst adult = (d.cast && d.cast.adult) || '';\nconst child = (d.cast && d.cast.child) || '';\nconst cap = Number($('Config').first().json.maxScenes) || 40;\nconst scenes = (Array.isArray(d.scenes) ? d.scenes : []).slice(0, cap);\nreturn scenes.map((s, i) => ({\n  json: {\n    scene_index: i + 1,\n    total: scenes.length,\n    beat: s.beat || '',\n    narration: s.narration || '',\n    on_screen_text: s.on_screen_text || '',\n    duration: Math.max(2, Math.min(4, (String(s.narration || '').trim().split(' ').filter(Boolean).length || 7) / 2.5)),\n    image_prompt: 'A SINGLE full-frame illustration showing ONE moment only. This is ONE picture — NOT a comic strip, NOT multiple panels, NOT a grid, NO split frames or boxes. STRICTLY BLACK AND WHITE — monochrome grayscale ONLY: black ink outlines with light grey flat shading on a plain white background. Absolutely NO color anywhere; ignore any colors mentioned in the descriptions and render everything in black, white and grey. Simple clean cartoon line-art, friendly and expressive, vertical 9:16 portrait. CHARACTERS (keep EXACTLY identical, same simple character design in every image): ' + adult + ' ; ' + child +\n      '. Depict ONLY this single moment, filling the whole frame: ' + (s.image_action || '') +\n      '. Strong clear emotion, simple uncluttered background, a little empty space near the top or bottom for captions.' +\n      ' Do NOT divide the image into panels, frames, or boxes. Do NOT render any text, words, letters, numbers, logos, or watermarks.'\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 120],
+      "id": "edu-split",
+      "name": "Split Scenes",
+      "notes": "One item per scene. Injects locked style + fixed cast for consistency; sets per-scene duration (2-4s)."
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "modelId": { "__rl": true, "value": "models/gemini-3.1-flash-image", "mode": "list", "cachedResultName": "models/gemini-3.1-flash-image" },
+        "prompt": "={{ $json.image_prompt }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [440, 120],
+      "id": "edu-image",
+      "name": "Generate Scene Image",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Gemini 3.1 Flash Image, one per scene. Outputs binary 'data'.",
+      "credentials": { "googlePalmApi": { "id": "0eINQFptxG4T1uH7", "name": "Google Gemini(PaLM) Api account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate each Gemini image; REGENERATE any corrupt (0-byte) one in place (up to 3 tries) so every scene survives and stays matched to the voiceover. If a scene truly can't be recovered it is skipped (graceful fallback).\nconst all = $input.all();\nconst meta = $('Split Scenes').all();\nconst MAX = 3;\nconst out = [];\nlet regenCount = 0, dropCount = 0;\nfor (let i = 0; i < all.length; i++) {\n  const m = (meta[i] && meta[i].json) ? meta[i].json : {};\n  let bin = (all[i].binary && all[i].binary.data) ? all[i].binary.data : null;\n  let size = 0;\n  if (bin) { const buf = await this.helpers.getBinaryDataBuffer(i, 'data'); size = buf ? buf.length : 0; }\n  let attempts = 0;\n  while (size <= 1024 && attempts < MAX && m.image_prompt) {\n    attempts++;\n    try {\n      const resp = await this.helpers.httpRequestWithAuthentication('googlePalmApi', {\n        method: 'POST',\n        url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent',\n        body: { contents: [{ parts: [{ text: m.image_prompt }] }] },\n        json: true\n      });\n      const parts = (resp && resp.candidates && resp.candidates[0] && resp.candidates[0].content && resp.candidates[0].content.parts) || [];\n      const imgPart = parts.find(p => p.inlineData && p.inlineData.data);\n      if (imgPart) {\n        const buf = Buffer.from(imgPart.inlineData.data, 'base64');\n        if (buf && buf.length > 1024) {\n          bin = await this.helpers.prepareBinaryData(buf, 'image.png', imgPart.inlineData.mimeType || 'image/png');\n          size = buf.length;\n        }\n      }\n    } catch (e) { /* try again */ }\n  }\n  if (attempts > 0 && size > 1024) regenCount++;\n  if (size > 1024 && bin) {\n    out.push({ json: { scene_index: m.scene_index, regenerated: attempts > 0 }, binary: { data: bin } });\n  } else {\n    dropCount++;\n  }\n}\nif (out.length < 2) throw new Error('Only ' + out.length + ' valid image(s) after regeneration; ' + dropCount + ' unrecoverable.');\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 120],
+      "id": "edu-validate",
+      "name": "Validate Images",
+      "notes": "Filters out 0-byte Gemini images."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.graphVersion }}/{{ $('Config').first().json.pageId }}/photos",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": { "parameters": [ { "name": "published", "value": "false" }, { "parameterType": "formBinaryData", "name": "source", "inputDataFieldName": "data" } ] },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 120],
+      "id": "edu-upload",
+      "name": "Upload Image (unpublished)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "Uploads each scene image to FB unpublished to get a URL for the video + Slack.",
+      "credentials": { "facebookGraphApi": { "id": "tI4WK5lgRCOtmaKN", "name": "FB Page - Unique Names" } }
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/{{ $('Config').first().json.graphVersion }}/{{ $json.id }}?fields=images",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 120],
+      "id": "edu-geturl",
+      "name": "Get Image URL",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notes": "Fetches each image's URL.",
+      "credentials": { "facebookGraphApi": { "id": "tI4WK5lgRCOtmaKN", "name": "FB Page - Unique Names" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all scene image URLs + durations into a JSON2Video movie spec\nconst items = $input.all();\nconst meta = $('Split Scenes').all();\nconst scenes = [];\nfor (let i = 0; i < items.length; i++) {\n  const imgs = items[i].json.images;\n  const url = imgs && imgs[0] ? imgs[0].source : null;\n  if (!url) continue;\n  const dur = (meta[i] && meta[i].json.duration) ? meta[i].json.duration : 3;\n  scenes.push({ elements: [ { type: 'image', src: url, duration: dur, zoom: 2 } ] });\n}\nif (scenes.length < 2) throw new Error('Need at least 2 scene images to assemble a video.');\nreturn [{ json: { movie: { resolution: 'custom', width: 1080, height: 1920, scenes } } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 120],
+      "id": "edu-buildmovie",
+      "name": "Build Movie JSON",
+      "notes": "Collects all image URLs + per-scene durations into a JSON2Video movie spec (1080x1920)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.json2video.com/v2/movies",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.movie) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 120],
+      "id": "edu-render",
+      "name": "Render Video",
+      "notes": "POSTs the movie spec to JSON2Video. Returns a project id.",
+      "credentials": { "httpHeaderAuth": { "id": "sUJ4bFnlpiP4o103", "name": "JSON2Video x-api-key" } }
+    },
+    {
+      "parameters": { "amount": 15, "unit": "seconds" },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1640, 120],
+      "id": "edu-wait",
+      "name": "Wait",
+      "webhookId": "edu-wait-webhook"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.json2video.com/v2/movies?project={{ $('Render Video').first().json.project }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1840, 120],
+      "id": "edu-status",
+      "name": "Check Status",
+      "notes": "Polls render status. movie.status becomes 'done' with movie.url.",
+      "credentials": { "httpHeaderAuth": { "id": "sUJ4bFnlpiP4o103", "name": "JSON2Video x-api-key" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [ { "id": "cond-done", "leftValue": "={{ $json.movie.status }}", "rightValue": "done", "operator": { "type": "string", "operation": "equals" } } ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2040, 120],
+      "id": "edu-isdone",
+      "name": "Is Done?",
+      "notes": "TRUE -> post the summary. FALSE -> wait and poll again."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "text": "=*Automation #{{ $execution.id }}*\n*Title:* {{ $('Parse Storyboard').first().json.title }}\n\n*Voiceover:*\n{{ $('Parse Storyboard').first().json.full_narration }}\n\n*Voiceover link:* {{ $('Slack: Upload Voiceover').first().json.permalink || '⚠️ voiceover failed — re-run' }}\n\n*Images ({{ $('Get Image URL').all().length }}):* {{ $('Get Image URL').all().map((it, n) => (it.json.images && it.json.images[0] ? '<' + it.json.images[0].source + '|' + (n + 1) + '>' : (n + 1) + '✗')).join('  ·  ') }}\n\n*Video link:* {{ $json.movie.url }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [2240, 40],
+      "id": "edu-summary",
+      "name": "Post Summary",
+      "notes": "ONE consolidated message: Automation #, Title, Voiceover text + link, Images list, Video link.",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: $('Parse Storyboard').first().json.full_narration } ] } ], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Sulafat' } } } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 360],
+      "id": "edu-tts",
+      "name": "Generate Voiceover",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 8000,
+      "onError": "continueRegularOutput",
+      "notes": "Gemini TTS (free, reuses your Gemini key). Voice 'Sulafat'. Returns base64 PCM audio.",
+      "credentials": { "googlePalmApi": { "id": "0eINQFptxG4T1uH7", "name": "Google Gemini(PaLM) Api account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gemini TTS returns raw PCM audio (base64). Wrap it in a WAV header to make a playable file.\nconst part = $json.candidates[0].content.parts[0];\nconst b64 = part.inlineData.data;\nconst mt = part.inlineData.mimeType || '';\nconst m = mt.match(/rate=(\\d+)/);\nconst sampleRate = m ? parseInt(m[1], 10) : 24000;\nconst channels = 1, bits = 16;\nconst pcm = Buffer.from(b64, 'base64');\nconst byteRate = sampleRate * channels * bits / 8;\nconst blockAlign = channels * bits / 8;\nconst h = Buffer.alloc(44);\nh.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8);\nh.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);\nh.writeUInt32LE(sampleRate, 24); h.writeUInt32LE(byteRate, 28); h.writeUInt16LE(blockAlign, 32); h.writeUInt16LE(bits, 34);\nh.write('data', 36); h.writeUInt32LE(pcm.length, 40);\nconst wav = Buffer.concat([h, pcm]);\nconst bin = await this.helpers.prepareBinaryData(wav, 'voiceover.wav', 'audio/wav');\nreturn [{ json: { ok: true, bytes: wav.length, seconds: Math.round(pcm.length / byteRate) }, binary: { data: bin } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 360],
+      "id": "edu-pcm2wav",
+      "name": "PCM to WAV",
+      "onError": "continueRegularOutput",
+      "notes": "Wraps Gemini's raw PCM into a playable WAV (binary 'data')."
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [640, 360],
+      "id": "edu-slack-audio",
+      "onError": "continueRegularOutput",
+      "name": "Slack: Upload Voiceover",
+      "notes": "Uploads the voiceover WAV to Slack to get a permalink (used in the summary message).",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0BCDBS0WNA", "mode": "id", "cachedResultName": "all-slack-automation" },
+        "message": "=📋 *Review storyboard BEFORE images are generated*\n\n*Title:* {{ $json.title }}\n\n*Narration:*\n{{ $json.full_narration }}\n\n*Scenes (images to generate):* {{ $json.scenes ? $json.scenes.length : '?' }}\n\nApprove to generate the video, or Reject to discard and write a NEW title + narration.",
+        "responseType": "approval",
+        "approvalOptions": { "values": { "approvalType": "double", "buttonApprovalLabel": "Approve", "buttonDisapprovalLabel": "Reject & rewrite" } },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [240, -160],
+      "id": "edu-approve",
+      "name": "Approve Storyboard",
+      "notes": "Posts Title + narration and PAUSES. Approve -> generate images/voiceover/video. Reject -> loop back and write a new storyboard. No paid images until approved.",
+      "credentials": { "slackApi": { "id": "DnfgaCSu303JPlI3", "name": "Slack - n8n Bot" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [ { "id": "cond-sb-approved", "leftValue": "={{ $json.data.approved }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } } ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, -160],
+      "id": "edu-sb-approved",
+      "name": "Storyboard Approved?",
+      "notes": "TRUE -> proceed to voiceover + images. FALSE -> loop back to Storyboard Generator to write a new one."
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Storyboard Generator", "type": "main", "index": 0 }]] },
+    "Storyboard Generator": { "main": [[{ "node": "Parse Storyboard", "type": "main", "index": 0 }]] },
+    "Parse Storyboard": { "main": [[{ "node": "Approve Storyboard", "type": "main", "index": 0 }]] },
+    "Approve Storyboard": { "main": [[{ "node": "Storyboard Approved?", "type": "main", "index": 0 }]] },
+    "Storyboard Approved?": { "main": [ [{ "node": "Generate Voiceover", "type": "main", "index": 0 }], [{ "node": "Storyboard Generator", "type": "main", "index": 0 }] ] },
+    "Split Scenes": { "main": [[{ "node": "Generate Scene Image", "type": "main", "index": 0 }]] },
+    "Generate Scene Image": { "main": [[{ "node": "Validate Images", "type": "main", "index": 0 }]] },
+    "Validate Images": { "main": [[{ "node": "Upload Image (unpublished)", "type": "main", "index": 0 }]] },
+    "Upload Image (unpublished)": { "main": [[{ "node": "Get Image URL", "type": "main", "index": 0 }]] },
+    "Get Image URL": { "main": [[{ "node": "Build Movie JSON", "type": "main", "index": 0 }]] },
+    "Build Movie JSON": { "main": [[{ "node": "Render Video", "type": "main", "index": 0 }]] },
+    "Render Video": { "main": [[{ "node": "Wait", "type": "main", "index": 0 }]] },
+    "Wait": { "main": [[{ "node": "Check Status", "type": "main", "index": 0 }]] },
+    "Check Status": { "main": [[{ "node": "Is Done?", "type": "main", "index": 0 }]] },
+    "Is Done?": { "main": [ [{ "node": "Post Summary", "type": "main", "index": 0 }], [{ "node": "Wait", "type": "main", "index": 0 }] ] },
+    "Generate Voiceover": { "main": [[{ "node": "PCM to WAV", "type": "main", "index": 0 }]] },
+    "PCM to WAV": { "main": [[{ "node": "Slack: Upload Voiceover", "type": "main", "index": 0 }]] },
+    "Slack: Upload Voiceover": { "main": [[{ "node": "Split Scenes", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "errorWorkflow": "660Xkpo164VSNTDZ" }
+}

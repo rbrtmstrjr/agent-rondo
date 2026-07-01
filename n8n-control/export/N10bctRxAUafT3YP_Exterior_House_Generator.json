@@ -1,0 +1,951 @@
+﻿{
+    "updatedAt":  "2026-01-06T03:45:33.396Z",
+    "createdAt":  "2025-12-22T11:19:48.968Z",
+    "id":  "N10bctRxAUafT3YP",
+    "name":  "Exterior House Generator",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "You are generating a 15-frame transformation sequence for an AI image-editing model that edits images frame-by-frame.\n\nThe goal is to restore an old, severely damaged residential HOUSE EXTERIOR into a fully clean, high-class, super modern, and professionally designed EXTERIOR through gradual, realistic edits.\n\nThe subject MUST be ONE residential house exterior, chosen randomly from the list below, and MUST remain the SAME house exterior throughout all frames.\n\nALLOWED EXTERIOR HOUSE TYPES (US ONLY):\n- Single-Family Suburban Home (United States)\n- Modern American Detached House\n- Traditional American Suburban House\n- Contemporary US Residential Home\n- Two-Story American Family House\n- Small Urban American House\n\nNO interiors are allowed.\nDo NOT generate indoor scenes, rooms, or interior views.\nDo NOT generate apartments, commercial buildings, or non-residential structures.\nDo NOT generate non-US architecture.\n\n────────────────────────\nGLOBAL LOCATION \u0026 ARCHITECTURE RULE (MANDATORY)\n────────────────────────\n- ALL scenes MUST clearly appear to be located in the UNITED STATES\n- Exterior architecture MUST follow American residential design standards\n- Acceptable materials and elements include:\n  - Asphalt shingle roofs, metal roofs, or modern flat roofs common in the US\n  - Vinyl siding, fiber cement siding, brick, stone veneer, or stucco (US-style)\n  - Double-hung or large rectangular American-style windows\n  - Concrete driveways, garages, sidewalks, and front walkways\n  - US-scale front yards, lawns, and suburban proportions\n- NO European, Asian, Mediterranean, or non-US architectural cues\n\n────────────────────────\nGLOBAL EXTERIOR ENVIRONMENT RULE\n────────────────────────\n- ALL scenes MUST be OUTDOOR residential exteriors\n- The house structure, roofline, facade layout, window positions, door location, garage, driveway, and front yard layout MUST remain unchanged from Frame 1 through Frame 14\n- The same physical house exterior must persist throughout the entire sequence\n\n────────────────────────\nCAMERA \u0026 FRAMING RULE (MANDATORY)\n────────────────────────\n- Frame 1 MUST be captured with an ULTRA-WIDE camera perspective\n- Wide field of view showing:\n  - Entire house facade\n  - Garage and driveway\n  - Front yard and surrounding ground\n  - Extra environmental context (edges of neighboring space if visible)\n- Camera angle, distance, lens type, perspective, and framing MUST remain EXACTLY THE SAME from Frame 1 through Frame 14\n- No cropping, zooming, tilting, or perspective shifts are allowed\n\n────────────────────────\nABANDONMENT RULE (MANDATORY — FRAME 1)\n────────────────────────\n- Frame 1 MUST depict a house exterior abandoned for at least 10 years\n- No signs of recent maintenance, renovation, or landscaping\n- Damage must appear natural, severe, and accumulated over time\n\nVisual indicators of long-term abandonment MUST include:\n- Peeling, cracked, or missing exterior paint or siding\n- Mold, mildew, algae, or dark water streaks\n- Broken, boarded, or shattered windows\n- Rusted or damaged gutters, railings, and fixtures\n- Overgrown weeds, dead grass, neglected landscaping\n- Heavily cracked, sunken, or broken concrete driveway and garage floor\n- Debris, trash, and fallen objects scattered around the yard\n- Sagging roof sections or missing shingles\n- Overall unsafe, decayed, abandoned appearance\n\n────────────────────────\nCRITICAL CONSISTENCY RULES (FRAMES 1–14 ONLY)\n────────────────────────\n- Camera angle, lens, and framing MUST remain EXACTLY the same\n- Structural elements MUST remain fixed\n- ONLY exterior surfaces, fixtures, and landscaping may be edited\n- If a change would require camera movement or layout change, DO NOT perform it\n\n────────────────────────\nARCHITECTURAL PRESERVATION RULE (MANDATORY)\n────────────────────────\n- The exterior represents ONE existing house only\n- Do NOT add new floors, extensions, garages, balconies, or porches\n- Do NOT add or remove windows or doors\n- Existing windows and doors may ONLY be repaired or replaced in the SAME location, size, and orientation\n- Roof shape and facade geometry MUST remain unchanged\n\n────────────────────────\nDESIGN INTENT — HIGH-CLASS MODERN US EXTERIOR (MANDATORY)\n────────────────────────\n- The final restored exterior MUST represent a high-class, premium, modern American residential design\n- The AI MUST select ONE consistent modern exterior style\n\nAllowed styles:\n- Modern American Minimal Luxury\n- Contemporary High-End US Residential\n- Warm Modern Suburban Luxury\n- Clean Architectural Modern Home (US)\n\nThe final exterior must feel:\n- Premium\n- Super modern but timeless\n- Professionally designed\n- Suitable for a high-end US neighborhood\n\n────────────────────────\nSTRUCTURAL \u0026 FIXTURE CONTINUITY RULE (MANDATORY)\n────────────────────────\n- Any exterior element removed MUST be restored or replaced later\n- This includes:\n  • Windows\n  • Doors\n  • Roof materials\n  • Gutters\n  • Railings\n  • Exterior lighting\n  • Concrete surfaces\n- No exterior element may remain broken or unfinished by the final frame\n\n────────────────────────\nFRAME 1 — IMAGE GENERATION ONLY\n────────────────────────\n- Frame 1 MUST be a complete image-generation prompt\n- It must NOT be an edit instruction\n\nFrame 1 must fully describe:\n- Exact US house type\n- House size, facade layout, roof type, garage, driveway, and materials\n- ULTRA-WIDE camera view (fixed for all frames)\n- Dull, overcast natural lighting\n- Severe exterior abandonment damage (10+ years)\n- The house framed EXACTLY as it will remain in Frames 1–14\n\nFor Frame 1:\n- \"generate_prompt\" MUST be filled\n- \"edit_instruction\" MUST be an empty string \"\"\n\n────────────────────────\nFRAMES 2–15 — EDIT INSTRUCTIONS ONLY\n────────────────────────\n- Frames 2–15 MUST be EDIT instructions only\n- Do NOT generate a new image\n- Do NOT mention camera or framing (EXCEPT Frame 15)\n- All edits must be gradual, realistic, and incremental\n- Maintain the same house exterior and layout\n\n────────────────────────\nEXTERIOR RESTORATION PROCESS\n(STRICT ORDER — UPDATED)\n────────────────────────\n\nFrame 2: Exterior trash \u0026 debris cleaning (NO REPAIR)\n- Remove trash, junk, fallen branches, and loose debris\n- Clear yard, driveway, and surrounding ground only\n\nFrame 3: Concrete \u0026 ground replacement (BEFORE HOUSE WORK)\n- Replace cracked driveway, garage floor, walkways, and ground concrete\n- Clean, fresh but unfinished concrete appearance\n- NO house facade repairs yet\n\nFrame 4: Deep exterior cleaning (HOUSE SURFACES ONLY)\n- Remove dirt, mold, algae, and grime from walls, roof, and fixtures\n- Reveal full extent of structural damage\n\nFrame 5: Removing damaged exterior elements\n- Remove broken fixtures, rotted trims, damaged railings\n- Leave structure exposed but intact\n\nFrame 6: Repairing exterior structural surfaces\n- Fix cracks, holes, and surface damage on walls and roof\n- No paint or finishes yet\n\nFrame 7: Roof restoration\n- Remove destroyed roofing\n- Install clean base roofing surface (unfinished look)\n\nFrame 8: Window \u0026 door structural repair\n- Repair existing frames only\n- No replacements yet\n\nFrame 9: Installing new windows \u0026 doors\n- Replace ONLY original windows and doors\n- Same size, count, and placement\n- Modern US-style replacements\n\nFrame 10: Base exterior coating\n- Apply primer or base exterior coat\n- Neutral tone only\n\nFrame 11: Final exterior color \u0026 material styling\n- Apply final modern US exterior palette\n- High-end, cohesive look\n\nFrame 12: Installing exterior fixtures\n- Lighting, railings, house numbers, mailbox\n- Premium modern US design\n\nFrame 13: Landscaping installation\n- Lawn, plants, and minimal landscaping\n- Clean, modern curb appeal\n\nFrame 14: Final exterior detailing\n- Finishing touches and polish\n- Fully restored, complete exterior\n\n────────────────────────\nFRAME 15 — FINAL NIGHT SCENE PRESENTATION\n────────────────────────\n- Same restored exterior as Frame 14\n- Convert to nighttime\n- NO layout or element changes\n\nAllowed changes:\n- Warm exterior lighting turns on\n- Porch and pathway lights glow\n- Subtle window interior glow\n- Natural nighttime shadows and contrast\n\nMood:\n- Elegant\n- Calm\n- High-end American residential atmosphere\n\n────────────────────────\nOUTPUT FORMAT (STRICT — JSON ONLY)\n────────────────────────\n\nReturn a JSON array only:\n\n[\n  {\n    \"frame\": number,\n    \"step_name\": \"\",\n    \"description\": \"\",\n    \"generate_prompt\": \"\",\n    \"edit_instruction\": \"\"\n  }\n]\n\nRULES:\n- Frame 1 → generate_prompt filled, edit_instruction empty\n- Frames 2–15 → edit_instruction filled, generate_prompt empty\n- Ultra-wide camera remains fixed until Frame 15\n- No sudden visual jumps\n- Final frame must feel high-class, super modern, refined, and complete\n"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -128,
+                                       -112
+                                   ],
+                      "id":  "74a0d6de-b814-4ebe-b379-834e8381f502",
+                      "name":  "Generate 15 Frame Prompts",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "=Edit and Fill all the space in this transparent image with this prompt:\n{{ $(\u0027Code in JavaScript2\u0027).item.json.generate_prompt_1 }}\n\nDo not:\n-Leave transparent space in the image. All space should be occupied\n-Create new dimension (it should be only 9x16 ratio)",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       704,
+                                       -112
+                                   ],
+                      "id":  "2ce30558-6699-455d-84c5-a5b93a6d4be0",
+                      "name":  "Generate first frame",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// 1. Read raw text from LLM output\nconst raw = $input.first().json.content.parts[0].text;\n\n// 2. Extract JSON array only\nconst jsonMatch = raw.match(/\\[[\\s\\S]*\\]/);\n\nif (!jsonMatch) {\n  throw new Error(\"No JSON array found in LLM output\");\n}\n\n// 3. Parse JSON safely\nconst frames = JSON.parse(jsonMatch[0]);\n\n// 4. Build output object\nlet output = {};\n\nframes.forEach(f =\u003e {\n  const index = f.frame;\n\n  output[`step_name_${index}`] = f.step_name;\n  output[`description_${index}`] = f.description;\n  output[`generate_prompt_${index}`] = f.generate_prompt;\n  output[`edit_instruction_${index}`] = f.edit_instruction;\n});\n\n// 5. Return n8n-compatible output\nreturn [\n  {\n    json: output\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       176,
+                                       -112
+                                   ],
+                      "id":  "d2fb3d80-3f6c-4aa2-8e36-06056385995d",
+                      "name":  "Code in JavaScript1"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Ensure this node runs once (Run Once for All Items)\n\n// 1) Read all items produced by the earlier node that parsed the LLM\n// Replace \"Code in JavaScript1\" with the exact node name if different\nconst itemsFromParser = $items(\"Code in JavaScript1\");\n\n// Convert node items to raw JSON frames\nconst allFrames = itemsFromParser.map(it =\u003e it.json);\n\n// Safety check\nif (!Array.isArray(allFrames) || allFrames.length === 0) {\n  throw new Error(\"No frames found from Code in JavaScript1. Check upstream node.\");\n}\n\n// 2) Find frame 1 (fall back to first item)\nconst frame1 = allFrames.find(f =\u003e Number(f.frame) === 1) || allFrames[0];\n\n// 3) Return ONLY frame1 so the Generate-first-frame node receives a single clean object\nreturn [\n  {\n    json: frame1\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       368,
+                                       -112
+                                   ],
+                      "id":  "e2bf4f68-b26f-4506-9945-38bc32da3985",
+                      "name":  "Code in JavaScript2"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_2 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -288,
+                                       144
+                                   ],
+                      "id":  "a323fb35-9b2b-418a-9248-14387cfcd9e6",
+                      "name":  "Frame 2",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_3 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -96,
+                                       144
+                                   ],
+                      "id":  "a3d6c11b-52d0-40c0-b531-402f0b30cfef",
+                      "name":  "Frame 3",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_4 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       96,
+                                       144
+                                   ],
+                      "id":  "6499bb23-609e-4201-881e-d556209e491c",
+                      "name":  "Frame 4",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_5 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       288,
+                                       144
+                                   ],
+                      "id":  "94f60983-6214-4567-9e94-ecf782923629",
+                      "name":  "Frame 5",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_9 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -288,
+                                       384
+                                   ],
+                      "id":  "a6fb25d6-3818-40f7-bc9d-2d3057a74704",
+                      "name":  "Frame 9",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_10 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -96,
+                                       384
+                                   ],
+                      "id":  "51fd0589-c6d0-4499-8958-fd07a1d54488",
+                      "name":  "Frame 10",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_11 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       96,
+                                       384
+                                   ],
+                      "id":  "060d68ce-acd5-4e3f-a215-ac824965ccd9",
+                      "name":  "Frame 11",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_12 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       288,
+                                       384
+                                   ],
+                      "id":  "4909e486-fe3b-4804-ae3b-7d0b3091c5ab",
+                      "name":  "Frame 12",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_15 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       848,
+                                       384
+                                   ],
+                      "id":  "d21cf8aa-b66f-4c1d-bba4-d09084d1ea11",
+                      "name":  "Frame 15",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_14 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       656,
+                                       384
+                                   ],
+                      "id":  "9e437b06-3cd9-48b1-9097-2fe501f5fe1c",
+                      "name":  "Frame 14",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_13 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       464,
+                                       384
+                                   ],
+                      "id":  "8a9e64c7-6d1a-4a1a-abb7-f0634481ca77",
+                      "name":  "Frame 13",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_8 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       848,
+                                       144
+                                   ],
+                      "id":  "026353c7-1ba4-4864-aabb-25b640677a28",
+                      "name":  "Frame 8",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_7 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       656,
+                                       144
+                                   ],
+                      "id":  "e741d63f-38d2-4bee-b08c-1048a77f17cb",
+                      "name":  "Frame 7",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "operation":  "edit",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image-preview (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $(\u0027Code in JavaScript1\u0027).item.json.edit_instruction_6 }}\n\nIMAGE QUALITY GUIDELINES:\n- Clean and clear image\n- No obvious AI artifacts\n- Stable textures and materials\n- Natural lighting and shadows\n- Realistic surfaces without distortion\n- No added minimal noise and grain",
+                                         "images":  {
+                                                        "values":  [
+                                                                       {
+                                                                           "binaryPropertyName":  "edited"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       464,
+                                       144
+                                   ],
+                      "id":  "e8d6ece4-4071-40a5-a84a-8789799b8528",
+                      "name":  "Frame 6",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "formTitle":  "Image selection",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.formTrigger",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       -304,
+                                       -112
+                                   ],
+                      "id":  "9b9f7aab-6100-42ad-9817-ad709dfb337a",
+                      "name":  "On form submission",
+                      "webhookId":  "dd7cb05c-99ab-4044-9d67-ab1d3fe1c4ea"
+                  },
+                  {
+                      "parameters":  {
+                                         "formFields":  {
+                                                            "values":  [
+                                                                           {
+                                                                               "fieldLabel":  "data",
+                                                                               "fieldType":  "file",
+                                                                               "requiredField":  true
+                                                                           }
+                                                                       ]
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.form",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       544,
+                                       -112
+                                   ],
+                      "id":  "d88c7524-99ca-44e2-a09b-359d2809b0fb",
+                      "name":  "Form",
+                      "webhookId":  "26cd4760-ff48-4455-a7f7-6f024b715453"
+                  }
+              ],
+    "connections":  {
+                        "Generate 15 Frame Prompts":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Code in JavaScript1",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Generate first frame":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Frame 2",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Code in JavaScript1":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Code in JavaScript2",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Code in JavaScript2":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Form",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Frame 2":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 3",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 3":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 4",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 4":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 5",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 5":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 6",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 9":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 10",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 10":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 11",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 11":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 12",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 12":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 13",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 14":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 15",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 13":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Frame 14",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Frame 8":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 9",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 7":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 8",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "Frame 6":  {
+                                        "main":  [
+                                                     [
+                                                         {
+                                                             "node":  "Frame 7",
+                                                             "type":  "main",
+                                                             "index":  0
+                                                         }
+                                                     ]
+                                                 ]
+                                    },
+                        "On form submission":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Generate 15 Frame Prompts",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Form":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Generate first frame",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "422f064f-7809-4f08-b0a0-a046caef61d8",
+    "activeVersionId":  null,
+    "versionCounter":  7,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-22T11:19:48.972Z",
+                       "createdAt":  "2025-12-22T11:19:48.972Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "N10bctRxAUafT3YP",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

@@ -1,0 +1,485 @@
+{
+  "name": "Job Feed → Slack (skill-matched)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 💼 Job Feed → Slack\n\nGathers remote jobs + freelance gigs from **Remotive, RemoteOK, Arbeitnow, Freelancer.com, OnlineJobs.ph** (free) + **JSearch** (Indeed/LinkedIn/Glassdoor/ZipRecruiter via RapidAPI), keeps only the ones matching your skills (UI/UX, React/Next web dev, AI automation, graphic design), de-duplicates across runs, and posts a digest to your Slack channel.\n\nRuns daily at 8:00 AM. Click Execute to test now.",
+        "height": 320,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        -360
+      ],
+      "id": "sticky-overview",
+      "name": "Overview"
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ SETUP\n\n**Slack:** posts to channel ID set in Config → channelIdOverride (already set to C0BD3AX4ZLN). Make sure the bot is invited to that channel (`/invite @your-bot`).\n\n**RapidAPI key:** stored in credential “RapidAPI - JSearch”. ⚠️ Your current plan only enables `/job-details`, NOT `/search` — so JSearch is skipped until you subscribe to a JSearch plan that includes the **Search** endpoint. The 3 free boards work regardless.\n\n**Run:** click Execute to test, or it runs daily at 8 AM.",
+        "height": 320,
+        "width": 520,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        -360
+      ],
+      "id": "sticky-setup",
+      "name": "Setup"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1040,
+        80
+      ],
+      "id": "trg-schedule",
+      "name": "Every day 8AM"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        260
+      ],
+      "id": "trg-manual",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c-chan",
+              "name": "channelName",
+              "value": "job-matches",
+              "type": "string"
+            },
+            {
+              "id": "c-chanid",
+              "name": "channelIdOverride",
+              "value": "C0BD3AX4ZLN",
+              "type": "string"
+            },
+            {
+              "id": "c-host",
+              "name": "rapidApiHost",
+              "value": "jsearch.p.rapidapi.com",
+              "type": "string"
+            },
+            {
+              "id": "c-age",
+              "name": "maxAgeDays",
+              "value": 10,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -820,
+        160
+      ],
+      "id": "cfg",
+      "name": "Config",
+      "notes": "channelName = Slack channel to create/post. channelIdOverride = paste an existing channel ID to skip auto-create."
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cfg = $('Config').first().json;\nconst override = String(cfg.channelIdOverride || '').trim();\nif (override) return [{ json: { channelId: override, channelName: cfg.channelName, resolvedBy: 'override' } }];\nconst resp = $json || {};\nconst channels = Array.isArray(resp.channels) ? resp.channels : [];\nconst want = String(cfg.channelName || 'job-matches').toLowerCase();\nconst found = channels.find(c => String(c.name || '').toLowerCase() === want);\nif (!found) {\n  throw new Error('Could not find or create #' + cfg.channelName + '. Fix: either (a) add Slack scopes channels:manage + channels:read to the bot app and reinstall it, or (b) create the channel manually in Slack and paste its ID into the Config node -> channelIdOverride.');\n}\nreturn [{ json: { channelId: found.id, channelName: found.name, resolvedBy: 'list' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        160
+      ],
+      "id": "ch-resolve",
+      "name": "Resolve Channel ID",
+      "notes": "Uses channelIdOverride from Config. (Auto-create-by-name path kept in code for portability if override is cleared.)"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nfunction stripHtml(s){ return String(s||'').replace(/<[^>]*>/g,' ').replace(/&[a-z#0-9]+;/gi,' ').replace(/\\s+/g,' ').trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v==='') return 0;\n  if(typeof v==='number') return v<1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n<1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(' ','T'));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=>String(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||'').trim()) || '—',\n    url: String(url||'').trim(),\n    location: (String(location||'').trim()) || 'Remote',\n    tags: tagArr,\n    date: date || '',\n    ts: toMs(date),\n    match_text: (t + ' ' + tagArr.join(' ') + ' ' + d).toLowerCase()\n  };\n}\n\nconst out = [];\n// 1) Remotive (free, keyless, all-remote)\ntry {\n  const r = await this.helpers.httpRequest({ url: 'https://remotive.com/api/remote-jobs?limit=200', json: true, timeout: 20000 });\n  (r && Array.isArray(r.jobs) ? r.jobs : []).forEach(j =>\n    out.push(norm('Remotive', j.id, j.title, j.company_name, j.url, j.candidate_required_location, j.tags, j.description, j.publication_date)));\n} catch (e) { /* skip source on failure */ }\n// 2) RemoteOK (free, needs a User-Agent; first array element is metadata)\ntry {\n  const r = await this.helpers.httpRequest({ url: 'https://remoteok.com/api', json: true, timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0 (n8n job-feed bot)' } });\n  (Array.isArray(r) ? r : []).filter(j => j && j.id && j.position).forEach(j =>\n    out.push(norm('RemoteOK', j.id, j.position, j.company, j.url, j.location, j.tags, j.description, j.date)));\n} catch (e) { /* skip */ }\n// 3) Arbeitnow (free, keyless)\ntry {\n  const r = await this.helpers.httpRequest({ url: 'https://www.arbeitnow.com/api/job-board-api', json: true, timeout: 20000 });\n  (r && Array.isArray(r.data) ? r.data : []).forEach(j =>\n    out.push(norm('Arbeitnow', j.slug, j.title, j.company_name, j.url, j.location, j.tags, j.description, j.created_at)));\n} catch (e) { /* skip */ }\n// 4) Freelancer.com (free public projects API — real freelance gigs, skill tags included)\ntry {\n  const r = await this.helpers.httpRequest({ url: 'https://www.freelancer.com/api/projects/0.1/projects/active/?limit=50&job_details=true', json: true, timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0 (n8n job-feed bot)' } });\n  const projects = (r && r.result && Array.isArray(r.result.projects)) ? r.result.projects : [];\n  projects.forEach(p => {\n    const bud = (p.budget && (p.budget.minimum || p.budget.maximum))\n      ? ((((p.currency && p.currency.code) || '') + ' ' + (p.budget.minimum || '?') + '-' + (p.budget.maximum || '?')).trim() + ' (gig)')\n      : 'Freelance gig';\n    const tags = Array.isArray(p.jobs) ? p.jobs.map(j => j.name) : [];\n    out.push(norm('Freelancer.com', p.id, p.title, bud, 'https://www.freelancer.com/projects/' + (p.seo_url || p.id), 'Remote', tags, p.preview_description || p.description, p.time_submitted));\n  });\n} catch (e) { /* skip */ }\nreturn out.map(json => ({ json }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        40
+      ],
+      "id": "src-free",
+      "name": "Fetch Free Boards",
+      "notes": "Remotive + RemoteOK + Arbeitnow + Freelancer.com (freelance gigs). Each in try/catch so one failing never breaks the run."
+    },
+    {
+      "parameters": {
+        "jsCode": "\nfunction stripHtml(s){ return String(s||'').replace(/<[^>]*>/g,' ').replace(/&[a-z#0-9]+;/gi,' ').replace(/\\s+/g,' ').trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v==='') return 0;\n  if(typeof v==='number') return v<1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n<1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(' ','T'));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=>String(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||'').trim()) || '—',\n    url: String(url||'').trim(),\n    location: (String(location||'').trim()) || 'Remote',\n    tags: tagArr,\n    date: date || '',\n    ts: toMs(date),\n    match_text: (t + ' ' + tagArr.join(' ') + ' ' + d).toLowerCase()\n  };\n}\n\n// OnlineJobs.ph — scrape public job search HTML (best-effort; may break if OLJ redesigns).\nconst KEYWORDS = ['web developer', 'ui ux designer', 'graphic designer', 'automation'];\nconst UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';\nconst out = [];\nfor (const kw of KEYWORDS) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      url: 'https://www.onlinejobs.ph/jobseekers/jobsearch?jobkeyword=' + encodeURIComponent(kw),\n      headers: { 'User-Agent': UA }, timeout: 25000\n    });\n    const body = (typeof resp === 'string') ? resp : JSON.stringify(resp);\n    const cards = body.split('<!-- Start -->');\n    for (const card of cards) {\n      const hrefM = card.match(/href=\"(\\/jobseekers\\/job\\/[^\"]+)\"/);\n      if (!hrefM) continue;\n      const href = hrefM[1];\n      const idM = href.match(/(\\d+)\\s*$/);\n      const id = idM ? idM[1] : href;\n      const h4M = card.match(/<h4[^>]*>([\\s\\S]*?)<\\/h4>/);\n      let title = '';\n      if (h4M) title = stripHtml(h4M[1].replace(/<span[^>]*class=\"badge[^\"]*\"[^>]*>[\\s\\S]*?<\\/span>/gi, '')).trim();\n      if (!title) continue;\n      const salM = card.match(/<dd class=\"col\">\\s*([^<]*?)\\s*<\\/dd>/);\n      const salary = salM ? salM[1].trim() : '';\n      const dateM = card.match(/data-temp=\"([^\"]+)\"/);\n      const descM = card.match(/<div class=\"desc[^\"]*\">([\\s\\S]*?)<\\/div>/);\n      const tags = []; const tagRe = /class=['\"]badge['\"][^>]*>([^<]+)</g; let tm;\n      while ((tm = tagRe.exec(card)) !== null) tags.push(tm[1].trim());\n      out.push(norm('OnlineJobs.ph', id, title, salary || 'OnlineJobs.ph', 'https://www.onlinejobs.ph' + href, 'Philippines / Remote', tags, descM ? descM[1] : '', dateM ? dateM[1] : ''));\n    }\n  } catch (e) { /* skip this keyword */ }\n}\nreturn out.map(json => ({ json }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        460
+      ],
+      "id": "src-olj",
+      "name": "Fetch OnlineJobs.ph",
+      "onError": "continueRegularOutput",
+      "notes": "Scrapes OLJ public job search (4 keyword pages) and parses listings. Best-effort: may break if OLJ changes their HTML. onError=continue so a block/redesign never breaks the run."
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// One JSearch call per query. Keep the list small to respect the free tier (~200 calls/month).\nconst queries = [\n  'react next.js frontend developer',\n  'ui ux designer',\n  'ai automation n8n zapier',\n  'graphic designer'\n];\nreturn queries.map(q => ({ json: { q } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        280
+      ],
+      "id": "js-queries",
+      "name": "JSearch Queries",
+      "notes": "One search query per item. Edit this list to tune what JSearch looks for."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://jsearch.p.rapidapi.com/search?query={{ encodeURIComponent($json.q) }}&page=1&num_pages=1&date_posted=month&remote_jobs_only=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-host",
+              "value": "={{ $('Config').first().json.rapidApiHost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        280
+      ],
+      "id": "js-search",
+      "name": "JSearch Search",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 4000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "DLiVG0dXPkFHjOvZ",
+          "name": "RapidAPI - JSearch"
+        }
+      },
+      "notes": "Aggregates Indeed/LinkedIn/Glassdoor/ZipRecruiter. Secret key via the RapidAPI credential; host header is non-secret."
+    },
+    {
+      "parameters": {
+        "jsCode": "\nfunction stripHtml(s){ return String(s||'').replace(/<[^>]*>/g,' ').replace(/&[a-z#0-9]+;/gi,' ').replace(/\\s+/g,' ').trim(); }\nfunction toMs(v){\n  if(v===null||v===undefined||v==='') return 0;\n  if(typeof v==='number') return v<1e12 ? v*1000 : v;           // unix seconds vs ms\n  var s=String(v).trim();\n  if(/^\\d+$/.test(s)){ var n=parseInt(s,10); return n<1e12 ? n*1000 : n; }\n  var t=Date.parse(s.replace(' ','T'));                          // ISO or \"YYYY-MM-DD HH:MM:SS\"\n  return isNaN(t)?0:t;\n}\nfunction norm(source,id,title,company,url,location,tags,desc,date){\n  const t = stripHtml(title);\n  const d = stripHtml(desc).slice(0,600);\n  const tagArr = Array.isArray(tags) ? tags.map(x=>String(x)) : [];\n  return {\n    source, id: String(id || url || t),\n    title: t,\n    company: (String(company||'').trim()) || '—',\n    url: String(url||'').trim(),\n    location: (String(location||'').trim()) || 'Remote',\n    tags: tagArr,\n    date: date || '',\n    ts: toMs(date),\n    match_text: (t + ' ' + tagArr.join(' ') + ' ' + d).toLowerCase()\n  };\n}\n\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const data = (it.json && Array.isArray(it.json.data)) ? it.json.data : [];\n  for (const j of data) {\n    const tags = [j.job_employment_type, j.job_publisher].filter(Boolean);\n    out.push(norm(\n      'JSearch:' + (j.job_publisher || '?'),\n      j.job_id, j.job_title, j.employer_name,\n      j.job_apply_link || j.job_google_link,\n      j.job_city || j.job_country || (j.job_is_remote ? 'Remote' : ''),\n      tags, j.job_description, j.job_posted_at_datetime_utc\n    ));\n  }\n}\nreturn out.map(json => ({ json }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        280
+      ],
+      "id": "js-norm",
+      "name": "Normalize JSearch",
+      "notes": "Flattens JSearch results into the common job shape."
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst SKILLS = {\n  'Web Dev (React/Next)': ['react','reactjs','react.js','next.js','nextjs','next js','javascript',' js ','typescript','frontend','front-end','front end','html','css','tailwind','web developer','web development','jamstack','vue','node.js','nodejs'],\n  'UI/UX Design': ['ui/ux','ui ux','uiux','ui design','ux design','user interface','user experience','figma','product design','web design','wireframe','prototype','prototyping','design system'],\n  'AI Automation': ['ai automation','automation','n8n','make.com','zapier','integromat','workflow automation','ai agent','ai agents','llm','chatbot','no-code','no code','nocode','rpa'],\n  'Graphic Design': ['graphic design','graphic designer','photoshop','illustrator','adobe','canva','premiere','video editing','video editor','motion graphics','branding','visual design','after effects']\n};\nconst all = $input.all().map(i => i.json).filter(j => j && j.url && j.title);\n// dedup within this run\nconst byKey = {};\nfor (const j of all) {\n  const k = (String(j.url || '').split('?')[0].toLowerCase()) || (String(j.title) + String(j.company)).toLowerCase();\n  if (!byKey[k]) byKey[k] = j;\n}\nlet jobs = Object.values(byKey);\nconst totalDeduped = jobs.length;\n// recency filter — keep only jobs posted within the last maxAgeDays (undated jobs are kept as a safety net)\nconst maxAgeDays = Number(($('Config').first().json || {}).maxAgeDays) || 10;\nconst NOW = Date.now();\nconst cutoff = NOW - maxAgeDays * 86400000;\njobs = jobs.filter(j => !j.ts || j.ts >= cutoff);\nconst tooOld = totalDeduped - jobs.length;\n// score against skills\nfunction score(j) {\n  const txt = ' ' + (j.match_text || '') + ' ';\n  const matched = []; let hits = 0;\n  for (const grp of Object.keys(SKILLS)) {\n    let g = false;\n    for (const kw of SKILLS[grp]) { if (txt.indexOf(kw) !== -1) { hits++; g = true; } }\n    if (g) matched.push(grp);\n  }\n  return { hits, matched };\n}\njobs = jobs.map(j => { const s = score(j); return Object.assign({}, j, { score: s.hits, matched_skills: s.matched, age_days: j.ts ? Math.floor((NOW - j.ts) / 86400000) : null }); })\n           .filter(j => j.matched_skills.length > 0);\n// cross-run dedup so the same job is never posted twice (persists on scheduled runs)\nconst store = $getWorkflowStaticData('global');\nlet seen = store.seenJobs || {};\nconst fresh = [];\nfor (const j of jobs) {\n  const k = String(j.url || '').split('?')[0].toLowerCase();\n  if (seen[k]) continue;\n  fresh.push(j);\n}\n// newest first (undated jobs sink to the bottom); score breaks ties on same timestamp\nfresh.sort((a, b) => ((b.ts || 0) - (a.ts || 0)) || (b.score - a.score));\nconst stamp = Date.now();\nfor (const j of fresh) { const k = String(j.url || '').split('?')[0].toLowerCase(); seen[k] = stamp; }\n// prune memory to the newest 1500 keys\nconst entries = Object.keys(seen).map(k => [k, seen[k]]).sort((a, b) => b[1] - a[1]).slice(0, 1500);\nseen = {}; for (const e of entries) seen[e[0]] = e[1];\nstore.seenJobs = seen;\nreturn [{ json: { count: fresh.length, total_scanned: all.length, too_old_skipped: tooOld, max_age_days: maxAgeDays, jobs: fresh } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        160
+      ],
+      "id": "filter",
+      "name": "Filter & Score by Skills",
+      "notes": "Dedups, scores each job against your skills, drops non-matches, and remembers what was already posted (no repeats)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has",
+              "leftValue": "={{ $json.count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1160,
+        160
+      ],
+      "id": "has-matches",
+      "name": "Has Matches?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst d = $json;\nconst jobs = Array.isArray(d.jobs) ? d.jobs : [];\nconst show = jobs.slice(0, 30);\nconst lines = show.map((j, i) => {\n  const skills = (j.matched_skills || []).join(', ');\n  const age = (j.age_days === null || j.age_days === undefined) ? 'recent' : (j.age_days <= 0 ? 'today' : j.age_days + 'd ago');\n  return (i + 1) + '. *<' + j.url + '|' + j.title + '>*\\n' +\n         '   ' + j.company + ' · _' + j.source + '_ · 📍 ' + j.location + ' · 🕐 ' + age + '\\n' +\n         '   🎯 ' + skills + '  (score ' + j.score + ')';\n});\nlet text = ':briefcase: *' + d.count + ' new job match' + (d.count === 1 ? '' : 'es') + '* (posted in last ' + d.max_age_days + ' days)  ·  scanned ' + d.total_scanned + '\\n\\n' + lines.join('\\n\\n');\nif (jobs.length > show.length) text += '\\n\\n…and ' + (jobs.length - show.length) + ' more matches not shown.';\nreturn [{ json: { text } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        60
+      ],
+      "id": "format",
+      "name": "Format Digest"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Resolve Channel ID').first().json.channelId }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1600,
+        60
+      ],
+      "id": "post-jobs",
+      "name": "Post Jobs to Slack",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Resolve Channel ID').first().json.channelId }}",
+          "mode": "id"
+        },
+        "text": "=🔍 No new job matches in this run (scanned {{ $json.total_scanned }} postings).",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1380,
+        280
+      ],
+      "id": "post-none",
+      "name": "Post No Matches",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day 8AM": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Resolve Channel ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Channel ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch Free Boards",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch OnlineJobs.ph",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Free Boards": {
+      "main": [
+        [
+          {
+            "node": "Filter & Score by Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch OnlineJobs.ph": {
+      "main": [
+        [
+          {
+            "node": "Filter & Score by Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch Queries": {
+      "main": [
+        [
+          {
+            "node": "JSearch Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize JSearch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize JSearch": {
+      "main": [
+        [
+          {
+            "node": "Filter & Score by Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Score by Skills": {
+      "main": [
+        [
+          {
+            "node": "Has Matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Matches?": {
+      "main": [
+        [
+          {
+            "node": "Format Digest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post No Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Digest": {
+      "main": [
+        [
+          {
+            "node": "Post Jobs to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

@@ -1,0 +1,480 @@
+{
+  "name": "Invoice Extraction → Airtable (Northwind)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-northwind",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "n-wh",
+      "name": "Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        300
+      ],
+      "webhookId": "invoice-northwind-hook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "companyName",
+              "value": "Northwind Home Services",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "chatModel",
+              "value": "gemini-2.5-flash",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "baseId",
+              "value": "appug80MzHJWdeZNU",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "tableId",
+              "value": "tbldFhqjuFOPJsD7G",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "confidenceThreshold",
+              "value": 70,
+              "type": "number"
+            },
+            {
+              "id": "c7",
+              "name": "mathTolerance",
+              "value": 0.02,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Validate Input — Code node (no creds). Accepts an uploaded PDF/image (base64),\n// checks type/size, and builds the Gemini Vision extraction request.\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst wh = $('Upload Webhook').first().json;\nconst body = (wh && wh.body) ? wh.body : {};\n\nconst filename = String(body.filename || 'document');\nlet data = String(body.data || '');\nlet mt = String(body.mimeType || '').toLowerCase();\n\n// Accept a data URL too: data:application/pdf;base64,xxxx\nconst m = data.match(/^data:([^;]+);base64,(.*)$/s);\nif (m) { if (!mt) mt = m[1].toLowerCase(); data = m[2]; }\ndata = data.trim();\n\nconst okType = /^(application\\/pdf|image\\/(png|jpe?g|webp|heic|heif))$/.test(mt);\n\nlet valid = true; let reason = '';\nif (!data) { valid = false; reason = 'No file data received.'; }\nelse if (!okType) { valid = false; reason = 'Unsupported file type (' + (mt || 'unknown') + '). Please upload a PDF or image.'; }\nelse if (data.length > 18 * 1024 * 1024) { valid = false; reason = 'File too large (max ~13 MB).'; }\n\nconst prompt = 'You are an accounts-payable assistant for ' + cfg.companyName + '. '\n  + 'Extract this invoice/receipt into JSON. Read EVERY line item. '\n  + 'Amounts must be plain numbers (no currency symbols or commas). Dates as YYYY-MM-DD. '\n  + 'currency = ISO code (e.g. USD). category = a short expense category (e.g. HVAC parts, Plumbing supplies, Electrical, Tools, Services). '\n  + 'If a field is missing or unreadable, use \"\" for text and 0 for numbers. '\n  + 'confidence = your overall 0-100 confidence in the extraction. notes = anything ambiguous or unreadable.';\n\nconst geminiBody = {\n  contents: [{ role: 'user', parts: [\n    { inlineData: { mimeType: mt, data } },\n    { text: prompt },\n  ] }],\n  generationConfig: {\n    temperature: 0.1,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        vendor: { type: 'STRING' },\n        invoiceNumber: { type: 'STRING' },\n        invoiceDate: { type: 'STRING' },\n        dueDate: { type: 'STRING' },\n        currency: { type: 'STRING' },\n        subtotal: { type: 'NUMBER' },\n        tax: { type: 'NUMBER' },\n        total: { type: 'NUMBER' },\n        category: { type: 'STRING' },\n        lineItems: {\n          type: 'ARRAY',\n          items: {\n            type: 'OBJECT',\n            properties: {\n              description: { type: 'STRING' },\n              qty: { type: 'NUMBER' },\n              unitPrice: { type: 'NUMBER' },\n              amount: { type: 'NUMBER' },\n            },\n            required: ['description', 'amount'],\n          },\n        },\n        confidence: { type: 'NUMBER' },\n        notes: { type: 'STRING' },\n      },\n      required: ['vendor', 'total', 'lineItems', 'confidence'],\n    },\n  },\n};\n\nreturn [{ json: { valid, reason, filename, mimeType: mt, geminiBody } }];\n"
+      },
+      "id": "n-val",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-if",
+      "name": "Valid file?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.chatModel + ':generateContent' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.geminiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "n-ai",
+      "name": "Gemini Vision Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "0eINQFptxG4T1uH7",
+          "name": "epic catch api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Map & Validate — Code node (no creds). Parses the extracted invoice, runs the\n// MATH/confidence trust gate, builds the Airtable record, a dedup lookup formula,\n// and a human-readable status message (used for the WhatsApp reply / response).\n// ============================================================================\n\nconst cfg = $('Config').first().json;\nconst v = $('Validate Input').first().json;\nconst chat = $json; // generateContent response\n\nlet ai = {};\ntry { ai = JSON.parse(chat.candidates[0].content.parts.map((p) => p.text || '').join('')); } catch (e) { ai = {}; }\n\nconst num = (x) => { const n = Number(x); return Number.isFinite(n) ? n : 0; };\nconst vendor = (ai.vendor || '').toString().trim();\nconst invNo = (ai.invoiceNumber || '').toString().trim();\nconst subtotal = num(ai.subtotal), tax = num(ai.tax), total = num(ai.total);\nconst items = Array.isArray(ai.lineItems) ? ai.lineItems : [];\nconst conf = Math.max(0, Math.min(100, num(ai.confidence)));\nconst currency = (ai.currency || 'USD').toString().trim();\nconst invoiceDate = (ai.invoiceDate || '').toString().trim();\n\n// ---- Trust gate: money data must add up, or a human reviews it ----\nconst tol = Number(cfg.mathTolerance || 0.02);\nconst itemsSum = items.reduce((s, it) => s + num(it.amount), 0);\nconst reasons = [];\nif (!total) reasons.push('missing total');\nif (!vendor) reasons.push('missing vendor');\nconst base = subtotal || total;\nif (items.length && base && Math.abs(itemsSum - base) > Math.max(0.05, base * tol)) reasons.push('line items don\\'t sum to subtotal');\nif (subtotal && total && Math.abs((subtotal + tax) - total) > Math.max(0.05, total * tol)) reasons.push('subtotal + tax ≠ total');\nif (conf && conf < Number(cfg.confidenceThreshold || 70)) reasons.push('low AI confidence (' + conf + '%)');\n\nconst status = reasons.length ? 'Needs Review' : 'OK';\n\nconst lineItemsText = items.map((it) =>\n  '• ' + (it.description || 'item') + (num(it.qty) ? ' ×' + num(it.qty) : '') + (num(it.unitPrice) ? ' @ ' + num(it.unitPrice) : '') + ' = ' + num(it.amount).toFixed(2)\n).join('\\n');\n\nconst fields = {\n  'Invoice Number': invNo,\n  'Vendor': vendor,\n  'Invoice Date': invoiceDate,\n  'Due Date': ai.dueDate || '',\n  'Subtotal': subtotal,\n  'Tax': tax,\n  'Total': total,\n  'Currency': currency,\n  'Category': ai.category || '',\n  'Line Items': lineItemsText,\n  'Status': status,\n  'Confidence': conf / 100,\n  'Review Notes': ([reasons.join('; '), ai.notes || ''].filter(Boolean).join(' | ')).slice(0, 1000),\n  'Source File': v.filename,\n  'Logged At': new Date().toISOString(),\n};\nif (!fields['Invoice Date']) delete fields['Invoice Date'];\nif (!fields['Due Date']) delete fields['Due Date'];\n\n// ---- Dedup key: an invoice # is the natural unique key; else vendor+total(+date) ----\nconst esc = (s) => String(s).replace(/[\"\\\\]/g, ' ').trim(); // formula-safe\nlet dedupFormula;\nif (invNo) {\n  dedupFormula = 'AND({Vendor}=\"' + esc(vendor) + '\",{Invoice Number}=\"' + esc(invNo) + '\")';\n} else {\n  dedupFormula = 'AND({Vendor}=\"' + esc(vendor) + '\",{Total}=' + total + (invoiceDate ? ',{Invoice Date}=\"' + esc(invoiceDate) + '\"' : '') + ')';\n}\n\nconst money = currency + ' ' + total.toFixed(2);\nconst message = status === 'OK'\n  ? '✅ Logged: ' + (vendor || 'invoice') + ' — ' + money + (invNo ? ' (#' + invNo + ')' : '')\n  : '⚠️ Needs review: ' + (vendor || 'invoice') + ' — ' + money + '\\nWhy: ' + reasons.join('; ');\n\nreturn [{ json: {\n  status, vendor, invoiceNumber: invNo, total, currency, dueDate: ai.dueDate || '', itemCount: items.length, confidence: conf, reasons,\n  airtableBody: { fields, typecast: true },\n  dedupFormula,\n  message,\n} }];\n"
+      },
+      "id": "n-map",
+      "name": "Map & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Config').first().json.tableId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filterByFormula",
+              "value": "={{ $json.dedupFormula }}"
+            },
+            {
+              "name": "maxRecords",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-dq",
+      "name": "Dedup Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Check Dup — Code node (no creds). Reads the Airtable dedup lookup result; if a\n// matching record already exists, marks this one as a duplicate (to be rejected).\n// ============================================================================\n\nconst dq = $json; // dedup query (Airtable list) response\nconst mv = $('Map & Validate').first().json;\n\nconst records = (dq && Array.isArray(dq.records)) ? dq.records : [];\nconst duplicate = records.length > 0;\n\nconst out = Object.assign({}, mv, {\n  duplicate,\n  dupRecordId: duplicate ? records[0].id : '',\n});\n\nif (duplicate) {\n  out.message = '🔁 Duplicate — this invoice is already logged ('\n    + (mv.vendor || 'vendor') + (mv.invoiceNumber ? ' #' + mv.invoiceNumber : '') + '). Skipped.';\n  out.status = 'Duplicate';\n}\n\nreturn [{ json: out }];\n"
+      },
+      "id": "n-chk",
+      "name": "Check Dup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-ifdup",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.airtable.com/v0/' + $('Config').first().json.baseId + '/' + $('Config').first().json.tableId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Map & Validate').first().json.airtableBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false
+            }
+          }
+        }
+      },
+      "id": "n-at",
+      "name": "Create Airtable Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "sSLblszJWxpUr8fl",
+          "name": "Airtable - Northwind"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, duplicate: false, status: $('Check Dup').first().json.status, vendor: $('Check Dup').first().json.vendor, invoiceNumber: $('Check Dup').first().json.invoiceNumber, total: $('Check Dup').first().json.total, currency: $('Check Dup').first().json.currency, confidence: $('Check Dup').first().json.confidence, reasons: $('Check Dup').first().json.reasons, message: $('Check Dup').first().json.message }) }}",
+        "options": {}
+      },
+      "id": "n-ok",
+      "name": "Respond Logged",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, duplicate: true, status: 'Duplicate', vendor: $('Check Dup').first().json.vendor, invoiceNumber: $('Check Dup').first().json.invoiceNumber, message: $('Check Dup').first().json.message }) }}",
+        "options": {}
+      },
+      "id": "n-dup",
+      "name": "Respond Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: $('Validate Input').first().json.reason }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "n-bad",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Valid file?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid file?": {
+      "main": [
+        [
+          {
+            "node": "Gemini Vision Extract",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Vision Extract": {
+      "main": [
+        [
+          {
+            "node": "Map & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map & Validate": {
+      "main": [
+        [
+          {
+            "node": "Dedup Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup Lookup": {
+      "main": [
+        [
+          {
+            "node": "Check Dup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Dup": {
+      "main": [
+        [
+          {
+            "node": "Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Respond Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}

@@ -1,0 +1,283 @@
+﻿{
+    "updatedAt":  "2026-02-10T12:35:07.000Z",
+    "createdAt":  "2026-02-10T12:31:11.556Z",
+    "id":  "7CphzsdU69wtYUbP",
+    "name":  "Parent Notes Single names",
+    "description":  null,
+    "active":  false,
+    "isArchived":  true,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "3b810e07-4d90-4cb3-bbce-bea0acc1cbd2",
+                                                                                     "name":  "backgroundTheme",
+                                                                                     "value":  "Golden Harvest Glow (girl) Backdrop: Outdoor cinematic wheat field at golden hour (warm sunlight, natural depth, open horizon)  Outfit: Solid orange outfit (soft, flowing, warm-toned)  Props: Single white flower  Theme Style: Radiant, earthy, and soulful with a cinematic warmth",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "69c55327-cbc7-4f70-a0a2-eb68fd13e83a",
+                                                                                     "name":  "babyName",
+                                                                                     "value":  "Aurora – Dawn filled with clarity, Chantel – Noble spirit with poise",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "1c4f7015-28d0-4f5b-b382-8b923fe5a089",
+                                                                                     "name":  "quantity:",
+                                                                                     "value":  2,
+                                                                                     "type":  "number"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       960,
+                                       32
+                                   ],
+                      "id":  "5c8eafa2-f618-4203-bf08-47972d5c3b17",
+                      "name":  "Edit Fields"
+                  },
+                  {
+                      "parameters":  {
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-3-pro-preview",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-3-pro-preview"
+                                                     },
+                                         "messages":  {
+                                                          "values":  [
+                                                                         {
+                                                                             "content":  "=You are an AI that generates high-quality, photography-consistent text-to-image prompts for baby name content.\nYour output must ALWAYS be a valid JSON array with the exact number of items requested.\nNo text before or after the array.\nNo markdown.\nNo explanations.\n\nGOAL\nFor each requested image, return an object containing:\n\"name\": the exact baby name provided (ALL CAPS, semibold)\n\"meaning\": the exact meaning provided (lowercase, 3–6 words, regular weight)\n\"prompt\": a full image prompt that focuses on the BACKGROUND THEME and visual consistency, and already includes the provided name and meaning in the overlay description with correct hierarchy, PLUS a small subtle watermark \"@parent_notes\"\n\nINPUTS\nBACKGROUND THEME: {{ $json.backgroundTheme }}\nBABY NAMES DATA (SOURCE OF TRUTH): {{ $json.babyName }}\n(Each item already includes name + meaning. Do NOT modify them.)\nNUMBER OF IMAGES: {{ $json[\"quantity:\"] }}\n\nSTRICT NAME RULES (ABSOLUTE)\n❌ DO NOT generate names\n❌ DO NOT alter names\n❌ DO NOT combine, split, or invent names\n❌ DO NOT infer initials or themes\n✅ ONLY use the exact name and meaning provided in {babyNames}\nIf {babyNames} is missing or incomplete, return an empty JSON array\n\nSUBJECT \u0026 ETHNICITY RULES (VERY STRICT)\n\nHuman subjects may only be toddlers aged 3–10 years old\n❌ No adults\n❌ No infants or newborns\n\nToddlers must appear beautiful or handsome, cute, safe, gentle, and age-appropriate\n\n❌ Do NOT generate black toddlers\n(Avoid dark-skinned human subjects to prevent sensitive or misinterpreted racial depiction.)\n\nEXACTLY 80% of the images must contain a toddler aged 3–10 years old\n\nEXACTLY 20% of the images must contain NO human subject and focus ONLY on props, environment, or styled background elements that match the theme\n(e.g., toys, decor, flatlays, styled objects, background scenes)\n\nGLOBAL VISUAL CONSISTENCY RULES\nAll images must look like they belong to the same photoshoot, including identical:\nbackground style and elements\ncolor palette\nlighting direction \u0026 softness\nmood \u0026 aesthetic\ncamera type (e.g., DSLR, 50mm lens, soft natural light)\nediting style (warm, airy, matte, film-like)\n\nOnly the composition and camera angle may vary, such as:\ntop-down flatlay\neye-level portrait\nslight side angle\nclose-up detail\nmedium framing\nprop-only styled scene\n\nIMAGE + TEXT RULES\nProvide generous negative space for white Poppins overlay text\nNAME: ALL CAPS, semibold, visually dominant\nMEANING: lowercase, smaller, regular weight\nName must appear larger than meaning\nNEVER generate camera-rendered or physical text inside the image\nAll text must be clean overlay only\n\nAdd a small, subtle or luminous, semi-transparent watermark text “@parent_notes” in the bottom-right corner.\nDo NOT use wrong, misspelled or shortened variants.\nWatermark must be lowercase, clean, readable, and not too obvious or visually dominant.\n\nAspect ratio: 4:5\n\nJSON OUTPUT FORMAT (STRICT)\nReturn ONLY a JSON array with EXACTLY {{ $json[\"quantity:\"] }} objects.\nNo trailing commas.\nNo additional keys.\n\nEach object must follow this structure exactly:\n{\n\"name\": \"PROVIDED NAME\",\n\"meaning\": \"provided short meaning\",\n\"prompt\": \"PROVIDED NAME — provided short meaning, white Poppins overlay with NAME semibold and larger, MEANING smaller and regular, small subtle or luminous semi-transparent watermark \u0027@parent_notes\u0027 in the bottom-right corner, 4:5 aspect ratio, background theme: {{ $json.backgroundTheme }}, consistent photoshoot style with identical background, lighting, tones, and camera setup, soft natural light, warm neutral palette, clean centered typography, high-end lifestyle photography, subject is either (a) a beautiful or handsome, cute non-black toddler aged 3–10 years old or (b) a prop-only styled scene depending on the 80/20 rule, different camera angle per image\"\n}\n"
+                                                                         }
+                                                                     ]
+                                                      },
+                                         "jsonOutput":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1120,
+                                       32
+                                   ],
+                      "id":  "81d4e143-a7c1-4ce7-bfab-179412c97bff",
+                      "name":  "Message a model",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "name, meaning, prompt",
+                                         "include":  "allOtherFields",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1568,
+                                       32
+                                   ],
+                      "id":  "95cc33a7-f43b-4270-af19-4ad62e169d7e",
+                      "name":  "Split Out"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "return JSON.parse($input.first().json.content.parts[0].text);"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1408,
+                                       32
+                                   ],
+                      "id":  "84f9c0fa-0da1-46ad-ace8-33fd3e8d33c5",
+                      "name":  "Code in JavaScript"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       768,
+                                       32
+                                   ],
+                      "id":  "409db00d-a98f-4c9a-a361-eb671c0a4a69",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "image",
+                                         "modelId":  {
+                                                         "__rl":  true,
+                                                         "value":  "models/gemini-2.5-flash-image",
+                                                         "mode":  "list",
+                                                         "cachedResultName":  "models/gemini-2.5-flash-image (Nano Banana)"
+                                                     },
+                                         "prompt":  "={{ $json.prompt }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.googleGemini",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1744,
+                                       32
+                                   ],
+                      "id":  "b573f64a-90fa-466d-b755-b407d51083a6",
+                      "name":  "Generate an image",
+                      "credentials":  {
+                                          "googlePalmApi":  {
+                                                                "id":  "0eINQFptxG4T1uH7",
+                                                                "name":  "Google Gemini(PaLM) Api account"
+                                                            }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Edit Fields":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Message a model",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Message a model":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Code in JavaScript",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Split Out":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "Generate an image",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "Code in JavaScript":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Split Out",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Edit Fields",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "f8f06988-8b29-4798-9cab-d53b59dfadc2",
+    "activeVersionId":  null,
+    "versionCounter":  4,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-02-10T12:31:11.559Z",
+                       "createdAt":  "2026-02-10T12:31:11.559Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "7CphzsdU69wtYUbP",
+                       "projectId":  "wbaq9sa6O97iwbwM",
+                       "project":  {
+                                       "updatedAt":  "2025-12-12T03:48:58.600Z",
+                                       "createdAt":  "2025-12-12T03:46:51.096Z",
+                                       "id":  "wbaq9sa6O97iwbwM",
+                                       "name":  "ROBERT MAESTRO \u003cuniquenames2025@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "createdAt":  "2025-12-12T03:46:51.096Z",
+                                                                    "userId":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                    "projectId":  "wbaq9sa6O97iwbwM",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-23T03:31:24.000Z",
+                                                                                 "createdAt":  "2025-12-12T03:46:50.483Z",
+                                                                                 "id":  "26e42374-0517-49c3-8a2c-31268c9dcfd1",
+                                                                                 "email":  "uniquenames2025@gmail.com",
+                                                                                 "firstName":  "ROBERT",
+                                                                                 "lastName":  "MAESTRO",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-12-12T03:49:48.767Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.123.5",
+                                                                                                                "automationGoalDevops":  [
+                                                                                                                                             "other"
+                                                                                                                                         ],
+                                                                                                                "automationGoalDevopsOther":  "Social Media",
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "education",
+                                                                                                                "role":  "it",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  false,
+                                                                                                  "easyAIWorkflowOnboarded":  true
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-22",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}
