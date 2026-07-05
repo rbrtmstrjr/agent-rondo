@@ -108,7 +108,7 @@ export default async function ServicePage({
           {isAutomation && (
             <div className="mt-20">
               <Reveal>
-                <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
+                <h2>
                   Automations I&apos;ve <span className="text-gradient-gold">already shipped</span>
                 </h2>
               </Reveal>
@@ -126,7 +126,7 @@ export default async function ServicePage({
           <Reveal className="mt-20">
             <div className="glass relative overflow-hidden rounded-3xl p-8 text-center sm:p-12">
               <div className="pointer-events-none absolute inset-0 -z-10 bg-gold-glow opacity-30 blur-3xl" />
-              <h2 className="mx-auto max-w-2xl font-display text-2xl font-bold tracking-tight sm:text-3xl">
+              <h2 className="mx-auto max-w-2xl">
                 Curious what {service.title.toLowerCase()} could do for your business?
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-muted">

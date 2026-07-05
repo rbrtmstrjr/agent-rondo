@@ -13,10 +13,10 @@ export default function Home() {
       <Hero />
       <ToolsMarquee />
       <Problem />
+      <Services />
       <Stats />
       <FeaturedWork />
       <Process />
-      <Services />
       <Pricing />
     </>
   );

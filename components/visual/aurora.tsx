@@ -28,7 +28,8 @@ export function Aurora({ className }: { className?: string }) {
       <div
         className="absolute left-1/3 top-1/2 h-[26rem] w-[26rem] rounded-full opacity-25 blur-[100px]"
         style={{
-          background: "radial-gradient(circle, rgba(255,199,0,0.14), transparent 65%)",
+          background:
+            "radial-gradient(circle, color-mix(in srgb, var(--color-gold) 14%, transparent), transparent 65%)",
           animation: "drift 34s ease-in-out infinite",
         }}
       />

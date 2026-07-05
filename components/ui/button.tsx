@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "ghost" | "outline";
+type Variant = "primary" | "ghost" | "outline" | "white";
 
 const base =
   "group inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-deep disabled:pointer-events-none disabled:opacity-50";
 
+const white = "bg-white text-black hover:bg-white/90 active:scale-[0.97]";
+
 const variants: Record<Variant, string> = {
-  primary:
-    "gold-gradient text-black hover:brightness-110 hover:shadow-[0_10px_40px_-10px_var(--color-gold-glow)] active:scale-[0.97]",
-  outline:
-    "border border-line-strong bg-surface text-foreground hover:border-gold/50 hover:bg-surface-strong active:scale-[0.97]",
+  primary: white,
+  outline: white,
   ghost: "text-muted hover:text-foreground",
+  white,
 };
 
 const sizes = {

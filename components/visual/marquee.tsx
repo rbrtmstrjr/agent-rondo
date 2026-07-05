@@ -28,8 +28,8 @@ export function Marquee({
             style={{
               clipPath: chamfer,
               backgroundImage:
-                "linear-gradient(135deg, rgba(245,194,75,0.14), rgba(255,255,255,0.02) 60%)",
-              boxShadow: "inset 0 0 0 1px rgba(245,194,75,0.28)",
+                "linear-gradient(135deg, color-mix(in srgb, var(--color-gold) 14%, transparent), rgba(255,255,255,0.02) 60%)",
+              boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 28%, transparent)",
             }}
           >
             {/* gold gradient fill on hover (same as hero button) */}
@@ -41,7 +41,10 @@ export function Marquee({
             <span
               aria-hidden
               className="pointer-events-none absolute inset-x-3 top-0 h-px"
-              style={{ background: "linear-gradient(90deg, transparent, rgba(255,226,154,0.7), transparent)" }}
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-gold-bright) 70%, transparent), transparent)",
+              }}
             />
             {/* content above the fill */}
             <span className="relative z-10 flex items-center gap-2.5">

@@ -12,6 +12,9 @@ import {
   Clapperboard,
   Workflow,
   Plug,
+  Smartphone,
+  Server,
+  PenTool,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +32,9 @@ const map: Record<string, LucideIcon> = {
   clapperboard: Clapperboard,
   workflow: Workflow,
   plug: Plug,
+  smartphone: Smartphone,
+  server: Server,
+  pen: PenTool,
 };
 
 export function Icon({

@@ -1,113 +1,114 @@
-import Image from "next/image";
-import { stats } from "@/content/site";
+import Link from "next/link";
+import { site, stats } from "@/content/site";
 import { CountUp } from "@/components/visual/count-up";
-import { SectionHeading } from "@/components/section-heading";
+import { HudFrame } from "@/components/visual/hud-frame";
+import { Icon } from "@/components/icons";
 import { Reveal } from "@/components/reveal";
-import profile from "@/src/images/profile.png";
+import { ProfileReveal } from "@/components/visual/profile-reveal";
+import profile from "@/src/images/profile.jpg";
+import profileHover from "@/src/images/profile_hover.jpg";
 
-/* Desktop: cards + connector lines share ONE coordinate space (1000×600 viewBox
-   mapped onto the lg:aspect-[5/3] box) so a card's edge ring and its line align. */
-const NODE = [
-  { cx: "25%", cy: "20%", tx: "-100%", a: [250, 120], t: [372, 250] },
-  { cx: "25%", cy: "78%", tx: "-100%", a: [250, 468], t: [388, 380] },
-  { cx: "76%", cy: "25%", tx: "0%", a: [760, 150], t: [628, 250] },
-  { cx: "76%", cy: "78%", tx: "0%", a: [760, 468], t: [620, 380] },
-] as const;
-
-/* Mobile/tablet: scattered floating labels around the photo. */
-const MPOS = ["left-0 top-2", "right-0 top-20", "left-1 bottom-20", "right-0 bottom-2"] as const;
-const MROT = [-5, 5, 4, -4] as const;
-
-function Stat({ s }: { s: (typeof stats)[number] }) {
-  return (
-    <div
-      className="gold-gradient rounded-xl px-3 py-2 text-center sm:px-3.5"
-      style={{ boxShadow: "0 0 28px -2px var(--color-gold-glow)" }}
-    >
-      <p className="font-display text-xl font-bold text-black sm:text-2xl">
-        <CountUp to={s.value} suffix={s.suffix} />
-      </p>
-      <p className="mx-auto mt-0.5 max-w-[8rem] text-[11px] font-medium leading-tight text-black/70">
-        {s.label}
-      </p>
-    </div>
-  );
-}
-
+/* Futuristic "operator profile" dossier — framed scanning portrait + identity +
+   a HUD data grid of the track record. */
 export function Stats() {
   return (
-    <section className="relative px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-7xl">
-        <SectionHeading
-          align="center"
-          eyebrow="Track record"
-          title={
-            <>
-              Real work, <span className="text-gradient-gold">real results.</span>
-            </>
-          }
-          desc="Years of building — and a growing list of automations running in production."
-        />
-
-        <Reveal className="relative mx-auto mt-16 aspect-[4/5] max-w-sm sm:max-w-lg lg:aspect-[5/3] lg:max-w-5xl">
-          {/* photo (centered) */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+    <section className="relative flex min-h-dvh items-center px-4 py-20">
+      <div className="mx-auto w-full max-w-7xl">
+        <Reveal>
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-white/[0.03] p-6 backdrop-blur-xl sm:p-8 lg:p-10">
+            {/* grid texture + ambient glow */}
+            <div className="grid-texture pointer-events-none absolute inset-0 opacity-40" aria-hidden />
             <div
-              className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl sm:h-96 sm:w-96"
-              style={{ background: "radial-gradient(circle, var(--color-gold-glow), transparent 70%)" }}
+              className="pointer-events-none absolute -left-24 top-1/3 h-72 w-72 rounded-full bg-gold-glow blur-3xl"
               aria-hidden
             />
-            <Image src={profile} alt="Robert Maestro" className="relative h-auto w-52 sm:w-72 lg:w-96" />
-          </div>
+            {/* corner brackets */}
+            <span className="pointer-events-none absolute left-3 top-3 h-5 w-5 rounded-tl border-l-2 border-t-2 border-gold/40" aria-hidden />
+            <span className="pointer-events-none absolute right-3 top-3 h-5 w-5 rounded-tr border-r-2 border-t-2 border-gold/40" aria-hidden />
+            <span className="pointer-events-none absolute bottom-3 left-3 h-5 w-5 rounded-bl border-b-2 border-l-2 border-gold/40" aria-hidden />
+            <span className="pointer-events-none absolute bottom-3 right-3 h-5 w-5 rounded-br border-b-2 border-r-2 border-gold/40" aria-hidden />
 
-          {/* mobile / tablet: scattered floating labels */}
-          <div className="absolute inset-0 lg:hidden">
-            {stats.map((s, i) => (
-              <div key={s.label} className={`absolute ${MPOS[i]}`}>
-                <div style={{ transform: `rotate(${MROT[i]}deg)` }}>
-                  <div style={{ animation: `floaty ${5 + i}s ease-in-out ${i * 0.4}s infinite` }}>
-                    <Stat s={s} />
+            {/* top HUD bar */}
+            <div className="relative flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-white/40">
+              <span>{"// Operator Profile"}</span>
+              <span className="inline-flex items-center gap-2 text-gold">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-70" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
+                </span>
+                Online
+              </span>
+            </div>
+
+            <div className="relative mt-6 grid gap-8 lg:grid-cols-[24rem_1fr] lg:items-stretch lg:gap-12">
+              {/* portrait — image fills the whole frame */}
+              <HudFrame className="mx-auto w-full max-w-[24rem] lg:mx-0 lg:h-full">
+                <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 lg:aspect-auto lg:h-full">
+                  <ProfileReveal
+                    base={profile}
+                    hover={profileHover}
+                    alt={site.name}
+                    className="absolute inset-0"
+                  />
+                  {/* scan line */}
+                  <span
+                    className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-gold/30 to-transparent"
+                    style={{ animation: "scan 4.5s linear infinite" }}
+                    aria-hidden
+                  />
+                  {/* id strip */}
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between rounded-b-2xl bg-black/60 px-3 py-1.5 font-mono text-[9px] uppercase tracking-widest text-white/60 backdrop-blur-sm">
+                    <span>ID · RM-01</span>
+                    <span className="text-gold">◈ Verified</span>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              </HudFrame>
 
-          {/* desktop: connector lines + labels in a shared coordinate space */}
-          <div className="absolute inset-0 hidden lg:block">
-            <svg
-              viewBox="0 0 1000 600"
-              className="pointer-events-none absolute inset-0 h-full w-full"
-              fill="none"
-              aria-hidden
-            >
-              {NODE.map((n, i) => (
-                <g key={i} stroke="var(--color-gold)" vectorEffect="non-scaling-stroke">
-                  <line
-                    x1={n.a[0]}
-                    y1={n.a[1]}
-                    x2={n.t[0]}
-                    y2={n.t[1]}
-                    strokeWidth="2"
-                    strokeDasharray="5 6"
-                    strokeOpacity="0.6"
-                    strokeLinecap="round"
-                  />
-                  <circle cx={n.a[0]} cy={n.a[1]} r="7" strokeWidth="2" />
-                  <circle cx={n.t[0]} cy={n.t[1]} r="3.5" fill="var(--color-gold)" stroke="none" />
-                </g>
-              ))}
-            </svg>
+              {/* identity + stats */}
+              <div className="flex flex-col justify-center">
+                <p className="font-mono text-xs uppercase tracking-[0.25em] text-gold">
+                  {site.role}
+                </p>
+                <h2 className="mt-3">Agent Rondo</h2>
+                <p className="mt-4 max-w-md leading-relaxed text-white/60">{site.tagline}</p>
 
-            {NODE.map((n, i) => (
-              <div
-                key={stats[i].label}
-                className="absolute"
-                style={{ left: n.cx, top: n.cy, transform: `translate(${n.tx}, -50%)` }}
-              >
-                <Stat s={stats[i]} />
+                {/* socials */}
+                <div className="mt-6 flex gap-2.5">
+                  {site.socials.map((s) => {
+                    const external = s.href.startsWith("http");
+                    return (
+                      <Link
+                        key={s.label}
+                        href={s.href}
+                        aria-label={s.label}
+                        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/12 bg-white/[0.03] text-white/70 transition-colors hover:border-gold/50 hover:text-gold"
+                      >
+                        <Icon name={s.icon} className="h-5 w-5" />
+                      </Link>
+                    );
+                  })}
+                </div>
+
+                {/* HUD stat grid */}
+                <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10">
+                  {stats.map((s, i) => (
+                    <div
+                      key={s.label}
+                      className="relative bg-deep/70 p-4 sm:p-5"
+                    >
+                      <span className="font-mono text-[10px] tracking-widest text-white/30">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <p className="mt-1 font-display text-3xl font-bold text-white sm:text-4xl">
+                        <CountUp to={s.value} suffix={s.suffix} />
+                      </p>
+                      <p className="mt-1.5 text-[11px] leading-tight text-white/45">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            </div>
           </div>
         </Reveal>
       </div>

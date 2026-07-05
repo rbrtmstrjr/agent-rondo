@@ -1,41 +1,63 @@
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
-import { Tilt } from "@/components/visual/tilt";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CaseStudy } from "@/content/site";
+import blob from "@/src/images/svg/blob.svg";
 
+/* Distinct blob position per card so no two look alike (deterministic by slug). */
+const BLOB_VARIANTS = [
+  "left-[42%] top-[38%] h-[210%] w-[210%] -rotate-12",
+  "left-[60%] top-[46%] h-[220%] w-[220%] rotate-[20deg] -scale-x-100",
+  "left-[46%] top-[52%] h-[200%] w-[200%] rotate-6",
+  "left-[56%] top-[40%] h-[225%] w-[225%] -rotate-[22deg]",
+];
+
+function blobIndex(slug: string) {
+  return [...slug].reduce((n, c) => n + c.charCodeAt(0), 0) % BLOB_VARIANTS.length;
+}
+
+/* Clean work card — matches the services card style: blob glow, glass, a minimal
+   title + one-line summary, and a chevron-in-circle. Deliberately light on data. */
 export function CaseCard({ study, className }: { study: CaseStudy; className?: string }) {
   return (
-    <Tilt max={6} className={cn("group h-full overflow-hidden rounded-2xl border border-line bg-base/60", className)}>
-      <Link href={`/work/${study.slug}`} className="flex h-full flex-col p-7 sm:p-8">
-        <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full border border-line bg-surface px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted">
-            {study.category}
-          </span>
-          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-gold">
-            <span className="h-1.5 w-1.5 rounded-full bg-gold" />
-            {study.status}
-          </span>
-        </div>
+    <Link
+      href={`/work/${study.slug}`}
+      className={cn(
+        "group relative flex h-full min-h-[17rem] flex-col overflow-hidden rounded-3xl border border-white/15 bg-white/[0.04] p-7 backdrop-blur-xl transition-colors duration-300 hover:border-white/30",
+        className,
+      )}
+    >
+      {/* blob background */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute -z-0 -translate-x-1/2 -translate-y-1/2 bg-contain bg-center bg-no-repeat opacity-90",
+          BLOB_VARIANTS[blobIndex(study.slug)],
+        )}
+        style={{ backgroundImage: `url(${blob.src})` }}
+      />
 
-        <h3 className="mt-5 font-display text-2xl font-bold tracking-tight">{study.title}</h3>
-        <p className="mt-1 text-xs text-faint">{study.client}</p>
-        <p className="mt-4 leading-relaxed text-muted">{study.oneLiner}</p>
+      {/* status */}
+      <span className="relative inline-flex w-fit items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-gold">
+        <span className="h-1.5 w-1.5 rounded-full bg-gold" />
+        {study.status}
+      </span>
 
-        {/* stack */}
-        <div className="mt-6 flex flex-wrap gap-1.5">
-          {study.stack.slice(0, 3).map((t) => (
-            <span key={t} className="rounded-md bg-surface px-2 py-0.5 font-mono text-[10px] text-muted">
-              {t}
-            </span>
-          ))}
-        </div>
+      {/* title + one-liner */}
+      <h3 className="relative mt-5 text-xl tracking-[0.05em] text-white">{study.title}</h3>
+      <p className="relative mt-3 line-clamp-2 text-sm leading-relaxed text-white/50">
+        {study.oneLiner}
+      </p>
 
-        <span className="mt-auto inline-flex items-center gap-1.5 pt-6 text-sm font-medium text-foreground">
-          Read the case study
-          <ArrowUpRight className="h-4 w-4 text-gold transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+      {/* footer — read + chevron */}
+      <div className="relative mt-auto flex items-center justify-between gap-4 pt-8">
+        <span className="font-mono text-xs uppercase tracking-wider text-white">
+          Read case study
         </span>
-      </Link>
-    </Tilt>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/30 text-white transition-colors duration-300 group-hover:border-white/60 group-hover:bg-white/10">
+          <ChevronRight className="h-5 w-5" strokeWidth={2} />
+        </span>
+      </div>
+    </Link>
   );
 }

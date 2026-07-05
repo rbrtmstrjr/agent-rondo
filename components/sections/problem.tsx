@@ -2,6 +2,7 @@ import { Clock, MailX, FileWarning, MoonStar } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 import { RevealGroup, RevealItem } from "@/components/reveal";
 import { SpotlightCard } from "@/components/visual/spotlight-card";
+import blob from "@/src/images/svg/blob.svg";
 
 const PAINS = [
   {
@@ -32,8 +33,22 @@ const PAINS = [
 
 export function Problem() {
   return (
-    <section className="relative px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-7xl">
+    <section className="relative isolate px-4 py-24 sm:py-28">
+      {/* static blob SVG (blur baked in) on both sides */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-x-clip" aria-hidden>
+        {/* left — large, dominant */}
+        <div
+          className="absolute bottom-[-38%] left-[-20%] h-[195%] w-[74rem] bg-contain bg-left-bottom bg-no-repeat"
+          style={{ backgroundImage: `url(${blob.src})` }}
+        />
+        {/* right — smaller, top-right corner only */}
+        <div
+          className="absolute -right-[7%] -top-[16%] h-[72%] w-[34rem] -scale-x-100 bg-contain bg-top bg-no-repeat"
+          style={{ backgroundImage: `url(${blob.src})` }}
+        />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="The hidden cost of doing it by hand"
           title={
@@ -49,13 +64,13 @@ export function Problem() {
         <RevealGroup className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PAINS.map((p) => (
             <RevealItem key={p.title}>
-              <SpotlightCard className="h-full" spotlight="var(--color-cyan-glow)">
+              <SpotlightCard className="h-full border-white/15 bg-white/5 backdrop-blur-xl">
                 <div className="p-6">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface">
-                    <p.icon className="h-5 w-5 text-gold" aria-hidden />
+                  <div className="gold-gradient flex h-10 w-10 items-center justify-center rounded-lg">
+                    <p.icon className="h-5 w-5 text-black" strokeWidth={2.25} aria-hidden />
                   </div>
-                  <p className="mt-5 font-display text-3xl font-bold text-foreground">{p.stat}</p>
-                  <h3 className="mt-1 font-display text-base font-semibold">{p.title}</h3>
+                  <p className="mt-5 font-display text-5xl font-bold text-foreground sm:text-6xl">{p.stat}</p>
+                  <h3 className="mt-1 font-display text-base font-semibold text-foreground">{p.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{p.desc}</p>
                 </div>
               </SpotlightCard>

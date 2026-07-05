@@ -23,9 +23,7 @@ export function SectionHeading({
       )}
     >
       <p className="eyebrow">{eyebrow}</p>
-      <h2 className="mt-4 font-display text-4xl font-bold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl">
-        {title}
-      </h2>
+      <h2 className="mt-4">{title}</h2>
       {desc && <p className="mt-5 text-lg leading-relaxed text-muted">{desc}</p>}
     </Reveal>
   );

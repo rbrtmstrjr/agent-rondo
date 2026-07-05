@@ -18,9 +18,7 @@ export function PageHeader({
       <div className="mx-auto max-w-7xl">
         <Reveal>
           <p className="eyebrow">{eyebrow}</p>
-          <h1 className="mt-4 max-w-4xl font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl md:text-6xl">
-            {title}
-          </h1>
+          <h1 className="mt-4 max-w-4xl">{title}</h1>
           {desc && <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted">{desc}</p>}
           {children}
         </Reveal>

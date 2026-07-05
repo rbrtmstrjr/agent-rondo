@@ -1,12 +1,9 @@
 import { SectionHeading } from "@/components/section-heading";
-import { RevealGroup, RevealItem } from "@/components/reveal";
+import { Reveal } from "@/components/reveal";
 import { ServiceCard } from "@/components/services/service-card";
 import { services } from "@/content/site";
 
 export function Services() {
-  const primary = services.filter((s) => s.tier === "primary");
-  const secondary = services.filter((s) => s.tier === "secondary");
-
   return (
     <section id="services" className="relative scroll-mt-24 px-4 py-24 sm:py-28">
       <div className="mx-auto max-w-7xl">
@@ -20,20 +17,12 @@ export function Services() {
           desc="My focus is AI automation — but I can also build the website, app, and brand it all runs on. One person, the whole system."
         />
 
-        <RevealGroup className="mt-14 grid gap-4 lg:grid-cols-3">
-          {/* Primary spans full width on top */}
-          {primary.map((s) => (
-            <RevealItem key={s.slug} className="lg:col-span-3">
-              <ServiceCard service={s} />
-            </RevealItem>
+        {/* Expanding accordion — panels flex; hover one to grow it to full width */}
+        <Reveal className="group/row mt-14 flex flex-col gap-4 lg:h-[30rem] lg:flex-row">
+          {services.map((s, i) => (
+            <ServiceCard key={s.slug} service={s} index={i} />
           ))}
-          {/* Secondary services */}
-          {secondary.map((s) => (
-            <RevealItem key={s.slug}>
-              <ServiceCard service={s} />
-            </RevealItem>
-          ))}
-        </RevealGroup>
+        </Reveal>
       </div>
     </section>
   );

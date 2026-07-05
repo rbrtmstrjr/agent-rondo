@@ -99,7 +99,7 @@ export default function AboutPage() {
           <div className="mt-24">
             <Reveal>
               <p className="eyebrow">The path here</p>
-              <h2 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              <h2 className="mt-4">
                 From pixels to <span className="text-gradient-gold">pipelines.</span>
               </h2>
             </Reveal>
@@ -120,7 +120,7 @@ export default function AboutPage() {
           <div className="mt-24">
             <Reveal>
               <p className="eyebrow">The toolkit</p>
-              <h2 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              <h2 className="mt-4">
                 What I build with.
               </h2>
             </Reveal>

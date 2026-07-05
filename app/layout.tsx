@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
+import { Agdasima, Inter, JetBrains_Mono } from "next/font/google";
 import { site } from "@/content/site";
 import { Nav } from "@/components/nav";
 import { BottomNav } from "@/components/bottom-nav";
 import { Footer } from "@/components/footer";
+import { ScrollProgress } from "@/components/visual/scroll-progress";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
+const agdasima = Agdasima({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-space-grotesk",
+  weight: ["400", "700"],
+  variable: "--font-agdasima",
   display: "swap",
 });
 
@@ -62,7 +63,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${agdasima.variable} ${inter.variable} ${jetbrains.variable}`}>
       <body className="min-h-dvh antialiased">
         <a
           href="#main"
@@ -71,6 +72,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <Nav />
+        <ScrollProgress />
         <main id="main">{children}</main>
         <Footer />
         <BottomNav />

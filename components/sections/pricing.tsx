@@ -1,14 +1,30 @@
+import Link from "next/link";
 import { Check, ArrowUpRight, Info } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 import { RevealGroup, RevealItem, Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { pricing } from "@/content/site";
 import { cn } from "@/lib/utils";
+import blob from "@/src/images/svg/blob.svg";
 
 export function Pricing() {
   return (
-    <section id="pricing" className="relative scroll-mt-24 px-4 py-24 sm:py-28">
-      <div className="mx-auto max-w-7xl">
+    <section id="pricing" className="relative isolate scroll-mt-24 px-4 py-24 sm:py-28">
+      {/* static blob SVG (blur baked in) on both sides — same as the Problem section */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-x-clip" aria-hidden>
+        {/* left — large, dominant */}
+        <div
+          className="absolute bottom-[-38%] left-[-20%] h-[195%] w-[74rem] bg-contain bg-left-bottom bg-no-repeat"
+          style={{ backgroundImage: `url(${blob.src})` }}
+        />
+        {/* right — smaller, top-right corner only */}
+        <div
+          className="absolute -right-[7%] -top-[16%] h-[72%] w-[34rem] -scale-x-100 bg-contain bg-top bg-no-repeat"
+          style={{ backgroundImage: `url(${blob.src})` }}
+        />
+      </div>
+
+      <div className="relative mx-auto max-w-7xl">
         <SectionHeading
           align="center"
           eyebrow="Pricing"
@@ -25,10 +41,10 @@ export function Pricing() {
             <RevealItem key={p.name} className="h-full">
               <div
                 className={cn(
-                  "flex h-full flex-col rounded-2xl border p-7 sm:p-8",
+                  "flex h-full flex-col rounded-2xl border p-7 backdrop-blur-xl sm:p-8",
                   p.featured
-                    ? "border-gold/40 bg-base/70 glow-gold"
-                    : "border-line bg-base/60",
+                    ? "border-gold/40 bg-white/10 glow-gold"
+                    : "border-white/15 bg-white/5",
                 )}
               >
                 {p.featured && (
@@ -37,11 +53,11 @@ export function Pricing() {
                   </span>
                 )}
 
-                <h3 className="font-display text-xl font-bold">{p.name}</h3>
+                <h3>{p.name}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{p.tagline}</p>
 
                 <div className="mt-6">
-                  <span className="font-display text-4xl font-bold text-gradient-gold">
+                  <span className="font-display text-4xl font-bold uppercase text-gradient-gold">
                     {p.price}
                   </span>
                   <span className="ml-2 font-mono text-xs text-faint">{p.priceNote}</span>
@@ -59,14 +75,20 @@ export function Pricing() {
                 </ul>
 
                 <div className="mt-auto pt-8">
-                  <Button
-                    href="/contact"
-                    variant={p.featured ? "primary" : "outline"}
-                    className="w-full"
-                  >
-                    {p.cta}
-                    <ArrowUpRight className="h-4 w-4" />
-                  </Button>
+                  {p.featured ? (
+                    <Button href="/contact" variant="white" className="w-full">
+                      {p.cta}
+                      <ArrowUpRight className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Link
+                      href="/contact"
+                      className="group inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-gold"
+                    >
+                      {p.cta}
+                      <ArrowUpRight className="h-4 w-4 text-gold transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    </Link>
+                  )}
                 </div>
               </div>
             </RevealItem>

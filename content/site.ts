@@ -74,7 +74,7 @@ export const services: Service[] = [
     tier: "primary",
     tagline: "Your business, on autopilot.",
     summary:
-      "Custom AI workflows that answer customers, qualify leads, read documents, and create content — wired into the tools you already use. Production-grade, not prototypes.",
+      "Custom AI workflows that answer customers, qualify leads, and kill manual data entry.",
     outcomes: [
       "Reply to every lead in seconds, 24/7",
       "Deflect repetitive support tickets",
@@ -90,23 +90,63 @@ export const services: Service[] = [
     ],
   },
   {
+    slug: "content-creation",
+    icon: "pen",
+    title: "Content Creation",
+    tier: "secondary",
+    tagline: "One idea, every channel.",
+    summary:
+      "On-brand posts, captions, and short-form video, produced fast with an AI pipeline.",
+    outcomes: [
+      "A steady, consistent posting cadence",
+      "One input repurposed into every format",
+      "Content that sounds like you, not a robot",
+    ],
+    deliverables: [
+      "Social posts & captions",
+      "Short-form video & reels",
+      "Content calendars & batching",
+      "AI repurposing pipelines",
+    ],
+  },
+  {
     slug: "web-mobile-development",
     icon: "code",
     title: "Web & Mobile Development",
     tier: "secondary",
     tagline: "The product your automation runs on.",
     summary:
-      "Fast, modern websites and apps built with Next.js, React, and TypeScript — the same stack powering this site and my client deployments.",
+      "Fast, modern websites and cross-platform apps built with Next.js, React, and TypeScript.",
     outcomes: [
       "Conversion-focused, lightning-fast sites",
-      "Clean, maintainable, scalable code",
-      "SEO and performance built in",
+      "Native-feeling apps on iOS and Android",
+      "Clean, scalable code with SEO built in",
     ],
     deliverables: [
       "Marketing sites & landing pages",
       "Web apps & dashboards",
-      "Mobile-responsive front-ends",
+      "iOS & Android apps",
       "API & automation integrations",
+    ],
+  },
+  {
+    slug: "system-development",
+    icon: "server",
+    title: "System Development",
+    tier: "secondary",
+    tagline: "The engine under the hood.",
+    summary:
+      "Custom backends, APIs, and internal tools that unify your data and automations.",
+    outcomes: [
+      "A single source of truth for your data",
+      "Reliable, scalable infrastructure",
+      "Internal tools that fit how you work",
+    ],
+    deliverables: [
+      "REST & webhook APIs",
+      "Databases & data pipelines",
+      "Admin panels & internal dashboards",
+      "Integrations between your tools",
     ],
   },
   {
@@ -116,7 +156,7 @@ export const services: Service[] = [
     tier: "secondary",
     tagline: "Interfaces people actually want to use.",
     summary:
-      "Design systems and interfaces that are clear, premium, and built to convert — grounded in real UX principles, not just trends.",
+      "Clear, premium interfaces and design systems built to convert, not just follow trends.",
     outcomes: [
       "Higher engagement & conversion",
       "Consistent, reusable design systems",
@@ -136,7 +176,7 @@ export const services: Service[] = [
     tier: "secondary",
     tagline: "A brand that looks the part.",
     summary:
-      "Visual assets that make your brand look credible and consistent across every touchpoint.",
+      "Logos, brand kits, and creative that keep your brand credible and consistent.",
     outcomes: ["A cohesive visual identity", "Assets ready for any channel", "Fast turnaround"],
     deliverables: [
       "Logos & brand kits",
@@ -150,7 +190,11 @@ export const services: Service[] = [
 /* ---- Case studies (the proof). Add one object = one new case study. ----- */
 export type CaseStudy = {
   slug: string;
-  category: "AI Automation" | "Web" | "Content";
+  category:
+    | "AI Automation"
+    | "Web & Mobile Development"
+    | "UI/UX"
+    | "Graphic Design";
   featured: boolean;
   title: string;
   client: string;
@@ -252,7 +296,7 @@ export const caseStudies: CaseStudy[] = [
   },
   {
     slug: "content-reel-engine",
-    category: "Content",
+    category: "AI Automation",
     featured: false,
     title: "AI Reel / Video Engine",
     client: "Internal product",

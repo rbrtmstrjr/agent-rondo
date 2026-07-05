@@ -7,7 +7,7 @@
 
 @theme {
   /* Surfaces — deep indigo base (brand) */
-  --color-deep: #03001c;
+  --color-deep: #110706;
   --color-base: #070425;
   --color-elevated: #0e0a31;
   --color-surface: rgba(255, 255, 255, 0.04);
@@ -20,18 +20,18 @@
   --color-muted: #9aa0aa;
   --color-faint: #6b7280;
 
-  /* Brand accent — gradient gold */
-  --color-gold: #f5c24b; /* rich gold (base) */
-  --color-gold-bright: #ffe29a; /* pale gold highlight */
-  --color-gold-deep: #b87a1e; /* deep bronze-gold */
-  --color-gold-glow: rgba(245, 194, 75, 0.2);
+  /* Brand accent — yellow-orange. Change --color-gold to re-theme the whole site. */
+  --color-gold: #ff9e1b; /* yellow-orange (base) */
+  --color-gold-bright: #ffc24d; /* light yellow-orange highlight */
+  --color-gold-deep: #b85c00; /* deep burnt orange */
+  --color-gold-glow: color-mix(in srgb, var(--color-gold) 22%, transparent);
 
   /* Secondary "AI / tech" glow — used sparingly */
   --color-cyan: #38bdf8;
   --color-cyan-glow: rgba(56, 189, 248, 0.14);
 
   /* Fonts (wired to next/font variables in layout.tsx) */
-  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-agdasima), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 
@@ -42,10 +42,6 @@
   --radius-sm: 10px;
   --radius: 16px;
   --radius-lg: 24px;
-}
-
-* {
-  border-color: var(--color-line);
 }
 
 html {
@@ -60,14 +56,14 @@ body {
   font-family: var(--font-sans);
   /* subtle base vignette so the page never reads flat */
   background-image:
-    radial-gradient(60rem 40rem at 50% -10%, rgba(255, 199, 0, 0.07), transparent 70%),
+    radial-gradient(60rem 40rem at 50% -10%, color-mix(in srgb, var(--color-gold) 7%, transparent), transparent 70%),
     radial-gradient(50rem 40rem at 100% 10%, rgba(56, 189, 248, 0.05), transparent 70%);
   background-attachment: fixed;
 }
 
 ::selection {
   background: var(--color-gold);
-  color: #03001c;
+  color: #110706;
 }
 
 /* Custom scrollbar — small premium detail */
@@ -83,7 +79,58 @@ body {
   border: 2px solid var(--color-deep);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 199, 0, 0.5);
+  background: color-mix(in srgb, var(--color-gold) 50%, transparent);
+}
+
+/* ============================================================================
+   Centralized typography — ONE canonical format per heading level (DRY).
+   Section/page titles (h1, h2) are uppercase with open tracking. Components
+   should only add layout (margin / max-width / color), never re-style the
+   font, size, weight or case — change it here and it changes everywhere.
+   ========================================================================== */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--color-foreground);
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: clamp(2.75rem, 6vw, 4.5rem);
+    letter-spacing: 0.04em;
+  }
+  h2 {
+    font-size: clamp(2rem, 4.5vw, 3.5rem);
+    letter-spacing: 0.04em;
+  }
+  h3 {
+    font-size: 1.5rem;
+    line-height: 1.15;
+    letter-spacing: 0.05em;
+  }
+  h4 {
+    font-size: 1.25rem;
+    letter-spacing: 0.05em;
+  }
+  h5 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.05em;
+  }
+  h6 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.05em;
+  }
 }
 
 @layer utilities {

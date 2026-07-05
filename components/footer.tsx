@@ -6,7 +6,7 @@ import { Icon } from "./icons";
 
 export function Footer() {
   return (
-    <footer className="relative mt-32 border-t border-line pb-24 sm:pb-28">
+    <footer className="relative mt-32 pb-24 sm:pb-28">
       {/* Big CTA band */}
       <div className="relative isolate overflow-hidden">
         {/* pointed gradient dome — crisp original + bigger blurred copy behind it for a glow */}
@@ -21,18 +21,14 @@ export function Footer() {
             >
               <defs>
                 <linearGradient id="domeGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#EDEAEC" />
-                  <stop offset="10%" stopColor="#F7DB92" />
-                  <stop offset="20%" stopColor="#FFC252" />
-                  <stop offset="29%" stopColor="#E7B255" />
-                  <stop offset="37%" stopColor="#C89343" />
-                  <stop offset="44%" stopColor="#B0813A" />
-                  <stop offset="52%" stopColor="#8A662E" />
-                  <stop offset="60%" stopColor="#5E4622" />
-                  <stop offset="69%" stopColor="#3A2C1A" />
-                  <stop offset="78%" stopColor="#211829" />
-                  <stop offset="88%" stopColor="#0E0821" />
-                  <stop offset="96%" stopColor="#03001C" />
+                  <stop offset="0%" stopColor="var(--color-gold-bright)" />
+                  <stop offset="14%" stopColor="var(--color-gold)" />
+                  <stop offset="30%" stopColor="var(--color-gold-deep)" />
+                  <stop offset="44%" stopColor="#7a3400" />
+                  <stop offset="58%" stopColor="#4a2000" />
+                  <stop offset="70%" stopColor="#2a1409" />
+                  <stop offset="82%" stopColor="#1a0d07" />
+                  <stop offset="96%" stopColor="var(--color-deep)" />
                 </linearGradient>
               </defs>
               <path d="M0 40 C 15 -8 85 -8 100 40 Z" fill="url(#domeGrad)" />
@@ -51,7 +47,7 @@ export function Footer() {
 
         <div className="relative z-10 mx-auto max-w-7xl px-4 pb-56 pt-20 text-center sm:pb-80">
           <p className="eyebrow">Let&apos;s build something that runs itself</p>
-        <h2 className="mx-auto mt-4 max-w-3xl font-display text-4xl font-bold tracking-tight sm:text-5xl">
+        <h2 className="mx-auto mt-4 max-w-3xl">
           Ready to put your busywork{" "}
           <span className="text-gradient-gold">on autopilot?</span>
         </h2>
@@ -61,7 +57,7 @@ export function Footer() {
         </p>
         <Link
           href="/contact"
-          className="group mt-8 inline-flex h-13 items-center gap-2 rounded-full gold-gradient px-8 text-base font-medium text-black transition-all hover:brightness-110 active:scale-95"
+          className="group mt-8 inline-flex h-13 items-center gap-2 rounded-full bg-white px-8 text-base font-medium text-black transition-all hover:bg-white/90 active:scale-95"
         >
           Book a free automation audit
           <ArrowUpRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -69,7 +65,7 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-line">
+      <div>
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-1">
             <Logo />

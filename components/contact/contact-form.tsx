@@ -50,7 +50,7 @@ export function ContactForm() {
         <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gold-glow">
           <Check className="h-7 w-7 text-gold" />
         </span>
-        <h3 className="font-display text-2xl font-bold">Message sent.</h3>
+        <h3>Message sent.</h3>
         <p className="max-w-sm text-muted">
           Thanks for reaching out — I&apos;ll get back to you within one business day. For anything
           urgent, email me directly.

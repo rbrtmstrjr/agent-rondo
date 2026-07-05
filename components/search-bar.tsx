@@ -63,8 +63,8 @@ export function SearchBar({ className }: { className?: string }) {
 
   return (
     <div ref={ref} className={cn("relative", className)}>
-      <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 transition-colors focus-within:border-gold/40">
-        <Search className="h-4 w-4 shrink-0 text-faint" aria-hidden />
+      <div className="flex items-center gap-2 rounded-full border border-white/70 bg-surface px-4 transition-colors focus-within:border-white">
+        <Search className="h-4 w-4 shrink-0 text-white/30" aria-hidden />
         <input
           type="text"
           value={q}
@@ -77,7 +77,7 @@ export function SearchBar({ className }: { className?: string }) {
           onKeyDown={onKeyDown}
           placeholder="Search work, services…"
           aria-label="Search the site"
-          className="w-full bg-transparent py-2.5 text-sm text-foreground placeholder:text-faint focus:outline-none"
+          className="w-full bg-transparent py-2.5 text-sm text-foreground placeholder:text-white/30 focus:outline-none"
         />
       </div>
 
