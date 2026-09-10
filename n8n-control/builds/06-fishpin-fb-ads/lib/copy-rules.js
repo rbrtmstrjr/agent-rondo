@@ -10,24 +10,10 @@ const OK_ACRONYMS = ['GPS', 'SOS', 'SMS', 'ETA', 'AI', 'PH', 'PHP', 'WIFI', 'DIT
 
 const wordCount = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).length;
 
-// --- price context (see rule 9) -------------------------------------------
-// How much surrounding text counts as a peso figure's "immediate context".
-const PRICE_CONTEXT_CHARS = 70;
-// Marks a figure as somebody ELSE'S cost: a recurring top-up/subscription, or
-// a rival device. Such a figure is a legitimate comparison, not a misquote.
-const COMPARISON_COST_CONTEXT = /(load|buwan|monthly|per month|a month|subscription|gps|device|handheld|tracker|plotter|kada araw|daily|kuryente|gasolina)/i;
-// Marks a figure as FISHPIN'S OWN price. Always wins over the line above, so
-// "Isang bayad lang po, PHP 999, walang buwanang bayad" is still rejected.
-// Every "* app" alternative is anchored with \b on BOTH sides: without the
-// leading one, "ng app" matches inside "ibang app" ("another app"), which is
-// the exact opposite meaning — a rival app's cost, not FishPin's.
-const OWN_PRICE_CONTEXT = /(fishpin|isang bayad|isahang bayad|one[- ]?time|bayad lang|\bang app\b|\bsa app\b|\bng app\b|\bapp price\b|\bpresyo ng app\b)/i;
-
 function validateCopy(copy, opts) {
   const o = opts || {};
   const banned = o.bannedWords || [];
   const competitors = o.competitors || [];
-  const price = o.price;
   const reasons = [];
   const c = copy || {};
 
@@ -119,16 +105,18 @@ function validateCopy(copy, opts) {
   }
 
   // 9. price
-  // Two different mistakes hide behind "a peso figure that is not 499":
-  //   (a) the model misquoted FishPin's OWN price   -> must still reject
-  //   (b) the model quoted a COMPARISON cost        -> must pass
-  // (b) is the entire point of the cost-comparison pillar: a one-time 499
-  // against a monthly phone-load top-up or a handheld GPS unit. Rejecting (b)
-  // with "the only allowed figure is 499" steered the regeneration into
-  // relabelling that other cost AS 499, which then passed validation and
-  // published a false comparison. So a figure whose immediate context marks it
-  // as somebody else's recurring or device cost is ignored — unless that same
-  // context also claims it as FishPin's own price, in which case (a) wins.
+  // The owner does not want price mentioned at all, ever: not FishPin's own
+  // price, and not a comparison figure (a rival device's cost, a monthly
+  // load top-up, a subscription fee). Ads must lead with the problem, not a
+  // number. So ANY peso figure found anywhere in the generated copy is a
+  // rejection, full stop, no context-sniffing to tell "our price" apart from
+  // "their price" (that distinction is exactly what let a wrong app price
+  // slip through before, e.g. "Halagang P999 lang, at wala nang bayad kada
+  // buwan" used to pass because "kada buwan" read as a comparison label).
+  // Detection stays intentionally scoped to peso notations only, so an
+  // ordinary count like "200 species" or "3 to 5 contacts" still passes:
+  // a number adjacent to ₱, PHP/Php/php, a bare capital P prefix, or a
+  // trailing pesos/piso.
   const priceHits = [];
   let m;
   const pushHit = (mm) => priceHits.push({ raw: mm[1], start: mm.index, end: mm.index + mm[0].length });
@@ -141,21 +129,16 @@ function validateCopy(copy, opts) {
   // this does not also fire on the "P" inside "PHP" (no boundary before it).
   const rx3 = /\bP\s?(\d[\d,]*)\b/g;
   while ((m = rx3.exec(all)) !== null) pushHit(m);
-  priceHits.forEach((hit) => {
-    const n = parseInt(String(hit.raw).replace(/,/g, ''), 10);
-    if (isNaN(n) || n === price) return;
-    const ctx = all.slice(Math.max(0, hit.start - PRICE_CONTEXT_CHARS), hit.end + PRICE_CONTEXT_CHARS);
-    // A clearly-labelled comparison cost is legitimate copy, not a misquote.
-    if (COMPARISON_COST_CONTEXT.test(ctx) && !OWN_PRICE_CONTEXT.test(ctx)) return;
-    reasons.push('Peso figure ' + hit.raw + " reads as FishPin's own price. FishPin is " + price
-      + ', a one-time purchase. If ' + hit.raw + " is somebody else's cost (a monthly load, a handheld "
-      + 'GPS unit), say plainly whose cost it is and keep it out of the sentence that states '
-      + "FishPin's price. Do not relabel it as FishPin's price.");
-  });
+  if (priceHits.length > 0) {
+    // The reason deliberately never names the figure: restating a number in
+    // the rejection reason invites the regeneration to echo that same number
+    // straight back into the next attempt.
+    reasons.push('Do not mention a price or any peso amount. Lead with the problem FishPin solves instead.');
+  }
 
   return { valid: reasons.length === 0, reasons };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { validateCopy, OK_ACRONYMS, COMPARISON_COST_CONTEXT, OWN_PRICE_CONTEXT };
+  module.exports = { validateCopy, OK_ACRONYMS };
 }

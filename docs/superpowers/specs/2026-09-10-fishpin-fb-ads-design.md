@@ -174,13 +174,15 @@ alt_text     STRING
 
 ### Hard product facts injected
 
-Live features only, per section 1 of the source prompt. Price is **PHP 499, one-time,
-no subscription** — taken from the existing FishPin chatbot knowledge base
-(`builds/fishpin-chatbot/`), which is the established source of truth for this venture.
+Live features only, per section 1 of the source prompt. Price is **PHP 500, one-time,
+no subscription** — corrected 2026-09-10 from an earlier PHP 499 figure that came from a
+stale copy of the FishPin chatbot knowledge base (`builds/fishpin-chatbot/`), which is the
+established source of truth for this venture. The figure is a product fact only: the
+owner does not want it (or any peso amount) appearing in generated ad copy — see §6.
 
 Forbidden claims, encoded as prompt rules AND as validator checks: iPhone support, live
 tracking of other boats, typhoon warnings, government or BFAR endorsement, guaranteed
-rescue, any price other than the supplied figure.
+rescue, any price or peso amount at all.
 
 ---
 
@@ -198,8 +200,29 @@ Deterministic, no model in the loop. Rejects on any of:
 7. All-caps run longer than one word.
 8. Compliance breach: a rescue guarantee ("hindi ka mamamatay", "will save your life"),
    a fish-safety absolute (must read "generally considered safe to eat", not "safe to eat"),
-   a named competitor brand, a fabricated review or user count, or a peso figure that is
-   not 499.
+   a named competitor brand, a fabricated review or user count, or any peso figure at all
+   (never FishPin's own price, never a comparison figure — see §6a).
+
+### 6a. Price rule (revised 2026-09-10)
+
+The owner does not want ads to lead with, or even mention, price. Ads must instead lead
+with the problem FishPin solves — losing track of the good fishing spot, getting lost when
+fog or night comes, a dead engine with no way to call for help, or signal disappearing
+offshore. This replaces a defect in the original price rule: it tried to tell FishPin's own
+price apart from a legitimate comparison figure by reading the text immediately around a
+peso figure for context words (a recurring cost, a device, "kada buwan", vs. FishPin's own
+price context). A review proved that approach both rejected legitimate copy AND let a wrong
+app price through disguised as a comparison, e.g. "Halagang P999 lang, at wala nang bayad
+kada buwan" used to pass because "kada buwan" read as a comparison label.
+
+The fix is simpler and strictly safer: any peso figure detected anywhere in `headline`,
+`subhead`, `caption`, or `cta` is a rejection, full stop, regardless of whose cost it claims
+to be. Detection stays scoped to peso notations (a number adjacent to ₱, PHP/Php/php, a bare
+capital P prefix, or a trailing pesos/piso) so an ordinary count ("200 species", "3 to 5
+contacts") still passes. The rejection reason never restates the offending figure, since
+doing so invites the regeneration to echo that number straight back. The cost-comparison
+pillar (§10, queue row FP-008 in §15) still contrasts a one-time purchase against a
+recurring monthly load cost — just without quoting a figure for either side.
 
 Failure path: one automatic regeneration with the validator's own reason as
 `revision_note`. If the second attempt also fails, set `status = needs_manual` and alert
@@ -277,8 +300,9 @@ Branch targets:
   to the image prompt, skipping copy generation.
 - `Regenerate both` — re-enter at Build Copy Prompt.
 
-**Loop guard:** at `attempt` 4, stop. Set `status = needs_manual`, post to Slack
-"3 attempts rejected, needs a human. Row id {id}". No further re-invocation.
+**Loop guard:** at `attempt` 3, stop (there is never an "attempt 4 of 3"). Set
+`status = needs_manual`, post to Slack "3 attempts rejected, needs a human. Row id {id}".
+No further re-invocation.
 
 **Timeout:** on a 6h no-response, set `status = expired`, alert Slack, do not post.
 
@@ -308,8 +332,9 @@ comparison, social proof, behind the scenes.
 quote supplied by the owner. The copy validator additionally rejects any fabricated
 testimonial, name, rating, or user count on every pillar.
 
-Cost comparison compares against "a GPS device" generically. Naming a competitor brand in
-the caption is a validator failure.
+Cost comparison compares against "a GPS device" generically, contrasting a one-time
+purchase against a recurring monthly load cost without quoting a figure for either side
+(see §6a). Naming a competitor brand in the caption is a validator failure.
 
 ---
 
@@ -346,7 +371,9 @@ channel exists and the bot is invited.
 
 `pageId`, `graphVersion`, `sheetId`, `queueTab`, `attemptsTab`, `copyModel`,
 `imageModel`, `copyTemperature`, `maxAttempts`, `reviewTimeoutHours`, `reviewChannel`,
-`opsChannel`, `appPrice`, `playStoreUrl`, `selfWebhookUrl`, `insightsDelayHours`.
+`opsChannel`, `playStoreUrl`, `selfWebhookUrl`, `insightsDelayHours`.
+(`appPrice` was removed 2026-09-10: the price rule no longer reads the app's price to
+decide validity — see §6a — so nothing consumed the tunable any more.)
 
 ---
 
@@ -357,9 +384,10 @@ channel exists and the bot is invited.
 Offline (pure Code-node assertions, no network):
 - Copy validator rejects an em dash, each banned word, an over-length headline, a
   short/long caption, a 4-emoji caption, a rescue guarantee, a fish-safety absolute, a
-  named competitor, a fabricated review count, a wrong peso figure.
+  named competitor, a fabricated review count, any peso figure at all (see §6a).
 - Copy validator accepts a known-good sample.
-- Loop guard increments correctly and hard-stops at attempt 4.
+- Loop guard increments correctly and hard-stops at attempt 3 (there is never an
+  "attempt 4 of 3").
 - Route decision maps all four dropdown values plus timeout to the right branch.
 - Image validator rejects an empty response, an undersized payload, and a wrong MIME type.
 - Image prompt builder includes the exact headline and every negative constraint.
@@ -391,7 +419,7 @@ n8n-control/builds/06-fishpin-fb-ads/
   build-image-prompt.js     scene + exact headline + style suffix + negatives
   validate-image.js         bytes, MIME, dimensions
   route-decision.js         approve / regen copy / regen image / regen both / timeout
-  loop-guard.js             attempt counter, hard stop at 4, re-invoke payload
+  loop-guard.js             attempt counter, hard stop at 3, re-invoke payload
   map-writeback.js          Queue and Attempts row shaping
   select-due.js             insights: which posted rows are due for metrics
   map-metrics.js            insights: Graph responses -> row columns
@@ -418,7 +446,7 @@ Deploy loop, per repo convention:
 | FP-005 | fish fact | Species of the day from the 200+ fish guide |
 | FP-006 | fish fact | Local name, season and habitat of a common catch |
 | FP-007 | tip or how-to | How to mark a spot properly so you can find it again |
-| FP-008 | cost comparison | One-time PHP 499 versus a handheld GPS device |
+| FP-008 | cost comparison | One-time purchase versus a handheld GPS device |
 | FP-009 | social proof | **blocked_needs_asset** — requires a real screenshot or quote |
 | FP-010 | behind the scenes | Built in the Philippines, by a Filipino developer |
 

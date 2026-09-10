@@ -162,7 +162,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
   form with no image and no copy — while a perfectly valid `media_fbid` stood ready to
   publish. `Image URL OK?` stops the run there instead. No image, no review.
 - ✅ **Config node** — both workflows put every tunable (Sheet/Page/channel ids, model
-  names, temperature, retry budgets, timeout, price, Play Store URL, webhook URL) in one
+  names, temperature, retry budgets, timeout, Play Store URL, webhook URL) in one
   `Config` node at the top of the workflow. See the Config table below.
 - ✅ **Logging/notification** — success (`Notify Success`, `Notify Digest`) and every
   failure branch (`Notify Queue Empty`, `Notify Image Failed`, `Notify Publish Failed`,
@@ -314,7 +314,6 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `reviewTimeoutHours` | How long `Slack Review`'s `sendAndWait` waits before `expired`. | `6` |
 | `reviewChannel` | Slack channel id the approval form is posted to. | `C0BDSV5RB5G` |
 | `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0BDSV5RB5G` |
-| `appPrice` | The one allowed peso figure; also injected into the copy prompt. | `499` |
 | `playStoreUrl` | FishPin's Play Store listing, for reference in prompts. | `https://play.google.com/store/apps/details?id=app.fishpin` |
 | `selfWebhookUrl` | This workflow's own webhook, used by `Loop Guard`'s re-invocation. | `https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad` |
 | `loopSecret` | Shared secret for the loop webhook. `Loop Guard` sends it; `Pick Row` refuses any webhook call without it. **Must be replaced before the loop works at all** — every webhook call is refused while it reads `FILL_IN_*`. | `FILL_IN_LOOP_SECRET` |
@@ -379,17 +378,18 @@ Being honest about what's not finished, rather than hiding it:
   rule set (em dash, banned words, length, all-caps, compliance, competitor names, price)
   against `headline`, `subhead`, `caption`, and `cta` only. `hashtags` is checked for
   count (3-5) and `alt_text` for non-emptiness, but neither is checked for banned words,
-  fabricated claims, or a wrong peso figure. In practice this means a bad word or a wrong
-  price could slip through in a hashtag or the alt text without failing validation.
-- **The price rule reads context, so it can be fooled by badly-worded context.** A peso
-  figure other than 499 is rejected as a misquote of FishPin's own price *unless* the
-  surrounding ~70 characters mark it as somebody else's cost (a monthly load, a
-  subscription, a GPS device) and do *not* also claim it as FishPin's price. That is what
-  lets the cost-comparison pillar quote a real comparison figure. It is a heuristic on a
-  text window: a comparison written so loosely that nothing nearby identifies whose cost
-  it is will still be rejected (safe direction), and a wrong figure buried in a sentence
-  that reads as a comparison could in principle pass (unsafe direction, though the
-  human approval gate still sees the caption before anything publishes).
+  fabricated claims, or a peso figure. In practice this means a bad word or a price
+  mention could slip through in a hashtag or the alt text without failing validation.
+- **The price rule is a flat ban, not a context check (as of this revision).** Earlier,
+  the rule tried to tell FishPin's own price apart from a legitimate comparison figure by
+  reading the ~70 characters around a peso figure for context words. A review proved that
+  approach both rejected legitimate copy AND let a wrong app price slip through disguised
+  as a comparison (e.g. "Halagang P999 lang, at wala nang bayad kada buwan" used to pass
+  because "kada buwan" read as a comparison label). The owner decided the ads should never
+  mention price at all, on either side of a comparison, and should lead with the problem
+  instead — which removes the context-sniffing entirely: any peso figure detected in
+  `headline`/`subhead`/`caption`/`cta` is now a rejection, full stop, with a reason that
+  never echoes the offending figure back into the regeneration prompt.
 - **The requested aspect ratio is observed, not enforced.** Spec §16 asked whether
   `generationConfig.imageConfig.aspectRatio` is actually honoured by
   `gemini-2.5-flash-image`. `validateImage` now reads the real dimensions out of the

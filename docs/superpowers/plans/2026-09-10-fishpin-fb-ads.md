@@ -14,7 +14,7 @@
 
 Every task's requirements implicitly include this section.
 
-- **Price is exactly PHP 499, one-time, no subscription.** Any other peso figure in generated copy is a validation failure.
+- **Price is exactly PHP 500, one-time, no subscription** (corrected 2026-09-10 from an earlier PHP 499 figure). **No price or peso amount of any kind may appear in generated copy, ever** — not FishPin's own price, not a comparison figure. Ads lead with the problem, never a number.
 - **No em dash (`—`, U+2014) anywhere in generated copy.** Use commas, colons, or parentheses.
 - **Banned words:** revolutionary, game-changer, seamless, cutting-edge, unlock, elevate, empower, "in today's fast-paced world", "we are excited to announce".
 - **Forbidden product claims:** iPhone/iOS support, live tracking of other boats, typhoon warnings, government or BFAR endorsement, guaranteed rescue.
@@ -75,7 +75,7 @@ This refines spec §14's flat layout by splitting `lib/` from `nodes/`. The spli
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `PRODUCT` — `{ name, price: 499, currency: 'PHP', priceModel, platform, promise, features: string[], forbiddenClaims: string[] }`
+  - `PRODUCT` — `{ name, price: 500, currency: 'PHP', priceModel, platform, promise, features: string[], forbiddenClaims: string[] }`
   - `BANNED_WORDS: string[]`
   - `COMPETITORS: string[]`
   - `PILLARS: { [key: string]: string }` — pillar key to its one-line rule
@@ -124,7 +124,7 @@ section('brand', 'Brand bible', () => {
     'cost comparison', 'social proof', 'behind the scenes',
   ];
 
-  check('price is exactly 499 PHP', B.PRODUCT.price === 499 && B.PRODUCT.currency === 'PHP');
+  check('price is exactly 500 PHP', B.PRODUCT.price === 500 && B.PRODUCT.currency === 'PHP');
   check('ten live features listed', B.PRODUCT.features.length === 10);
   check('banned list has all 9 entries', B.BANNED_WORDS.length >= 9);
   check('banned list contains the 9 required words',
@@ -136,7 +136,9 @@ section('brand', 'Brand bible', () => {
     && REQUIRED_PILLARS.every(k => Object.prototype.hasOwnProperty.call(B.PILLARS, k)));
 
   const sys = B.buildSystemPrompt();
-  check('system prompt states the exact price', /499/.test(sys));
+  check('system prompt never states the price figure', !/\b500\b/.test(sys) && !/\b499\b/.test(sys));
+  check('system prompt forbids stating any price or peso amount', /never state a price/i.test(sys));
+  check('system prompt requires the post to open with the reader\'s problem', /problem first/i.test(sys));
   check('system prompt forbids em dash', /em dash/i.test(sys));
   const emDashLine = sys.split('\n').find(l => /em dash/i.test(l)) || '';
   check('em dash rule covers every generated field, not just caption/headline',
@@ -200,7 +202,7 @@ Create `lib/brand.js`. Product facts, audience, and voice are transcribed from s
 
 const PRODUCT = {
   name: 'FishPin',
-  price: 499,
+  price: 500,
   currency: 'PHP',
   priceModel: 'one-time in-app purchase, no subscription',
   platform: 'Android only, Play Store only, no iOS yet',
@@ -244,7 +246,7 @@ const PILLARS = {
   'safety': 'SOS, emergency contacts, telling family when you will be back. Serious tone, no sales pressure.',
   'fish fact': 'One species from the fish guide. Local name, season, where it lives, is it generally considered safe to eat. This pillar exists to get shared and commented on.',
   'tip or how-to': 'Reading wind and waves, when to go out, how to mark a spot properly.',
-  'cost comparison': 'A handheld GPS device versus a phone app. One-time payment versus monthly load. Compare generically, never name a brand.',
+  'cost comparison': 'A handheld GPS device versus a phone app. Contrast a one-time purchase against a recurring monthly load cost, without quoting any figure for either side. Compare generically, never name a brand.',
   'social proof': 'Only real screenshots, reviews, or user quotes supplied by the owner. Never fabricate anything.',
   'behind the scenes': 'The app is built in the Philippines by a Filipino developer, for Filipino fishermen.',
 };
@@ -269,13 +271,24 @@ function buildSystemPrompt() {
     '',
     'PRODUCT FACTS. Use only these. Never invent a feature.',
     PRODUCT.name + ' is a paid, offline-first marine navigation Android app for Filipino fishermen. '
-      + 'Price is ' + PRODUCT.currency + ' ' + PRODUCT.price + ', a ' + PRODUCT.priceModel + '. ' + PRODUCT.platform + '.',
+      + 'It is a ' + PRODUCT.priceModel + '. ' + PRODUCT.platform + '.',
     'Core promise: ' + PRODUCT.promise,
     'Live features:',
     PRODUCT.features.map(f => '- ' + f).join('\n'),
     '',
-    'NEVER CLAIM: ' + PRODUCT.forbiddenClaims.join('; ') + '. '
-      + 'Never state a price other than ' + PRODUCT.currency + ' ' + PRODUCT.price + '.',
+    'NEVER CLAIM: ' + PRODUCT.forbiddenClaims.join('; ') + '.',
+    '',
+    'PRICE RULE, absolute and non-negotiable: never state a price, a peso amount, or any number '
+      + 'presented as a cost, anywhere in the headline, subhead, caption, or cta. This applies to '
+      + PRODUCT.name + "'s own price AND to any comparison figure (a rival device's cost, a monthly "
+      + 'load top-up, a subscription fee). You may still say the purchase is one-time with no '
+      + 'subscription, in words, but never attach a number or currency figure to it.',
+    '',
+    'PROBLEM FIRST. Every post opens with the reader\'s problem or situation, never with the product '
+      + 'and never with a price. The hook, meaning the caption\'s first line, must name the problem: '
+      + 'losing track of the good fishing spot, getting lost when fog or night comes, a dead engine '
+      + 'with no way to call for help, or signal disappearing offshore. Introduce ' + PRODUCT.name
+      + ' only after the problem is named.',
     '',
     'AUDIENCE. ' + AUDIENCE,
     '',
@@ -384,7 +397,7 @@ Append to `test.js`, immediately before the `// ---- results` block:
 section('copy', 'Copy validation', () => {
   const B = L('brand.js');
   const { validateCopy } = L('copy-rules.js');
-  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, price: B.PRODUCT.price };
+  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS };
 
   const good = {
     headline: 'Nawala ang signal? Gumagana pa rin',
@@ -392,8 +405,8 @@ section('copy', 'Copy validation', () => {
     caption: 'Nawala ang signal pagkalayo mo sa dalampasigan? Normal po yan, at hindi ibig sabihin '
       + 'na wala ka nang mapa. Sa FishPin, i-download mo lang ang mapa habang naka Wi-Fi ka pa sa bahay, '
       + 'tapos gamitin mo na sa laot kahit walang kahit anong signal. Nakikita mo pa rin kung nasaan ka, '
-      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang bayad '
-      + 'lang po, PHP 499, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
+      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang beses '
+      + 'ka lang bibili, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
       + 'Kung madalas kayong lumalayo at natatakot mawala ang direksyon, ito po ang tulong na kailangan ninyo. '
       + 'Subukan ninyo bago ang susunod ninyong biyahe.',
     cta: 'I-download sa Play Store',
@@ -451,10 +464,6 @@ section('copy', 'Copy validation', () => {
     w({ caption: good.caption + ' Mahigit 10,000 users na ang gumagamit.' }), /fabricat|count/i);
   rejects('rejects a fabricated star rating',
     w({ caption: good.caption + ' 4.8 stars sa Play Store.' }), /fabricat|rating/i);
-  rejects('rejects a wrong peso price',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), /price/i);
-  check('accepts the peso sign form',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
   rejects('rejects an iPhone claim',
     w({ caption: good.caption + ' Available din po sa iPhone.' }), /forbidden claim/i);
   rejects('rejects a typhoon-warning claim',
@@ -464,16 +473,6 @@ section('copy', 'Copy validation', () => {
   rejects('rejects 2 hashtags', w({ hashtags: ['#FishPin', '#Bangka'] }), /hashtag/i);
   rejects('rejects 6 hashtags',
     w({ hashtags: ['#a', '#b', '#c', '#d', '#e', '#f'] }), /hashtag/i);
-
-  // ---- fix 1: bare "P" peso shorthand (e.g. "P999") must still be price-checked
-  rejects('rejects a wrong price in bare P shorthand',
-    w({ caption: good.caption.replace('PHP 499', 'P999') }), /price/i);
-  check('accepts a correct price in bare P shorthand',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'P499') }), OPTS).valid === true);
-  check('still accepts the peso sign form (regression)',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
-  check('still accepts the PHP form (regression)',
-    validateCopy(good, OPTS).valid === true);
 
   // ---- fix 2: acronym scrub must be word-boundary aware, not a substring replace
   rejects('rejects shouting where PH is a substring of a real word (PHILIPPINES)',
@@ -505,36 +504,29 @@ section('copy', 'Copy validation', () => {
   check('a plain number with no count noun still accepts (control)',
     validateCopy(w({ caption: good.caption + ' Tumagal ng 3 taon bago ito nagawa.' }), OPTS).valid === true);
 
-  // ---- D6: a clearly-labelled COMPARISON cost is not a misquoted app price.
-  // The old rule rejected every peso figure that wasn't 499, with the reason
-  // "Wrong price: 300. The only allowed figure is 499." — which reads as an
-  // instruction to restate that number AS 499. The regeneration would then
-  // quote 499 as the monthly load or the GPS device's price, which passed
-  // validation and published a false comparison. The cost-comparison pillar
-  // exists precisely to contrast a one-time 499 against a recurring cost.
-  check('499 as the app price passes', validateCopy(good, OPTS).valid === true);
-  rejects('999 as the app price rejects',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), /price/i);
-  check('a labelled monthly load cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' Ang load na P300 kada buwan, tuloy-tuloy ang gastos.' }), OPTS).valid === true);
-  check('a labelled GPS-device cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' Ang handheld GPS device ay P8000 ang halaga.' }), OPTS).valid === true);
-  check('a labelled monthly subscription cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' May ibang app na P150 ang subscription bawat buwan.' }), OPTS).valid === true);
-  rejects('a load figure restated as the app price rejects',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 300') + ' Mas mura kaysa load kada buwan.' }), /price/i);
-  rejects('a wrong price still rejects even when a comparison word is nearby',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') + ' Walang buwanang load.' }), /price/i);
-  check('the price reason no longer reads as "restate this number as 499"',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), OPTS).reasons
-      .filter(r => /peso figure|price/i.test(r))
-      .every(r => !/only allowed figure/i.test(r) && /own price|do not relabel/i.test(r)));
-  check('the price reason still names the offending figure',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), OPTS).reasons
-      .some(r => /999/.test(r)));
-  // a peso figure with no context at all is still treated as the app's price
+  // ---- D6 (superseded 2026-09-10): price is now banned outright, everywhere,
+  // no context-sniffing. The owner decided ads must never mention price at
+  // all, on either side of a comparison, and must lead with the problem
+  // instead. See lib/copy-rules.js rule 9 and README "Known Limitations" for
+  // the full rationale (the old context-sniffing rule both rejected
+  // legitimate copy and let a wrong app price through disguised as a
+  // comparison, e.g. "Halagang P999 lang, at wala nang bayad kada buwan").
+  check('a clean sample with no figure at all passes', validateCopy(good, OPTS).valid === true);
+  rejects('500 (FishPin\'s own price) as PHP rejects',
+    w({ caption: good.caption + ' Halaga lang ay PHP 500.' }));
+  rejects('999 rejects', w({ caption: good.caption + ' Halaga lang ay PHP 999.' }));
+  rejects('a labelled monthly load cost in pesos now rejects (no figure allowed on either side)',
+    w({ caption: good.caption + ' P300 kada buwan na load, tuloy-tuloy ang gastos.' }));
+  rejects('a labelled GPS-device cost in pesos now rejects',
+    w({ caption: good.caption + ' Ang handheld GPS device ay P8000 ang halaga.' }));
+  rejects('the former exploit "Halagang P999 lang, at wala nang bayad kada buwan" now rejects',
+    w({ caption: good.caption + ' Halagang P999 lang, at wala nang bayad kada buwan.' }));
+  check('the price rejection reason never echoes a figure back',
+    validateCopy(w({ caption: good.caption + ' Halaga lang ay PHP 999.' }), OPTS).reasons
+      .filter(r => /price|peso/i.test(r))
+      .every(r => !/\d/.test(r)));
   rejects('a bare peso figure with no comparison label still rejects',
-    w({ subhead: 'Bilhin mo na sa PHP 250' }), /price/i);
+    w({ subhead: 'Bilhin mo na sa PHP 250' }));
 
   // ---- fix 5: competitor name check must catch pluralized/suffixed forms
   rejects('rejects a pluralized competitor name (Garmins)',
@@ -571,24 +563,10 @@ const OK_ACRONYMS = ['GPS', 'SOS', 'SMS', 'ETA', 'AI', 'PH', 'PHP', 'WIFI', 'DIT
 
 const wordCount = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).length;
 
-// --- price context (see rule 9) -------------------------------------------
-// How much surrounding text counts as a peso figure's "immediate context".
-const PRICE_CONTEXT_CHARS = 70;
-// Marks a figure as somebody ELSE'S cost: a recurring top-up/subscription, or
-// a rival device. Such a figure is a legitimate comparison, not a misquote.
-const COMPARISON_COST_CONTEXT = /(load|buwan|monthly|per month|a month|subscription|gps|device|handheld|tracker|plotter|kada araw|daily|kuryente|gasolina)/i;
-// Marks a figure as FISHPIN'S OWN price. Always wins over the line above, so
-// "Isang bayad lang po, PHP 999, walang buwanang bayad" is still rejected.
-// Every "* app" alternative is anchored with \b on BOTH sides: without the
-// leading one, "ng app" matches inside "ibang app" ("another app"), which is
-// the exact opposite meaning — a rival app's cost, not FishPin's.
-const OWN_PRICE_CONTEXT = /(fishpin|isang bayad|isahang bayad|one[- ]?time|bayad lang|\bang app\b|\bsa app\b|\bng app\b|\bapp price\b|\bpresyo ng app\b)/i;
-
 function validateCopy(copy, opts) {
   const o = opts || {};
   const banned = o.bannedWords || [];
   const competitors = o.competitors || [];
-  const price = o.price;
   const reasons = [];
   const c = copy || {};
 
@@ -679,17 +657,13 @@ function validateCopy(copy, opts) {
     reasons.push('Forbidden claim: live tracking of other boats.');
   }
 
-  // 9. price
-  // Two different mistakes hide behind "a peso figure that is not 499":
-  //   (a) the model misquoted FishPin's OWN price   -> must still reject
-  //   (b) the model quoted a COMPARISON cost        -> must pass
-  // (b) is the entire point of the cost-comparison pillar: a one-time 499
-  // against a monthly phone-load top-up or a handheld GPS unit. Rejecting (b)
-  // with "the only allowed figure is 499" steered the regeneration into
-  // relabelling that other cost AS 499, which then passed validation and
-  // published a false comparison. So a figure whose immediate context marks it
-  // as somebody else's recurring or device cost is ignored — unless that same
-  // context also claims it as FishPin's own price, in which case (a) wins.
+  // 9. price (revised 2026-09-10: flat ban, no context-sniffing — see D6 note
+  // in Self-Review Notes and lib/copy-rules.js for the full rationale). The
+  // owner does not want price mentioned at all, ever: not FishPin's own
+  // price, and not a comparison figure. Ads lead with the problem, not a
+  // number. So ANY peso figure found anywhere in the generated copy is a
+  // rejection, full stop. Detection stays scoped to peso notations only, so
+  // an ordinary count like "200 species" or "3 to 5 contacts" still passes.
   const priceHits = [];
   let m;
   const pushHit = (mm) => priceHits.push({ raw: mm[1], start: mm.index, end: mm.index + mm[0].length });
@@ -702,23 +676,17 @@ function validateCopy(copy, opts) {
   // this does not also fire on the "P" inside "PHP" (no boundary before it).
   const rx3 = /\bP\s?(\d[\d,]*)\b/g;
   while ((m = rx3.exec(all)) !== null) pushHit(m);
-  priceHits.forEach((hit) => {
-    const n = parseInt(String(hit.raw).replace(/,/g, ''), 10);
-    if (isNaN(n) || n === price) return;
-    const ctx = all.slice(Math.max(0, hit.start - PRICE_CONTEXT_CHARS), hit.end + PRICE_CONTEXT_CHARS);
-    // A clearly-labelled comparison cost is legitimate copy, not a misquote.
-    if (COMPARISON_COST_CONTEXT.test(ctx) && !OWN_PRICE_CONTEXT.test(ctx)) return;
-    reasons.push('Peso figure ' + hit.raw + " reads as FishPin's own price. FishPin is " + price
-      + ', a one-time purchase. If ' + hit.raw + " is somebody else's cost (a monthly load, a handheld "
-      + 'GPS unit), say plainly whose cost it is and keep it out of the sentence that states '
-      + "FishPin's price. Do not relabel it as FishPin's price.");
-  });
+  if (priceHits.length > 0) {
+    // The reason deliberately never names the figure: restating a number in
+    // the rejection reason invites the regeneration to echo it straight back.
+    reasons.push('Do not mention a price or any peso amount. Lead with the problem FishPin solves instead.');
+  }
 
   return { valid: reasons.length === 0, reasons };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { validateCopy, OK_ACRONYMS, COMPARISON_COST_CONTEXT, OWN_PRICE_CONTEXT };
+  module.exports = { validateCopy, OK_ACRONYMS };
 }
 ```
 
@@ -1776,10 +1744,12 @@ section('workflow', 'Main workflow structure', () => {
   const cfg = byName['Config'].parameters.assignments.assignments.map(a => a.name);
   ['pageId', 'graphVersion', 'sheetId', 'queueTab', 'attemptsTab', 'copyModel', 'imageModel',
    'copyTemperature', 'maxAttempts', 'maxCopyRetries', 'reviewTimeoutHours', 'reviewChannel',
-   'opsChannel', 'appPrice', 'playStoreUrl', 'selfWebhookUrl']
+   'opsChannel', 'playStoreUrl', 'selfWebhookUrl']
     .forEach(k => check('Config defines ' + k, cfg.includes(k)));
-  const price = byName['Config'].parameters.assignments.assignments.find(a => a.name === 'appPrice');
-  check('Config price is 499', Number(price.value) === 499);
+  // appPrice removed 2026-09-10: nothing reads it any more now that the
+  // validator never uses the app's price to decide validity.
+  check('Config no longer defines appPrice (dead tunable, nothing reads it)',
+    !cfg.includes('appPrice'));
 
   // Loop Webhook must ack immediately: the re-invoked run can sit in a
   // sendAndWait for up to reviewTimeoutHours, and Re-invoke retries on
@@ -2091,7 +2061,7 @@ section('workflow', 'Main workflow structure', () => {
   const SECRET = 'a-real-loop-secret';
   const MAIN_CFG = {
     sheetId: 'sheet-1', queueTab: 'Queue', attemptsTab: 'Attempts', maxAttempts: 3,
-    maxCopyRetries: 1, copyTemperature: 0.8, appPrice: 499, loopSecret: SECRET,
+    maxCopyRetries: 1, copyTemperature: 0.8, loopSecret: SECRET,
   };
   const SHEET_ROWS = [
     S.QUEUE_HEADERS,
@@ -2399,7 +2369,6 @@ return [{ json: { geminiBody: body } }];
 `nodes/validate-copy.js` (corrected: `$('Pick Row')`):
 ```js
 // Glue: parse the Gemini response and run every deterministic copy rule.
-const cfg = $('Config').first().json;
 const q = $('Pick Row').first().json;
 const res = $json;
 
@@ -2418,7 +2387,6 @@ if (!copy) {
 const r = validateCopy(copy, {
   bannedWords: BANNED_WORDS,
   competitors: COMPETITORS,
-  price: Number(cfg.appPrice),
 });
 
 return [{ json: {
@@ -2762,7 +2730,6 @@ const nodes = [
       { id: 'c11', name: 'reviewTimeoutHours', value: 6, type: 'number' },
       { id: 'c12', name: 'reviewChannel', value: 'C0BDSV5RB5G', type: 'string' },
       { id: 'c13', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
-      { id: 'c14', name: 'appPrice', value: 499, type: 'number' },
       { id: 'c15', name: 'playStoreUrl', value: 'https://play.google.com/store/apps/details?id=app.fishpin', type: 'string' },
       { id: 'c16', name: 'selfWebhookUrl', value: 'https://n8n.srv1193790.hstgr.cloud/webhook/' + WEBHOOK_PATH, type: 'string' },
       // Shared secret for the loop webhook. POST /webhook/fishpin-ad is a
@@ -3704,7 +3671,7 @@ if (LIVE) {
       key_message: 'Mas mabilis kang mahanap kung may aberya', cta: 'I-download sa Play Store', notes: '' },
     { id: 'FP-005', pillar: 'fish fact', topic: 'Species of the day from the fish guide',
       key_message: 'Alamin ang tamang season at habitat', cta: 'I-download sa Play Store', notes: '' },
-    { id: 'FP-008', pillar: 'cost comparison', topic: 'One-time PHP 499 versus a handheld GPS device',
+    { id: 'FP-008', pillar: 'cost comparison', topic: 'One-time purchase versus a handheld GPS device',
       key_message: 'Isang bayad lang, walang subscription', cta: 'I-download sa Play Store', notes: '' },
   ];
 
@@ -3767,7 +3734,7 @@ FP-004,safety,Tell family when you will be back and record your path,Alam ng pam
 FP-005,fish fact,Species of the day from the 200+ fish guide,Alamin ang local name season at habitat,I-download sa Play Store,Square 1:1 image. Say generally considered safe to eat.,ready,,,,,,,,,
 FP-006,fish fact,Local name season and habitat of a common catch,Mas madaling mahuli kung alam mo ang ugali nito,I-download sa Play Store,Square 1:1 image. Say generally considered safe to eat.,ready,,,,,,,,,
 FP-007,tip or how-to,How to mark a spot properly so you can find it again,Gamitin ang kulay at icon para madaling makilala,I-download sa Play Store,,ready,,,,,,,,,
-FP-008,cost comparison,One-time PHP 499 versus a handheld GPS device,Isang bayad lang walang buwanang subscription,I-download sa Play Store,Compare to a GPS device generically. Never name a brand.,ready,,,,,,,,,
+FP-008,cost comparison,One-time purchase versus a handheld GPS device,Isang bayad lang walang buwanang load o subscription,I-download sa Play Store,Compare to a GPS device generically. Never name a brand. Never state a figure for either side.,ready,,,,,,,,,
 FP-009,social proof,Real user screenshot or quote,Totoong mangingisda totoong karanasan,I-download sa Play Store,BLOCKED. Needs a real screenshot review or quote from Robert. Never fabricate.,blocked_needs_asset,,,,,,,,,
 FP-010,behind the scenes,Built in the Philippines by a Filipino developer,Gawa ng Pilipino para sa Pilipinong mangingisda,I-download sa Play Store,,ready,,,,,,,,,
 ```
@@ -3932,6 +3899,16 @@ tasks is not misled:
     marks it as somebody else's recurring or device cost, unless that context also claims
     it as FishPin's own price. The reason text no longer reads as an instruction to restate
     the number.
+
+    **D6 superseded, 2026-09-10 (owner-requested):** the app price is corrected to PHP 500,
+    and the context-sniffing rule above is deleted entirely. A later review proved it could
+    still be fooled the other way: a wrong app price disguised as a comparison, e.g.
+    "Halagang P999 lang, at wala nang bayad kada buwan", passed because "kada buwan" read as
+    a comparison label. The owner's decision removes the ambiguity at the root — ads must
+    never mention price at all, on either side of a comparison, and must lead with the
+    problem instead (see the Global Constraints price bullet, §6a of the design spec, and
+    rule 9 in `lib/copy-rules.js`). `Config.appPrice` was removed as a result: nothing reads
+    the app's price to decide copy validity any more.
 
 Two other existing checks changed for the same reason as D3 — they described behaviour the
 fixes deliberately replaced: `attempts has 9 columns` became 10 (I7), and the insights

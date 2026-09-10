@@ -33,7 +33,7 @@ section('brand', 'Brand bible', () => {
     'cost comparison', 'social proof', 'behind the scenes',
   ];
 
-  check('price is exactly 499 PHP', B.PRODUCT.price === 499 && B.PRODUCT.currency === 'PHP');
+  check('price is exactly 500 PHP', B.PRODUCT.price === 500 && B.PRODUCT.currency === 'PHP');
   check('ten live features listed', B.PRODUCT.features.length === 10);
   check('banned list has all 9 entries', B.BANNED_WORDS.length >= 9);
   check('banned list contains the 9 required words',
@@ -43,9 +43,25 @@ section('brand', 'Brand bible', () => {
   check('pillar keys match the required set',
     Object.keys(B.PILLARS).length === REQUIRED_PILLARS.length
     && REQUIRED_PILLARS.every(k => Object.prototype.hasOwnProperty.call(B.PILLARS, k)));
+  check('cost comparison pillar contrasts one-time vs monthly load without quoting a figure',
+    /one-time/i.test(B.PILLARS['cost comparison'])
+    && /monthly/i.test(B.PILLARS['cost comparison'])
+    && !/\d/.test(B.PILLARS['cost comparison']));
 
   const sys = B.buildSystemPrompt();
-  check('system prompt states the exact price', /499/.test(sys));
+  check('system prompt never states the price figure',
+    !/\b500\b/.test(sys) && !/\b499\b/.test(sys));
+  check('system prompt forbids stating any price or peso amount',
+    /never state a price/i.test(sys) && /peso amount/i.test(sys));
+  check('system prompt forbids a price figure in every generated field',
+    /headline, subhead, caption, or cta/i.test(sys));
+  check('system prompt still allows saying the purchase is one-time, no subscription',
+    /one-time with no subscription/i.test(sys));
+  check('system prompt requires the post to open with the reader\'s problem',
+    /problem first/i.test(sys) && /hook.*must name the problem|opens with the reader/i.test(sys));
+  check('system prompt names the documented audience fears as the problem to open with',
+    /losing track of the good fishing spot|getting lost when fog or night comes/i.test(sys)
+    && /dead engine/i.test(sys) && /signal disappearing offshore/i.test(sys));
   check('system prompt forbids em dash', /em dash/i.test(sys));
   const emDashLine = sys.split('\n').find(l => /em dash/i.test(l)) || '';
   check('em dash rule covers every generated field, not just caption/headline',
@@ -85,7 +101,7 @@ section('brand', 'Brand bible', () => {
 section('copy', 'Copy validation', () => {
   const B = L('brand.js');
   const { validateCopy } = L('copy-rules.js');
-  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, price: B.PRODUCT.price };
+  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS };
 
   const good = {
     headline: 'Nawala ang signal? Gumagana pa rin',
@@ -93,8 +109,8 @@ section('copy', 'Copy validation', () => {
     caption: 'Nawala ang signal pagkalayo mo sa dalampasigan? Normal po yan, at hindi ibig sabihin '
       + 'na wala ka nang mapa. Sa FishPin, i-download mo lang ang mapa habang naka Wi-Fi ka pa sa bahay, '
       + 'tapos gamitin mo na sa laot kahit walang kahit anong signal. Nakikita mo pa rin kung nasaan ka, '
-      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang bayad '
-      + 'lang po, PHP 499, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
+      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang beses '
+      + 'ka lang bibili, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
       + 'Kung madalas kayong lumalayo at natatakot mawala ang direksyon, ito po ang tulong na kailangan ninyo. '
       + 'Subukan ninyo bago ang susunod ninyong biyahe.',
     cta: 'I-download sa Play Store',
@@ -152,10 +168,6 @@ section('copy', 'Copy validation', () => {
     w({ caption: good.caption + ' Mahigit 10,000 users na ang gumagamit.' }), /fabricat|count/i);
   rejects('rejects a fabricated star rating',
     w({ caption: good.caption + ' 4.8 stars sa Play Store.' }), /fabricat|rating/i);
-  rejects('rejects a wrong peso price',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), /price/i);
-  check('accepts the peso sign form',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
   rejects('rejects an iPhone claim',
     w({ caption: good.caption + ' Available din po sa iPhone.' }), /forbidden claim/i);
   rejects('rejects a typhoon-warning claim',
@@ -165,16 +177,6 @@ section('copy', 'Copy validation', () => {
   rejects('rejects 2 hashtags', w({ hashtags: ['#FishPin', '#Bangka'] }), /hashtag/i);
   rejects('rejects 6 hashtags',
     w({ hashtags: ['#a', '#b', '#c', '#d', '#e', '#f'] }), /hashtag/i);
-
-  // ---- fix 1: bare "P" peso shorthand (e.g. "P999") must still be price-checked
-  rejects('rejects a wrong price in bare P shorthand',
-    w({ caption: good.caption.replace('PHP 499', 'P999') }), /price/i);
-  check('accepts a correct price in bare P shorthand',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'P499') }), OPTS).valid === true);
-  check('still accepts the peso sign form (regression)',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
-  check('still accepts the PHP form (regression)',
-    validateCopy(good, OPTS).valid === true);
 
   // ---- fix 2: acronym scrub must be word-boundary aware, not a substring replace
   rejects('rejects shouting where PH is a substring of a real word (PHILIPPINES)',
@@ -206,36 +208,53 @@ section('copy', 'Copy validation', () => {
   check('a plain number with no count noun still accepts (control)',
     validateCopy(w({ caption: good.caption + ' Tumagal ng 3 taon bago ito nagawa.' }), OPTS).valid === true);
 
-  // ---- D6: a clearly-labelled COMPARISON cost is not a misquoted app price.
-  // The old rule rejected every peso figure that wasn't 499, with the reason
-  // "Wrong price: 300. The only allowed figure is 499." — which reads as an
-  // instruction to restate that number AS 499. The regeneration would then
-  // quote 499 as the monthly load or the GPS device's price, which passed
-  // validation and published a false comparison. The cost-comparison pillar
-  // exists precisely to contrast a one-time 499 against a recurring cost.
-  check('499 as the app price passes', validateCopy(good, OPTS).valid === true);
-  rejects('999 as the app price rejects',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), /price/i);
-  check('a labelled monthly load cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' Ang load na P300 kada buwan, tuloy-tuloy ang gastos.' }), OPTS).valid === true);
-  check('a labelled GPS-device cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' Ang handheld GPS device ay P8000 ang halaga.' }), OPTS).valid === true);
-  check('a labelled monthly subscription cost in pesos passes',
-    validateCopy(w({ caption: good.caption + ' May ibang app na P150 ang subscription bawat buwan.' }), OPTS).valid === true);
-  rejects('a load figure restated as the app price rejects',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 300') + ' Mas mura kaysa load kada buwan.' }), /price/i);
-  rejects('a wrong price still rejects even when a comparison word is nearby',
-    w({ caption: good.caption.replace('PHP 499', 'PHP 999') + ' Walang buwanang load.' }), /price/i);
-  check('the price reason no longer reads as "restate this number as 499"',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), OPTS).reasons
-      .filter(r => /peso figure|price/i.test(r))
-      .every(r => !/only allowed figure/i.test(r) && /own price|do not relabel/i.test(r)));
-  check('the price reason still names the offending figure',
-    validateCopy(w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), OPTS).reasons
-      .some(r => /999/.test(r)));
-  // a peso figure with no context at all is still treated as the app's price
-  rejects('a bare peso figure with no comparison label still rejects',
-    w({ subhead: 'Bilhin mo na sa PHP 250' }), /price/i);
+  // ---- D6 (superseded): price is now banned outright, no context-sniffing.
+  // The old rule tried to tell FishPin's own price apart from a legitimate
+  // comparison figure via nearby context words (COMPARISON_COST_CONTEXT /
+  // OWN_PRICE_CONTEXT). A review proved that approach both rejected
+  // legitimate copy AND let a wrong app price through disguised as a
+  // comparison, e.g. "Halagang P999 lang, at wala nang bayad kada buwan"
+  // used to PASS because "kada buwan" read as a comparison label. The owner's
+  // fix is simpler and strictly safer: no peso figure of any kind, anywhere,
+  // ever, whether it is FishPin's own price or somebody else's. Ads must lead
+  // with the problem, never a number. Detection stays scoped to peso
+  // notations (₱, PHP/Php/php, bare P-prefix, trailing pesos/piso) so an
+  // ordinary count is unaffected.
+  check('a clean sample with no figure at all passes', validateCopy(good, OPTS).valid === true);
+  rejects('₱500 (FishPin\'s own new price) rejects',
+    w({ caption: good.caption + ' Halaga lang ay ₱500.' }));
+  rejects('PHP 500 rejects', w({ caption: good.caption + ' Halaga lang ay PHP 500.' }));
+  rejects('P500 (bare shorthand) rejects', w({ caption: good.caption + ' Halaga lang ay P500.' }));
+  rejects('"500 pesos" rejects', w({ caption: good.caption + ' Halaga lang ay 500 pesos.' }));
+  rejects('999 as PHP rejects', w({ caption: good.caption + ' Halaga lang ay PHP 999.' }));
+  rejects('499 (the old, now-wrong price) as PHP rejects',
+    w({ caption: good.caption + ' Halaga lang ay PHP 499.' }));
+  rejects('499 as bare P shorthand rejects', w({ caption: good.caption + ' Halaga lang ay P499.' }));
+  rejects('999 as peso-sign form rejects', w({ caption: good.caption + ' Halaga lang ay ₱999.' }));
+  rejects('a labelled monthly load cost in pesos now rejects (no figure allowed on either side)',
+    w({ caption: good.caption + ' P300 kada buwan na load, tuloy-tuloy ang gastos.' }));
+  rejects('a labelled GPS-device cost in pesos now rejects',
+    w({ caption: good.caption + ' Ang handheld GPS device ay P8000 ang halaga.' }));
+  // the exact exploit that used to pass under the old context-sniffing rule
+  rejects('the former exploit "Halagang P999 lang, at wala nang bayad kada buwan" now rejects',
+    w({ caption: good.caption + ' Halagang P999 lang, at wala nang bayad kada buwan.' }));
+  check('the price rejection reason never echoes a figure back (would invite the model to restate it)',
+    validateCopy(w({ caption: good.caption + ' Halaga lang ay PHP 999.' }), OPTS).reasons
+      .filter(r => /price|peso/i.test(r))
+      .every(r => !/\d/.test(r)));
+  check('the price rejection reason steers toward the problem instead',
+    validateCopy(w({ caption: good.caption + ' Halaga lang ay PHP 999.' }), OPTS).reasons
+      .some(r => /price|peso/i.test(r) && /problem/i.test(r)));
+  // ordinary, non-price numbers must still pass (detection stays scoped to
+  // peso notations only, not every digit in the copy)
+  check('an ordinary species count ("200 species") still passes',
+    validateCopy(w({ caption: good.caption + ' Mahigit 200 species ang nasa fish guide.' }), OPTS).valid === true);
+  check('an ordinary contact-count range ("3 to 5 contacts") still passes',
+    validateCopy(w({ caption: good.caption + ' Maaari kang mag-save ng 3 to 5 contacts.' }), OPTS).valid === true);
+  check('an ordinary forecast window ("7-day forecast") still passes',
+    validateCopy(w({ caption: good.caption + ' May 7-day forecast din ang app.' }), OPTS).valid === true);
+  check('an ordinary feature count ("4 map layers") still passes',
+    validateCopy(w({ caption: good.caption + ' May 4 map layers na mapagpipilian.' }), OPTS).valid === true);
 
   // ---- fix 5: competitor name check must catch pluralized/suffixed forms
   rejects('rejects a pluralized competitor name (Garmins)',
@@ -644,10 +663,13 @@ section('workflow', 'Main workflow structure', () => {
   const cfg = byName['Config'].parameters.assignments.assignments.map(a => a.name);
   ['pageId', 'graphVersion', 'sheetId', 'queueTab', 'attemptsTab', 'copyModel', 'imageModel',
    'copyTemperature', 'maxAttempts', 'maxCopyRetries', 'reviewTimeoutHours', 'reviewChannel',
-   'opsChannel', 'appPrice', 'playStoreUrl', 'selfWebhookUrl']
+   'opsChannel', 'playStoreUrl', 'selfWebhookUrl']
     .forEach(k => check('Config defines ' + k, cfg.includes(k)));
-  const price = byName['Config'].parameters.assignments.assignments.find(a => a.name === 'appPrice');
-  check('Config price is 499', Number(price.value) === 499);
+  // appPrice was removed: nothing reads it any more now that the validator
+  // never uses the app's price to decide validity (see lib/copy-rules.js
+  // rule 9). Config must not carry a dead tunable.
+  check('Config no longer defines appPrice (dead tunable, nothing reads it)',
+    !cfg.includes('appPrice'));
 
   // Loop Webhook must ack immediately: the re-invoked run can sit in a
   // sendAndWait for up to reviewTimeoutHours, and Re-invoke retries on
@@ -959,7 +981,7 @@ section('workflow', 'Main workflow structure', () => {
   const SECRET = 'a-real-loop-secret';
   const MAIN_CFG = {
     sheetId: 'sheet-1', queueTab: 'Queue', attemptsTab: 'Attempts', maxAttempts: 3,
-    maxCopyRetries: 1, copyTemperature: 0.8, appPrice: 499, loopSecret: SECRET,
+    maxCopyRetries: 1, copyTemperature: 0.8, loopSecret: SECRET,
   };
   const SHEET_ROWS = [
     S.QUEUE_HEADERS,
@@ -1452,7 +1474,7 @@ if (LIVE) {
       key_message: 'Mas mabilis kang mahanap kung may aberya', cta: 'I-download sa Play Store', notes: '' },
     { id: 'FP-005', pillar: 'fish fact', topic: 'Species of the day from the fish guide',
       key_message: 'Alamin ang tamang season at habitat', cta: 'I-download sa Play Store', notes: '' },
-    { id: 'FP-008', pillar: 'cost comparison', topic: 'One-time PHP 499 versus a handheld GPS device',
+    { id: 'FP-008', pillar: 'cost comparison', topic: 'One-time purchase versus a handheld GPS device',
       key_message: 'Isang bayad lang, walang subscription', cta: 'I-download sa Play Store', notes: '' },
   ];
 
@@ -1475,7 +1497,7 @@ if (LIVE) {
       check(row.pillar + ': returned parseable JSON', !!copy);
       if (!copy) { console.log('     raw: ' + JSON.stringify(res).slice(0, 400)); continue; }
 
-      const v = validateCopy(copy, { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, price: B.PRODUCT.price });
+      const v = validateCopy(copy, { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS });
       check(row.pillar + ': passes the validator unmodified', v.valid);
       if (!v.valid) console.log('     reasons: ' + v.reasons.join(' | '));
       check(row.pillar + ': image_prompt requests no text of its own', !!copy.image_prompt);

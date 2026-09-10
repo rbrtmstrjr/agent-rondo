@@ -6,7 +6,7 @@
 
 const PRODUCT = {
   name: 'FishPin',
-  price: 499,
+  price: 500,
   currency: 'PHP',
   priceModel: 'one-time in-app purchase, no subscription',
   platform: 'Android only, Play Store only, no iOS yet',
@@ -50,7 +50,7 @@ const PILLARS = {
   'safety': 'SOS, emergency contacts, telling family when you will be back. Serious tone, no sales pressure.',
   'fish fact': 'One species from the fish guide. Local name, season, where it lives, is it generally considered safe to eat. This pillar exists to get shared and commented on.',
   'tip or how-to': 'Reading wind and waves, when to go out, how to mark a spot properly.',
-  'cost comparison': 'A handheld GPS device versus a phone app. One-time payment versus monthly load. Compare generically, never name a brand.',
+  'cost comparison': 'A handheld GPS device versus a phone app. Contrast a one-time purchase against a recurring monthly load cost, without quoting any figure for either side. Compare generically, never name a brand.',
   'social proof': 'Only real screenshots, reviews, or user quotes supplied by the owner. Never fabricate anything.',
   'behind the scenes': 'The app is built in the Philippines by a Filipino developer, for Filipino fishermen.',
 };
@@ -75,13 +75,24 @@ function buildSystemPrompt() {
     '',
     'PRODUCT FACTS. Use only these. Never invent a feature.',
     PRODUCT.name + ' is a paid, offline-first marine navigation Android app for Filipino fishermen. '
-      + 'Price is ' + PRODUCT.currency + ' ' + PRODUCT.price + ', a ' + PRODUCT.priceModel + '. ' + PRODUCT.platform + '.',
+      + 'It is a ' + PRODUCT.priceModel + '. ' + PRODUCT.platform + '.',
     'Core promise: ' + PRODUCT.promise,
     'Live features:',
     PRODUCT.features.map(f => '- ' + f).join('\n'),
     '',
-    'NEVER CLAIM: ' + PRODUCT.forbiddenClaims.join('; ') + '. '
-      + 'Never state a price other than ' + PRODUCT.currency + ' ' + PRODUCT.price + '.',
+    'NEVER CLAIM: ' + PRODUCT.forbiddenClaims.join('; ') + '.',
+    '',
+    'PRICE RULE, absolute and non-negotiable: never state a price, a peso amount, or any number '
+      + 'presented as a cost, anywhere in the headline, subhead, caption, or cta. This applies to '
+      + PRODUCT.name + "'s own price AND to any comparison figure (a rival device's cost, a monthly "
+      + 'load top-up, a subscription fee). You may still say the purchase is one-time with no '
+      + 'subscription, in words, but never attach a number or currency figure to it.',
+    '',
+    'PROBLEM FIRST. Every post opens with the reader\'s problem or situation, never with the product '
+      + 'and never with a price. The hook, meaning the caption\'s first line, must name the problem: '
+      + 'losing track of the good fishing spot, getting lost when fog or night comes, a dead engine '
+      + 'with no way to call for help, or signal disappearing offshore. Introduce ' + PRODUCT.name
+      + ' only after the problem is named.',
     '',
     'AUDIENCE. ' + AUDIENCE,
     '',

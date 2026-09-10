@@ -98,7 +98,6 @@ const nodes = [
       { id: 'c11', name: 'reviewTimeoutHours', value: 6, type: 'number' },
       { id: 'c12', name: 'reviewChannel', value: 'C0BDSV5RB5G', type: 'string' },
       { id: 'c13', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
-      { id: 'c14', name: 'appPrice', value: 499, type: 'number' },
       { id: 'c15', name: 'playStoreUrl', value: 'https://play.google.com/store/apps/details?id=app.fishpin', type: 'string' },
       { id: 'c16', name: 'selfWebhookUrl', value: 'https://n8n.srv1193790.hstgr.cloud/webhook/' + WEBHOOK_PATH, type: 'string' },
       // Shared secret for the loop webhook. POST /webhook/fishpin-ad is a
