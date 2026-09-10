@@ -85,15 +85,34 @@ function readImageSize(buf) {
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
+// Spec §16 item 1: verify whether the model honoured
+// generationConfig.imageConfig.aspectRatio. Per spec §7 this is an
+// OBSERVATION, never a rejection — a mismatched aspect still publishes, it is
+// just recorded (in validateImage's output and in the Attempts tab) so the
+// question "does this model honour aspectRatio?" can be answered from real
+// runs instead of assumed. Returns:
+//   true  — requested and observed agree
+//   false — they disagree
+//   null  — no request was made, or the dimensions were unreadable
+function compareAspect(observed, requested) {
+  const req = String(requested || '').trim();
+  if (!req || !observed || observed === 'unknown') return null;
+  return observed === req;
+}
+
 function validateImage(input, opts) {
   const o = opts || {};
   const minBytes = o.minBytes || 20480;
+  const aspectRequested = String(o.aspectRequested || '');
   const reasons = [];
   const b64 = String((input && input.b64) || '');
   const mime = String((input && input.mime) || '').toLowerCase();
 
   if (!b64) {
-    return { valid: false, reasons: ['No image returned by the model.'], bytes: 0, width: 0, height: 0, aspect: 'unknown' };
+    return {
+      valid: false, reasons: ['No image returned by the model.'], bytes: 0, width: 0, height: 0,
+      aspect: 'unknown', aspectRequested, aspectMatches: null,
+    };
   }
   if (!/^image\/(png|jpe?g|webp)$/.test(mime)) reasons.push('Unexpected mime type: ' + (mime || 'none'));
 
@@ -114,7 +133,15 @@ function validateImage(input, opts) {
     width: size ? size.width : 0,
     height: size ? size.height : 0,
     aspect,
+    aspectRequested,
+    // Deliberately NOT folded into `reasons`: an aspect mismatch is recorded,
+    // not enforced (spec §7).
+    aspectMatches: compareAspect(aspect, aspectRequested),
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { buildImagePrompt, aspectFor, readImageSize, validateImage, STYLE_SUFFIX, NEGATIVES };
+if (typeof module !== 'undefined') {
+  module.exports = {
+    buildImagePrompt, aspectFor, readImageSize, validateImage, compareAspect, STYLE_SUFFIX, NEGATIVES,
+  };
+}

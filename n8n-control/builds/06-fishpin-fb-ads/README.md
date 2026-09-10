@@ -27,37 +27,50 @@ because the flyer never got made."*
 ```
 Schedule Trigger (05:30 / 18:30, Mon/Wed/Fri, Asia/Manila)   |
 Manual Trigger                                               |--> Config --> Load Queue Row
-Webhook  POST /webhook/fishpin-ad   (loop re-entry)          |                    |
-                                                 Queue empty? --yes--> Slack ops, stop
+Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |             |
+                                                 Queue empty? --yes--> Slack ops (with the
+                                                             |         actual refusal reason), stop
                                                              | no
          Claim Row            status = in_review  (prevents double pickup / dedup)
                               |
-         Build Copy Prompt    brand bible + revision_note (on a retry)
-                              |
-         Generate Copy        Gemini gemini-2.5-flash + responseSchema   [retry 3x, continue]
-                              |
+         Keep Copy?  --yes (decision = "Regenerate image")--> Reuse Copy ----------,
+              | no            replays the APPROVED copy, skips copy generation      |
+              |                                                                    |
+         Build Copy Prompt    brand bible + revision_note (on a retry)              |
+                              |                                                     |
+         Generate Copy        Gemini gemini-2.5-flash + responseSchema  [retry 3x]  |
+                              |                                                     |
          Validate Copy        em dash / banned words / compliance / fields / length / price
-                              |
-         Copy OK? --no--> Loop Guard (machine retry, budget 1) --> re-invoke, else needs_manual + Slack
-              | yes
+                              |                                                     |
+         Copy OK? --no--> Loop Guard (machine retry, budget 1) --> re-invoke, else needs_manual
+              | yes                                                                 |
+              +<--------------------------------------------------------------------'
+              |
          Build Image Prompt   scene + EXACT headline + style suffix + negatives
+                              (+ the reviewer's note, on a "Regenerate image" pass)
                               |
          Generate Image       Gemini gemini-2.5-flash-image                [retry 2x, continue]
                               |
-         Validate Image  --fail--> Slack fail + status=failed, STOP
+         Validate Image  --fail--> Notify Image Failed --> Mark Terminal, STOP
               |
          Upload Photo (published=false)  --> media_fbid
          Get Photo URL (?fields=images)  --> public CDN url
               |
-         Log Attempt  (Sheets -> Attempts tab)
+         Image URL OK?  --no--> Notify Image Failed --> Mark Terminal, STOP
+              | yes                (fail-closed: no image, no review)
+         Log Attempt  (Sheets -> Attempts tab, incl. the observed aspect ratio)
               |
-         Slack Review  sendAndWait / customForm, 6h timeout
+         Post Preview (image + copy) --> Slack Review  sendAndWait / customForm, 6h timeout
               |
          Route Decision
               |-- approve --> Publish Post (/feed + attached_media + message)
-              |                   --> Write Back (Queue row) --> Slack success
+              |                   --> Write Back --> Write Back Row (Queue row)
+              |                        --> Row Written? --yes--> Slack success
+              |                                         \--no--> Slack "live but unrecorded"
+              |                                                  --> Mark Terminal (needs_manual)
               |-- timeout --> status=expired + Slack, no post
-              \-- regen   --> Loop Guard (human retry, budget 3) --> re-invoke (attempt+1) or needs_manual
+              \-- regen   --> Loop Guard (human retry, budget 3) --> Re-invoke (attempt+1)
+                                   --> Re-invoked? --no--> Slack + Mark Terminal
 ```
 
 ### B. `FishPin Ad Insights (24h)` — the hourly scanner
@@ -72,9 +85,11 @@ Schedule Trigger (hourly)
    --> Split Posts (one item per due row)
    --> Get Insights   GET /{post_id}/insights?metric=post_impressions,post_engaged_users,post_reactions_by_type_total
    --> Get Engagement GET /{post_id}?fields=comments.summary(true),shares,reactions.summary(true)
-   --> Map Metrics (Code)
+   --> Map Metrics (Code)   skips any row whose Graph call failed, so a transient
+                            error is retried next hour instead of being written as reach 0
    --> Update Row (likes, comments, shares, reach, status)
-   --> Notify Digest (Slack, one message per measured row)
+   --> Notify Digest (Slack, one message per measured row; reads the numbers back
+                      from Map Metrics by item index, not from Update Row's response)
 ```
 
 Two Graph calls are needed because the `insights` edge doesn't return comment/share
@@ -90,6 +105,18 @@ execution in the n8n log — attempt 3 is fully debuggable on its own — and it
 cleanly with a 6-hour `sendAndWait`. The same webhook and payload shape serves both the
 human regeneration loop (budget 3) and the machine copy-validation retry (budget 1); only
 `decision` and which counter moved tells them apart.
+
+`POST /webhook/fishpin-ad` is a public URL, so the payload also carries a shared secret
+(`Config.loopSecret`) that `Pick Row` checks before doing anything else, and a re-entry
+naming a row id is only honoured while that row is `in_review` — the one state a row can
+legitimately be mid-loop in. Both refusals stop the run and say why in Slack. See
+"Loop secret" under Setup.
+
+**"Regenerate image" keeps the copy.** That branch re-enters carrying the approved copy in
+the payload; `Keep Copy?` routes it to `Reuse Copy`, which replays that copy in
+`Validate Copy`'s shape, so copy generation is skipped entirely and only the image prompt
+changes (it gets the reviewer's note appended). "Regenerate copy" and "Regenerate both"
+run the full copy path as before.
 
 ---
 
@@ -107,10 +134,16 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
   (`[Ops] Error Handler -> Slack`) for anything that still escapes those branches.
   **Caveat:** that error workflow needs to be *active* in the n8n instance for this to
   actually alert — verify it before go-live (see the checklist below).
+  Every call that can fail silently is followed by an explicit gate rather than a hopeful
+  next step: `Copy Valid?`, `Image Valid?`, `Image URL OK?`, `Published?`, `Row Written?`
+  and `Re-invoked?`. Nothing reports success, and nothing opens the human review gate, on
+  the strength of a call that may not have succeeded.
 - ✅ **Input validation** — `Pick Row` fails soft (`found: false`, a clear reason)
   instead of throwing when the queue is empty or a re-invoked row id doesn't exist;
   `Validate Copy` and `Validate Image` are deterministic gates that reject malformed or
-  missing model output field-by-field with a reason string, never a silent pass.
+  missing model output field-by-field with a reason string, never a silent pass. The loop
+  webhook additionally rejects any call without the shared secret, and any re-entry naming
+  a row that is not `in_review`.
 - ✅ **Idempotency / dedup** — `Claim Row` flips a row to `in_review` the instant it's
   picked, in a single targeted-cell Sheets write, before any generation happens. That
   prevents the 18:30 run from picking up the same row the 05:30 run is still holding in
@@ -124,7 +157,10 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 - ✅ **Human-in-the-loop** — every post is money-adjacent (drives paid-app installs) and
   irreversibly public once it hits the Page, so nothing publishes without an explicit
   Slack `Approve` on the `Slack Review` `sendAndWait` step. Rejections and timeouts never
-  auto-publish.
+  auto-publish. The gate is also **fail-closed**: if the image URL lookup fails, the
+  preview message would have thrown and the reviewer would have been shown a bare approval
+  form with no image and no copy — while a perfectly valid `media_fbid` stood ready to
+  publish. `Image URL OK?` stops the run there instead. No image, no review.
 - ✅ **Config node** — both workflows put every tunable (Sheet/Page/channel ids, model
   names, temperature, retry budgets, timeout, price, Play Store URL, webhook URL) in one
   `Config` node at the top of the workflow. See the Config table below.
@@ -137,7 +173,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 - ✅ **Demo data** — `queue-seed.csv`, 10 rows covering all 7 content pillars for a real
   (if fictional-status) product, FishPin, including one row deliberately blocked because
   it would require a fabricated testimonial.
-- **Tested end-to-end** — automated: `node test.js` is 401/401 green (every Code-node
+- **Tested end-to-end** — automated: `node test.js` is 547/547 green (every Code-node
   glue file's logic, both workflow assemblies, and the validator's full rule set,
   exercised offline with no network), and `node test.js --live` proves real Gemini output
   passes the unmodified validator once a `GEMINI_API_KEY` is supplied. What is **not**
@@ -159,10 +195,10 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 | `lib/image-rules.js` | Image prompt shaping + `validateImage` (bytes/MIME/dimensions). |
 | `lib/flow-rules.js` | `normalizeDecision`, `extractReason`, `loopGuard` — the approval routing and the two retry budgets. |
 | `lib/sheet-rules.js` | `QUEUE_HEADERS`, `ATTEMPT_HEADERS`, row selection, Attempts/Queue row shaping, Graph metric mapping. |
-| `nodes/*.js` | The 11 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). |
+| `nodes/*.js` | The 12 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). |
 | `fishpin-fb-ads.workflow.json` / `fishpin-insights.workflow.json` | The deployable, generated workflow JSON — do not hand-edit; edit the builder and rebuild. |
 | `queue-seed.csv` | 10 starter rows covering all 7 pillars, ready to import into the Queue tab. |
-| `test.js` | Offline unit tests (401 checks) + the `--live` Gemini copy-generation test. |
+| `test.js` | Offline unit tests (547 checks) + the `--live` Gemini copy-generation test. |
 
 ---
 
@@ -176,7 +212,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 3. Create two tabs, named exactly `Queue` and `Attempts`, and paste the header row into
    row 1 of each:
    - `Queue`: `id, pillar, topic, key_message, cta, notes, status, scheduled_for, caption, image_url, fb_post_id, posted_at, likes, comments, shares, reach`
-   - `Attempts`: `ts, row_id, attempt, pillar, headline, caption, image_url, decision, revision_note`
+   - `Attempts`: `ts, row_id, attempt, pillar, headline, caption, image_url, decision, revision_note, aspect`
 
    (These are `QUEUE_HEADERS` and `ATTEMPT_HEADERS` in `lib/sheet-rules.js` — the code
    reads columns by header name via the row built from row 1, so the header text and
@@ -221,7 +257,29 @@ piece of setup that has to happen in Meta's own tooling before anything can publ
    node build.js && node build-insights.js
    ```
 
-### 3. Slack
+### 3. Loop secret
+
+`POST /webhook/fishpin-ad` is a public, unauthenticated URL. The only legitimate caller is
+this workflow's own `Re-invoke` step, so the payload carries a shared secret and `Pick Row`
+refuses anything else. Without it, anyone with the URL could resurrect the row that ships
+as `blocked_needs_asset` (spec §10: social proof is never machine-generated), re-enter an
+already-posted row, or hand the pipeline an arbitrary `revision_note`, which goes verbatim
+into the Gemini prompt.
+
+1. Generate a random string (e.g. `openssl rand -hex 24`).
+2. Put it in `Config.loopSecret` — edit `build.js` and rebuild, or edit the `Config` node
+   directly in the n8n UI.
+3. Until you do, `Pick Row` refuses **every** webhook call with
+   "Config.loopSecret is still the placeholder", so the regeneration loop will not work.
+   Scheduled and manual runs are unaffected.
+
+A re-entry naming a row id is additionally only honoured while that row's status is
+`in_review` — the state `Claim Row` set on the way into the review that produced the loop.
+Terminal statuses (`posted`, `measured`, `needs_manual`, `expired`, `failed`,
+`blocked_needs_asset`) and unclaimed `ready` rows are refused, each with its own reason
+string, which `Notify Queue Empty` prints to the ops channel.
+
+### 4. Slack
 
 1. The bot needs these OAuth scopes: `chat:write`, `files:write`, `channels:read`.
 2. Invite the bot to both the review channel (`reviewChannel` in Config — where
@@ -259,6 +317,7 @@ piece of setup that has to happen in Meta's own tooling before anything can publ
 | `appPrice` | The one allowed peso figure; also injected into the copy prompt. | `499` |
 | `playStoreUrl` | FishPin's Play Store listing, for reference in prompts. | `https://play.google.com/store/apps/details?id=app.fishpin` |
 | `selfWebhookUrl` | This workflow's own webhook, used by `Loop Guard`'s re-invocation. | `https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad` |
+| `loopSecret` | Shared secret for the loop webhook. `Loop Guard` sends it; `Pick Row` refuses any webhook call without it. **Must be replaced before the loop works at all** — every webhook call is refused while it reads `FILL_IN_*`. | `FILL_IN_LOOP_SECRET` |
 
 ### `fishpin-insights.workflow.json` (24h scanner)
 
@@ -279,7 +338,7 @@ piece of setup that has to happen in Meta's own tooling before anything can publ
 node build.js
 node build-insights.js
 
-# Offline suite — 401 checks, no network, no credentials needed
+# Offline suite — 547 checks, no network, no credentials needed
 node test.js
 
 # One section only, e.g. just the copy-rules checks
@@ -292,7 +351,7 @@ node test.js --only=copy
 GEMINI_API_KEY=... node test.js --live
 ```
 
-Latest offline run: **401/401 passed.** `node test.js --live` with no key: offline
+Latest offline run: **547/547 passed.** `node test.js --live` with no key: offline
 sections still all pass, then the live section prints the skip message and exits 0.
 
 ---
@@ -322,15 +381,27 @@ Being honest about what's not finished, rather than hiding it:
   count (3-5) and `alt_text` for non-emptiness, but neither is checked for banned words,
   fabricated claims, or a wrong peso figure. In practice this means a bad word or a wrong
   price could slip through in a hashtag or the alt text without failing validation.
-- **A peso figure that isn't 499 is always rejected, even a legitimate one.** The price
-  check flags any number following `₱`/`PHP`/`pesos`/`P` that isn't exactly `499` — which
-  is deliberately strict so the AI can never misquote FishPin's own price. But the "cost
-  comparison" pillar's whole point is comparing FishPin's price against something else
-  (a GPS device, a monthly phone-load top-up), and if the model writes out that other
-  cost as a peso figure (e.g. "a load of ₱300 a month"), validation will reject the
-  draft even though the number is correct and relevant. Expect cost-comparison rows to
-  need an extra regeneration round where the model is nudged to describe the comparison
-  qualitatively ("costs you every month") instead of quoting a second peso number.
+- **The price rule reads context, so it can be fooled by badly-worded context.** A peso
+  figure other than 499 is rejected as a misquote of FishPin's own price *unless* the
+  surrounding ~70 characters mark it as somebody else's cost (a monthly load, a
+  subscription, a GPS device) and do *not* also claim it as FishPin's price. That is what
+  lets the cost-comparison pillar quote a real comparison figure. It is a heuristic on a
+  text window: a comparison written so loosely that nothing nearby identifies whose cost
+  it is will still be rejected (safe direction), and a wrong figure buried in a sentence
+  that reads as a comparison could in principle pass (unsafe direction, though the
+  human approval gate still sees the caption before anything publishes).
+- **The requested aspect ratio is observed, not enforced.** Spec §16 asked whether
+  `generationConfig.imageConfig.aspectRatio` is actually honoured by
+  `gemini-2.5-flash-image`. `validateImage` now reads the real dimensions out of the
+  returned bytes, compares them against the requested ratio, and carries
+  `aspect` / `aspectRequested` / `aspectMatches` forward; `Log Attempt` writes the
+  observed value into the `Attempts` tab's `aspect` column, flagged
+  `4:5 (requested 1:1, MISMATCH)` when they disagree. Per spec §7 a mismatch is **not** a
+  rejection — the run continues and the post can still be approved and published. So this
+  question is now answerable from real runs, but it has not yet been answered: no live
+  image generation has been done against the FishPin credential. Check the `aspect` column
+  after the first few real runs; if mismatches are the norm, the documented fallback is to
+  request `1:1` for every pillar.
 
 ---
 
@@ -342,19 +413,32 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
    is the fleet-wide error workflow both `settings.errorWorkflow` entries point at, and
    it currently needs to be manually activated per instance.
 2. Confirm the Sheet is shared with the service account and both tabs (`Queue`,
-   `Attempts`) exist with their exact header rows in row 1.
-3. Confirm the Slack bot is present in the review channel and that a `sendAndWait` form
+   `Attempts`) exist with their exact header rows in row 1 — note `Attempts` is now 10
+   columns (`A:J`), with `aspect` as column J.
+3. Replace `Config.loopSecret` with a real random string (see "Loop secret" above). The
+   regeneration loop refuses every call until you do.
+4. Confirm both workflows show **Asia/Manila** as their timezone in n8n's workflow
+   settings, and that the Schedule Trigger previews the next run at 05:30/18:30 *Manila*
+   time, not UTC.
+5. Confirm the Slack bot is present in the review channel and that a `sendAndWait` form
    actually renders there and comes back (post a throwaway test message with the same
    credential if unsure).
-4. Run one end-to-end dry run that ends at **"Regenerate copy"** — confirm the loop
+6. Run one end-to-end dry run that ends at **"Regenerate copy"** — confirm the loop
    re-enters the same queue row (not a new one) and `attempt` increments in the Attempts
    log and in the next Slack preview.
-5. Run one end-to-end run that gets **approved** against the real FishPin Page, and check
+7. Run one dry run that ends at **"Regenerate image"** — confirm the next preview shows
+   the **same caption and headline** with a different image, and that the `Attempts` tab's
+   two rows carry the same `caption` value.
+8. Reject three times in a row and confirm the run escalates on the **third** rejection
+   with "3 attempts rejected, needs a human" — there must never be an "attempt 4 of 3".
+9. Run one end-to-end run that gets **approved** against the real FishPin Page, and check
    the post on the Page itself — headline legible, image correct, caption/CTA/hashtags
-   present, no placeholder text.
-6. Run the Insights workflow (`fishpin-insights.workflow.json`) manually against that
-   post after 24 hours have passed, and confirm `likes`/`comments`/`shares`/`reach` land
-   correctly on the Queue row.
+   present, no placeholder text. Then check the `Attempts` tab's `aspect` column and note
+   whether the model honoured the requested ratio (see Known limitations).
+10. Run the Insights workflow (`fishpin-insights.workflow.json`) manually against that
+    post after 24 hours have passed, and confirm `likes`/`comments`/`shares`/`reach` land
+    correctly on the Queue row **and** that the Slack digest shows real numbers rather
+    than a blank line.
 
 ## Adapting for a real client (the swap-in points)
 

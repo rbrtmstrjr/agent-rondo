@@ -56,11 +56,21 @@ const slackMsg = (id, name, channelExpr, text, x, y) => slack(id, name, {
 const cfgVal = (k) => "={{ $('Config').first().json." + k + ' }}';
 const sheetUrl = (suffix) => "={{ '" + SHEET_BASE + "/' + $('Config').first().json.sheetId + '" + suffix + "' }}";
 
+// Everything about this pipeline is stated in Philippine local time — the
+// 05:30 / 18:30 posting slots, `posted_at`, the 24h insights cutoff, and the
+// README. n8n resolves a cron expression against the workflow's timezone,
+// which falls back to the INSTANCE timezone (UTC on a default VPS install)
+// when the workflow does not set one — so an unset timezone fires the "18:30"
+// slot at 02:30 Manila. Set in both places: settings.timezone is what n8n
+// actually honours, and the node-level value keeps the intent visible on the
+// node itself and pins it if the workflow is ever copied into another file.
+const TZ = 'Asia/Manila';
+
 const nodes = [
   { parameters: { rule: { interval: [
       { field: 'cronExpression', expression: '30 5 * * 1,3,5' },
       { field: 'cronExpression', expression: '30 18 * * 1,3,5' },
-    ] } },
+    ] }, timezone: TZ },
     id: 'n-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-620, 200) },
   { parameters: {}, id: 'n-man', name: 'Manual Trigger', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: pos(-620, 360) },
   // onReceived: the caller (Re-invoke, the only caller) never reads the
@@ -91,6 +101,12 @@ const nodes = [
       { id: 'c14', name: 'appPrice', value: 499, type: 'number' },
       { id: 'c15', name: 'playStoreUrl', value: 'https://play.google.com/store/apps/details?id=app.fishpin', type: 'string' },
       { id: 'c16', name: 'selfWebhookUrl', value: 'https://n8n.srv1193790.hstgr.cloud/webhook/' + WEBHOOK_PATH, type: 'string' },
+      // Shared secret for the loop webhook. POST /webhook/fishpin-ad is a
+      // public, unauthenticated endpoint; Loop Guard puts this value in the
+      // re-invoke payload and Pick Row refuses any webhook call without it.
+      // Replace the placeholder at deploy time — Pick Row refuses every
+      // webhook call while it is still FILL_IN_*.
+      { id: 'c17', name: 'loopSecret', value: 'FILL_IN_LOOP_SECRET', type: 'string' },
     ] }, options: {} },
     id: 'n-cfg', name: 'Config', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos(-400, 360) },
 
@@ -100,8 +116,13 @@ const nodes = [
   }, -180, 360, { googleApi: SHEETS }),
   codeNode('n-pick', 'Pick Row', code(['sheet-rules.js'], 'load-queue.js'), 40, 360),
   ifNode('n-empty', 'Queue Empty?', '={{ !$json.found }}', 260, 360),
+  // Pick Row can decline for several different reasons — an empty queue, an
+  // unknown row id, a rejected loop secret, a row whose status makes it
+  // ineligible for re-entry. It puts the specific one in `reason`; printing a
+  // hardcoded "queue is empty" here would have hidden every security refusal
+  // behind a message saying nothing was wrong.
   slackMsg('n-empty-msg', 'Notify Queue Empty', cfgVal('opsChannel'),
-    '=:inbox_tray: FishPin ad queue is empty. Nothing was posted. Add rows with status=ready.', 480, 200),
+    '=:inbox_tray: FishPin ad run stopped before generating anything. Nothing was posted.\nReason: {{ $json.reason }}', 480, 200),
 
   // Targeted single-cell write to column G (status) of THIS row. Appending here
   // would add a second row with the same id, leaving the original still 'ready'
@@ -112,6 +133,15 @@ const nodes = [
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [['in_review']] }] }) }}",
     options: {},
   }, 480, 420, { googleApi: SHEETS }),
+
+  // Spec §8: "Regenerate image — re-enter keeping the approved caption,
+  // appending revision_note to the image prompt, SKIPPING copy generation."
+  // Without this branch every re-entry regenerated the copy too, so a
+  // reviewer complaining about a garbled image got a completely different ad,
+  // and their image complaint was injected into the COPY prompt as "write a
+  // different angle" — telling the model to abandon the headline they liked.
+  ifNode('n-ifkeep', 'Keep Copy?', "={{ $('Pick Row').first().json.keep_copy }}", 620, 340),
+  codeNode('n-reuse', 'Reuse Copy', code([], 'reuse-copy.js'), 860, 180),
 
   codeNode('n-cprompt', 'Build Copy Prompt', code(['brand.js'], 'build-copy-prompt.js'), 700, 420),
   http('n-copy', 'Generate Copy', {
@@ -132,8 +162,19 @@ const nodes = [
   }, 1800, 340, { googlePalmApi: GEMINI }, 2),
   codeNode('n-vimg', 'Validate Image', code(['image-rules.js'], 'validate-image.js'), 2020, 340),
   ifNode('n-ifimg', 'Image Valid?', '={{ $json.valid }}', 2240, 340),
+  // Two very different failures land here and the message must say which:
+  //   - image GENERATION failed  (Validate Image rejected the bytes)
+  //   - image URL lookup failed  (Get Photo URL returned nothing usable)
+  // The second is the dangerous one: the upload succeeded, so a media_fbid
+  // that would publish just fine still exists, and the reviewer would have
+  // been asked to approve an ad they could not see.
+  // $('Get Photo URL').isExecuted is what distinguishes them, and it is used
+  // instead of reading that node unconditionally — naming an un-executed node
+  // in an expression throws, and a throw here would blank this very alert.
   slackMsg('n-imgfail', 'Notify Image Failed', cfgVal('opsChannel'),
-    "=:warning: FishPin ad image generation FAILED for row {{ $('Pick Row').first().json.row.id }}. Nothing was posted.\nReasons: {{ $('Validate Image').first().json.reasons.join('; ') }}",
+    "=:warning: FishPin ad FAILED for row {{ $('Pick Row').first().json.row.id }}. Nothing was posted; the row has been marked terminal."
+    + "\nStage: {{ $('Get Photo URL').isExecuted ? 'image URL lookup — the image generated and uploaded fine, but no usable public image URL came back, so the reviewer could not have seen it. The review gate was NOT opened.' : 'image generation — the model returned no usable image.' }}"
+    + "\nReasons: {{ $('Get Photo URL').isExecuted ? 'Get Photo URL returned no images[0].source. Error: ' + JSON.stringify(($('Get Photo URL').first().json || {}).error || 'none') : $('Validate Image').first().json.reasons.join('; ') }}",
     2460, 480),
 
   http('n-up', 'Upload Photo (unpublished)', {
@@ -151,22 +192,39 @@ const nodes = [
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 2680, 260, { facebookGraphApi: FB }),
 
-  codeNode('n-att', 'Log Attempt', code(['sheet-rules.js'], 'log-attempt.js'), 2900, 260),
+  // FAIL-CLOSED GATE. Get Photo URL carries onError continueRegularOutput, so
+  // a failure here does not abort the run. The Post Preview message ends with
+  // the image URL expression; if that expression throws, Slack's API call
+  // fails and the ENTIRE preview message is lost — no image, no headline, no
+  // caption. The reviewer then sees only the bare "Review the FishPin ad
+  // above" form. media_fbid from the successful upload is still valid, so
+  // clicking Approve there publishes an ad to the public Page that no human
+  // ever saw. The human gate has to be closed, not blind: no usable image URL
+  // means no review at all.
+  ifNode('n-ifurl', 'Image URL OK?',
+    '={{ !!($json.images && $json.images.length && $json.images[0] && $json.images[0].source) }}', 2900, 260),
+
+  codeNode('n-att', 'Log Attempt', code(['sheet-rules.js'], 'log-attempt.js'), 3120, 200),
   http('n-attw', 'Write Attempt', {
-    method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.attemptsTab + '!A:I:append"),
+    method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.attemptsTab + '!A:J:append"),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ values: [[ $json.ts, $json.row_id, $json.attempt, $json.pillar, $json.headline, $json.caption, $json.image_url, $json.decision, $json.revision_note ]] }) }}',
+    jsonBody: '={{ JSON.stringify({ values: [[ $json.ts, $json.row_id, $json.attempt, $json.pillar, $json.headline, $json.caption, $json.image_url, $json.decision, $json.revision_note, $json.aspect ]] }) }}',
     sendQuery: true, queryParameters: { parameters: [
       { name: 'valueInputOption', value: 'RAW' },
       { name: 'insertDataOption', value: 'INSERT_ROWS' },
     ] }, options: {},
-  }, 3120, 260, { googleApi: SHEETS }),
+  }, 3340, 200, { googleApi: SHEETS }),
 
   slack('n-prev', 'Post Preview', {
     channelId: { __rl: true, value: cfgVal('reviewChannel'), mode: 'id' },
-    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Validate Copy').first().json.copy.headline }}\n*Subhead:* {{ $('Validate Copy').first().json.copy.subhead }}\n\n{{ $('Validate Copy').first().json.copy.caption }}\n\n{{ $('Validate Copy').first().json.copy.cta }}\n{{ $('Validate Copy').first().json.copy.hashtags.join(' ') }}\n\n{{ $('Get Photo URL').first().json.images[0].source }}",
+    // Reads the copy from Build Image Prompt, not Validate Copy: on the
+    // "Regenerate image" branch Validate Copy never executes (see
+    // reuse-copy.js) and naming it here would throw, blanking the preview.
+    // The image URL is safe to read unconditionally now — Image URL OK?
+    // upstream guarantees images[0].source exists on this branch.
+    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Build Image Prompt').first().json.copy.headline }}\n*Subhead:* {{ $('Build Image Prompt').first().json.copy.subhead }}\n\n{{ $('Build Image Prompt').first().json.copy.caption }}\n\n{{ $('Build Image Prompt').first().json.copy.cta }}\n{{ $('Build Image Prompt').first().json.copy.hashtags.join(' ') }}\n\n{{ $('Get Photo URL').first().json.images[0].source }}",
     otherOptions: {},
-  }, 3340, 260),
+  }, 3560, 200),
 
   slack('n-rev', 'Slack Review', {
     operation: 'sendAndWait',
@@ -182,7 +240,7 @@ const nodes = [
       { fieldLabel: 'Reason', fieldType: 'textarea', requiredField: false },
     ] },
     options: { limitWaitTime: true, resumeAmount: '={{ $(\'Config\').first().json.reviewTimeoutHours }}', resumeUnit: 'hours' },
-  }, 3560, 260),
+  }, 3560, 320),
 
   codeNode('n-route', 'Route Decision', code(['flow-rules.js'], 'route-decision.js'), 3780, 260),
   ifNode('n-ifapp', 'Approved?', '={{ $json.approved }}', 4000, 260),
@@ -212,9 +270,26 @@ const nodes = [
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!I' + $json._rowNumber + ':L' + $json._rowNumber, values: [[ $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] } ] }) }}",
     options: {},
   }, 4880, 100, { googleApi: SHEETS }),
+  // Write Back Row carries onError continueRegularOutput too, so a failed
+  // Sheets write fell straight through to "✅ Posted" while the row still read
+  // status=in_review with empty caption/fb_post_id/posted_at — which also
+  // means the insights scanner (it selects on status=posted + a posted_at)
+  // would never measure that post. Same class as Published? and Image URL OK?:
+  // never report success on the strength of a call that may have failed.
+  ifNode('n-ifwb', 'Row Written?', '={{ !$json.error && !!$json.spreadsheetId }}', 5100, 100),
   slackMsg('n-ok', 'Notify Success', cfgVal('opsChannel'),
     "=:white_check_mark: Posted to the FishPin Page — row `{{ $('Route Decision').first().json.row_id }}` ({{ $('Route Decision').first().json.pillar }})\nPost id: {{ $('Publish Post').first().json.id }}\n{{ $('Route Decision').first().json.image_url }}",
-    5100, 100),
+    5320, 40),
+  // The post IS live — only the bookkeeping failed — so this message has to
+  // hand over everything a human needs to repair the row by hand.
+  slackMsg('n-wbfail', 'Notify Writeback Failed', cfgVal('opsChannel'),
+    "=:warning: FishPin ad IS LIVE on the Page, but the Queue row could NOT be updated — row `{{ $('Route Decision').first().json.row_id }}`."
+    + "\nPost id: {{ $('Publish Post').first().json.id }}"
+    + "\nSheets error: {{ JSON.stringify(($json || {}).error || 'unknown') }}"
+    + "\nThe row is marked needs_manual. Paste the post id, caption, image url and posted_at into the Queue row by hand, then set status=posted so the 24h insights scan picks it up."
+    + "\nCaption: {{ $('Route Decision').first().json.copy.caption }}"
+    + "\nImage: {{ $('Route Decision').first().json.image_url }}",
+    5320, 160),
 
   // The captured error/row id come straight off Write Back's failure output,
   // which is still $json here (Published? just routes, it doesn't reshape).
@@ -229,17 +304,34 @@ const nodes = [
     authentication: 'none', sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify($json.payload) }}',
     options: {},
   }, 4660, 340, {}),
-  // Fed from three predecessors: Re-invoke? false (Loop Guard's own json has
-  // .status already — 'expired' or 'needs_manual'), Notify Publish Failed,
-  // and Notify Image Failed. The latter two are Slack nodes, so by the time
-  // execution reaches here $json is the Slack API response, not our shaped
-  // payload — it carries no .status. The `|| 'failed'` fallback is what
-  // still lets this row reach a terminal status on those two paths instead
-  // of being left at in_review forever.
+  // Re-invoke used to have no outgoing connection at all: its output was
+  // consumed by nothing, and it carries onError continueRegularOutput, so if
+  // all 3 POSTs failed the regeneration simply never happened — no Slack
+  // message, no terminal status, the row stranded at in_review forever.
+  // The webhook responds onReceived with a body and no error key; a failure
+  // leaves { error: ... } instead.
+  ifNode('n-ifre', 'Re-invoked?', '={{ !$json.error }}', 4880, 340),
+  slackMsg('n-refail', 'Notify Re-invoke Failed', cfgVal('opsChannel'),
+    "=:x: FishPin ad regeneration could NOT be started for row `{{ $('Loop Guard').first().json.row_id }}` — every attempt to call the loop webhook failed."
+    + "\nError: {{ JSON.stringify(($json || {}).error || 'unknown') }}"
+    + "\nNothing was posted and no new draft exists. The row is marked terminal; set its status back to ready to try again.",
+    5100, 340),
+  // Fed from five predecessors. Only one of them — Re-invoke? false — arrives
+  // with Loop Guard's own json, which already carries .status ('expired' or
+  // 'needs_manual'). The other four are Slack nodes, so by the time execution
+  // reaches here $json is the Slack API response and carries no .status; the
+  // fallback is what still gets those rows to a terminal status instead of
+  // leaving them at in_review forever.
+  //
+  // The fallback distinguishes one case: if Write Back said the publish
+  // SUCCEEDED and we still ended up here, the post is live and only the
+  // bookkeeping failed, so the row needs a human to repair it (needs_manual),
+  // not a 'failed' label that reads as "nothing was posted". Every other path
+  // (image failure, publish failure, re-invoke failure) is a genuine 'failed'.
   http('n-term', 'Mark Terminal', {
     method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status || 'failed' ]] }] }) }}",
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status || ($('Write Back').isExecuted && $('Write Back').first().json.ok ? 'needs_manual' : 'failed') ]] }] }) }}",
     options: {},
   }, 4660, 460, { googleApi: SHEETS }),
   slackMsg('n-stop', 'Notify Stopped', cfgVal('opsChannel'),
@@ -249,6 +341,10 @@ const nodes = [
 const c = (from, to) => ({ [from]: { main: [[{ node: to, type: 'main', index: 0 }]] } });
 const cIf = (from, t, f) => ({ [from]: { main: [
   [{ node: t, type: 'main', index: 0 }], [{ node: f, type: 'main', index: 0 }]] } });
+// An IF whose happy branch is the end of the road: only the false branch is
+// wired, so the true branch terminates the execution normally.
+const cIfFalseOnly = (from, f) => ({ [from]: { main: [
+  [], [{ node: f, type: 'main', index: 0 }]] } });
 
 const connections = Object.assign({},
   c('Schedule Trigger', 'Config'),
@@ -258,7 +354,12 @@ const connections = Object.assign({},
   c('Load Queue Row', 'Pick Row'),
   c('Pick Row', 'Queue Empty?'),
   cIf('Queue Empty?', 'Notify Queue Empty', 'Claim Row'),
-  c('Claim Row', 'Build Copy Prompt'),
+  // Spec §8: a "Regenerate image" re-entry keeps the approved copy and skips
+  // copy generation entirely, so Reuse Copy stands in for Validate Copy and
+  // feeds Build Image Prompt directly.
+  c('Claim Row', 'Keep Copy?'),
+  cIf('Keep Copy?', 'Reuse Copy', 'Build Copy Prompt'),
+  c('Reuse Copy', 'Build Image Prompt'),
   c('Build Copy Prompt', 'Generate Copy'),
   c('Generate Copy', 'Validate Copy'),
   c('Validate Copy', 'Copy Valid?'),
@@ -271,7 +372,12 @@ const connections = Object.assign({},
   // would never reach a terminal status on an image-generation failure.
   c('Notify Image Failed', 'Mark Terminal'),
   c('Upload Photo (unpublished)', 'Get Photo URL'),
-  c('Get Photo URL', 'Log Attempt'),
+  // FAIL-CLOSED: without a usable image URL the Post Preview message throws
+  // and is never delivered, leaving the reviewer approving an ad they cannot
+  // see while a perfectly valid media_fbid stands ready to publish it. No
+  // image URL means no review — the row goes terminal and the team is told.
+  c('Get Photo URL', 'Image URL OK?'),
+  cIf('Image URL OK?', 'Log Attempt', 'Notify Image Failed'),
   c('Log Attempt', 'Write Attempt'),
   c('Write Attempt', 'Post Preview'),
   c('Post Preview', 'Slack Review'),
@@ -281,18 +387,25 @@ const connections = Object.assign({},
   c('Publish Post', 'Write Back'),
   c('Write Back', 'Published?'),
   cIf('Published?', 'Write Back Row', 'Notify Publish Failed'),
-  c('Write Back Row', 'Notify Success'),
+  // A failed Sheets write must not be reported as "✅ Posted".
+  c('Write Back Row', 'Row Written?'),
+  cIf('Row Written?', 'Notify Success', 'Notify Writeback Failed'),
+  c('Notify Writeback Failed', 'Mark Terminal'),
   // Marks the row terminal so a failed publish is not stranded at in_review.
   c('Notify Publish Failed', 'Mark Terminal'),
   c('Loop Guard', 'Re-invoke?'),
   cIf('Re-invoke?', 'Re-invoke', 'Mark Terminal'),
+  // A failed Re-invoke used to be a silent dead end.
+  c('Re-invoke', 'Re-invoked?'),
+  cIfFalseOnly('Re-invoked?', 'Notify Re-invoke Failed'),
+  c('Notify Re-invoke Failed', 'Mark Terminal'),
   c('Mark Terminal', 'Notify Stopped'),
 );
 
 const workflow = {
   name: 'FishPin Ad Creative -> FB (Approve)',
   nodes, connections,
-  settings: { executionOrder: 'v1', errorWorkflow: ERROR_WF },
+  settings: { executionOrder: 'v1', errorWorkflow: ERROR_WF, timezone: TZ },
 };
 const out = path.join(__dirname, 'fishpin-fb-ads.workflow.json');
 fs.writeFileSync(out, JSON.stringify(workflow, null, 2), 'utf8');

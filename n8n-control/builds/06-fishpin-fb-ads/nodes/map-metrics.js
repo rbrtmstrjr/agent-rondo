@@ -12,22 +12,26 @@ const split = $('Split Posts').all();
 const insightsAll = $('Get Insights').all();
 // Get Insights carries onError continueRegularOutput, so a Graph API
 // failure on one item can plausibly leave its output array shorter than
-// Split Posts'/items' length — index i can run past the end of either
-// array. The two missing-data cases have different consequences and are
-// handled differently:
-//   - missing insights: recoverable. mapMetrics({}, {}) returns all four
-//     metrics as finite zeros (verified in Task 5), so the row is still
-//     written as measured, just with zeros, instead of crashing the whole
-//     run and leaving every due row unmeasured.
-//   - missing split row: NOT recoverable — there is no row id and no
-//     _rowNumber to write. Emitting the item anyway would send Update Row
-//     a range like "Queue!Gundefined", the same silent-corruption class
-//     already fixed in the main workflow's Publish path. Skip it entirely.
+// Split Posts'/items' length, or leave an error-shaped payload in place of
+// the real one. Both missing-data cases are skipped, for the same reason:
+//   - missing split row: there is no row id and no _rowNumber to write.
+//     Emitting the item anyway would send Update Row a range like
+//     "Queue!Gundefined", the same silent-corruption class already fixed in
+//     the main workflow's Publish path.
+//   - missing/failed insights: mapMetrics({}, {}) returns finite zeros, so
+//     emitting the item would write reach=0 AND status=measured. selectDueRows
+//     never re-selects a row that has a reach value, so a 30-second Graph blip
+//     would permanently record a real post as zero-reach with no way back
+//     except a human clearing the cell. Skipping leaves reach blank and
+//     status 'posted', so the NEXT hourly run simply retries it — the whole
+//     point of a scanner that runs every hour.
+// Skipping never loses data: nothing is written for that row this hour.
 return items
   .map((it, i) => {
     const row = split[i] ? split[i].json.row : null;
     if (!row) return null;
-    const insJson = insightsAll[i] ? insightsAll[i].json : {};
+    const insJson = insightsAll[i] ? insightsAll[i].json : null;
+    if (!insJson || insJson.error || !Array.isArray(insJson.data)) return null;
     const m = mapMetrics(insJson, it.json);
     return { json: Object.assign({ id: row.id, _rowNumber: row._rowNumber, status: 'measured' }, m) };
   })

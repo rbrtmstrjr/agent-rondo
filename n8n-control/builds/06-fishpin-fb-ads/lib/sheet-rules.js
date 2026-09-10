@@ -8,8 +8,13 @@ const QUEUE_HEADERS = [
   'caption', 'image_url', 'fb_post_id', 'posted_at', 'likes', 'comments', 'shares', 'reach',
 ];
 
+// `aspect` (column J) records the aspect ratio actually observed in the
+// generated image, and flags it when it differs from the ratio requested via
+// generationConfig.imageConfig.aspectRatio. Spec §16 item 1 — an observation
+// only; a mismatch never fails the run (spec §7).
 const ATTEMPT_HEADERS = [
   'ts', 'row_id', 'attempt', 'pillar', 'headline', 'caption', 'image_url', 'decision', 'revision_note',
+  'aspect',
 ];
 
 // Only 'ready' enters rotation. Everything else is either mid-flight (in_review)
@@ -45,6 +50,7 @@ function buildAttemptRow(ctx) {
     image_url: String(c.image_url || ''),
     decision: String(c.decision || ''),
     revision_note: String(c.revision_note || ''),
+    aspect: String(c.aspect || ''),
   };
 }
 

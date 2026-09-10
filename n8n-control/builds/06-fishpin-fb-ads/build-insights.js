@@ -40,8 +40,13 @@ const http = (id, name, params, x, y, cred) => ({
   retryOnFail: true, maxTries: 3, waitBetweenTries: 2000, onError: 'continueRegularOutput', credentials: cred,
 });
 
+// posted_at and the 24h cutoff are Philippine local time everywhere in this
+// build, and n8n falls back to the INSTANCE timezone (UTC on a default VPS
+// install) when a workflow does not set one. See build.js for the full note.
+const TZ = 'Asia/Manila';
+
 const nodes = [
-  { parameters: { rule: { interval: [{ field: 'hours', hoursInterval: 1 }] } },
+  { parameters: { rule: { interval: [{ field: 'hours', hoursInterval: 1 }] }, timezone: TZ },
     id: 'i-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-400, 300) },
   { parameters: { assignments: { assignments: [
       { id: 'i1', name: 'sheetId', value: 'FILL_IN_SHEET_ID', type: 'string' },
@@ -92,9 +97,21 @@ const nodes = [
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!M' + $json._rowNumber + ':P' + $json._rowNumber, values: [[ $json.likes, $json.comments, $json.shares, $json.reach ]] } ] }) }}",
     options: {},
   }, 1580, 220, { googleApi: SHEETS }),
+  // Notify Digest's only predecessor is Update Row, an HTTP node whose output
+  // is the Sheets batchUpdate RESPONSE ({spreadsheetId, totalUpdatedRows, ...})
+  // — it has no id/reach/likes/comments/shares at all, so reading $json here
+  // rendered every field blank and the entire user-facing output of this
+  // workflow was an empty line. The numbers live on Map Metrics, and Map
+  // Metrics -> Update Row -> Notify Digest is 1:1 and order-preserving, so
+  // $itemIndex index-alignment is the same pattern Get Engagement already uses
+  // against Split Posts. (.first() would be the collapse-to-row-1 bug again.)
   { parameters: { select: 'channel',
       channelId: { __rl: true, value: "={{ $('Config').first().json.opsChannel }}", mode: 'id' },
-      text: '=:bar_chart: FishPin 24h numbers for `{{ $json.id }}`: reach {{ $json.reach }}, likes {{ $json.likes }}, comments {{ $json.comments }}, shares {{ $json.shares }}',
+      text: "=:bar_chart: FishPin 24h numbers for `{{ $('Map Metrics').all()[$itemIndex].json.id }}`: "
+        + "reach {{ $('Map Metrics').all()[$itemIndex].json.reach }}, "
+        + "likes {{ $('Map Metrics').all()[$itemIndex].json.likes }}, "
+        + "comments {{ $('Map Metrics').all()[$itemIndex].json.comments }}, "
+        + "shares {{ $('Map Metrics').all()[$itemIndex].json.shares }}",
       otherOptions: {} },
     id: 'i-slack', name: 'Notify Digest', type: 'n8n-nodes-base.slack', typeVersion: 2.3, position: pos(1800, 220),
     onError: 'continueRegularOutput', credentials: { slackApi: SLACK } },
@@ -115,7 +132,7 @@ const connections = {
 
 const workflow = {
   name: 'FishPin Ad Insights (24h)', nodes, connections,
-  settings: { executionOrder: 'v1', errorWorkflow: ERROR_WF },
+  settings: { executionOrder: 'v1', errorWorkflow: ERROR_WF, timezone: TZ },
 };
 const out = path.join(__dirname, 'fishpin-insights.workflow.json');
 fs.writeFileSync(out, JSON.stringify(workflow, null, 2), 'utf8');

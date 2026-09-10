@@ -187,8 +187,14 @@ function loopGuard(state, cfg) {
     return { action: 'reinvoke', attempt, copy_retry: copyRetry + 1, status: 'in_review', message: '', revision_note: reason };
   }
 
-  // human rejection — copy, image, both, or an unrecognised response
-  if (attempt > maxAttempts) {
+  // human rejection — copy, image, both, or an unrecognised response.
+  //
+  // `attempt` is the attempt the reviewer just rejected, and it starts at 1.
+  // So attempt === maxAttempts means the budget is already spent: re-invoking
+  // there would produce a FOURTH review labelled "attempt 4 of 3", and the
+  // escalation message would then claim "3 attempts rejected" after four.
+  // `>=` is what makes 3 human reviews mean three.
+  if (attempt >= maxAttempts) {
     return {
       action: 'needs_manual', attempt, copy_retry: 0, status: 'needs_manual',
       message: maxAttempts + ' attempts rejected, needs a human. Row id ' + rowId + '.',

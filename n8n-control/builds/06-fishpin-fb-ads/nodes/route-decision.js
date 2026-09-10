@@ -1,6 +1,9 @@
 // Glue: normalise whatever the Slack custom form returned.
+//
+// The copy comes from Build Image Prompt, not Validate Copy: on the
+// "Regenerate image" branch Validate Copy never executes (see reuse-copy.js).
 const q = $('Pick Row').first().json;
-const v = $('Validate Copy').first().json;
+const v = $('Build Image Prompt').first().json;
 const img = $('Get Photo URL').first().json;
 const url = (img && img.images && img.images.length) ? img.images[0].source : '';
 
