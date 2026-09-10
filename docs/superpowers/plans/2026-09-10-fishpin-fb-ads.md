@@ -1005,8 +1005,24 @@ section('flow', 'Decision routing and loop counters', () => {
   check('empty payload is unknown', F.normalizeDecision({}) === 'unknown');
   check('null payload is unknown', F.normalizeDecision(null) === 'unknown');
 
+  // a reviewer's free-text reason must never hijack routing away from an explicit decision
+  check('approve survives a reason mentioning rewrite',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'please rewrite the CTA next time' }) === 'approve');
+  check('approve survives a reason mentioning copy and approve',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'love the new copy on this one, approve' }) === 'approve');
+  check('approve survives a reason mentioning both and approved',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'both photos look great, approved' }) === 'approve');
+  check('approve survives a reason mentioning image',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'the new image is perfect' }) === 'approve');
+  check('regenerate copy survives a reason mentioning both',
+    F.normalizeDecision({ Decision: 'Regenerate copy', Reason: 'both the tone and the length are off' }) === 'copy');
+
   check('extracts a typed reason', F.extractReason({ data: { Decision: 'Regenerate image', Reason: 'headline garbled' } }) === 'headline garbled');
   check('missing reason is an empty string', F.extractReason({ data: { Decision: 'Approve' } }) === '');
+  check('extracts a reason nested two levels deep',
+    F.extractReason({ data: { inner: { Reason: 'too salesy' } } }) === 'too salesy');
+  check('extracts a reason nested three levels deep',
+    F.extractReason({ data: { inner: { deeper: { Reason: 'too salesy' } } } }) === 'too salesy');
 
   const g = (s) => F.loopGuard(Object.assign({ decision: 'copy', attempt: 1, copy_retry: 0, reason: 'r', row_id: 'FP-001' }, s), CFG);
 
@@ -1032,6 +1048,14 @@ section('flow', 'Decision routing and loop counters', () => {
   check('copy_retry exhaustion is not a human rejection',
     /validation/i.test(v({ copy_retry: 1 }).message));
   check('human regen resets copy_retry', g({ attempt: 1, copy_retry: 1 }).copy_retry === 0);
+
+  // the failure count in the stop message must track maxCopyRetries, not be hardcoded
+  const CFG2 = { maxAttempts: 3, maxCopyRetries: 2 };
+  const v2 = F.loopGuard(
+    { decision: 'copy_invalid', attempt: 1, copy_retry: 2, reason: 'em dash', row_id: 'FP-001' },
+    CFG2
+  );
+  check('stop message derives the failure count from maxCopyRetries', /3 times/.test(v2.message));
 });
 ```
 
@@ -1075,11 +1099,81 @@ function collectStrings(obj, out, depth) {
   return out;
 }
 
+// Values only (no keys) — feeds the decisive exact-match pass. A reviewer's
+// free-text reason is prose, not a dropdown selection, so it will almost
+// never equality-match a canonical decision string even though it may
+// contain the words "copy"/"image"/"both"/"approve" in an ordinary sentence.
+function collectValues(obj, out, depth) {
+  out = out || []; depth = depth || 0;
+  if (obj == null || depth > 6) return out;
+  if (typeof obj === 'string') { out.push(obj); return out; }
+  if (typeof obj === 'boolean' || typeof obj === 'number') return out;
+  if (Array.isArray(obj)) { obj.forEach((v) => collectValues(v, out, depth + 1)); return out; }
+  if (typeof obj === 'object') {
+    Object.keys(obj).forEach((k) => collectValues(obj[k], out, depth + 1));
+  }
+  return out;
+}
+
+// Same as collectStrings, but does not descend into (or push the values of)
+// any key that looks like a free-text reason/note/comment field. Keys
+// themselves are still pushed — the n8n {data:{approved:true}} shape depends
+// on the literal key "approved" being visible to the fuzzy scan.
+function collectFuzzyHaystack(obj, out, depth) {
+  out = out || []; depth = depth || 0;
+  if (obj == null || depth > 6) return out;
+  if (typeof obj === 'string') { out.push(obj); return out; }
+  if (typeof obj === 'boolean' || typeof obj === 'number') return out;
+  if (Array.isArray(obj)) { obj.forEach((v) => collectFuzzyHaystack(v, out, depth + 1)); return out; }
+  if (typeof obj === 'object') {
+    Object.keys(obj).forEach((k) => {
+      out.push(k);
+      if (/reason|note|comment|why|feedback/i.test(k)) return; // exclude prose from the fuzzy scan
+      collectFuzzyHaystack(obj[k], out, depth + 1);
+    });
+  }
+  return out;
+}
+
+function normalizeValue(v) {
+  return String(v).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Canonical dropdown strings -> decision. Exact-match only: this is what
+// makes pass 1 decisive rather than fuzzy.
+const EXACT_DECISIONS = {
+  approve: 'approve',
+  'regenerate copy': 'copy',
+  'regenerate image': 'image',
+  'regenerate both': 'both',
+};
+
 function normalizeDecision(payload) {
   if (!payload) return 'unknown';
   if (payload.timeout === true) return 'timeout';
 
-  const hay = collectStrings(payload).join(' | ').toLowerCase();
+  // Pass 1 (decisive): an exact-match VALUE beats any amount of surrounding
+  // prose. This still works when the field is named field_0 or anything
+  // else, because it matches on the VALUE, not the key — so it stays
+  // shape-agnostic. Only fires when exactly one distinct decision is found;
+  // ambiguous or absent exact matches fall through to the fuzzy scan.
+  const exactMatches = new Set();
+  collectValues(payload).forEach((v) => {
+    const norm = normalizeValue(v);
+    if (Object.prototype.hasOwnProperty.call(EXACT_DECISIONS, norm)) {
+      exactMatches.add(EXACT_DECISIONS[norm]);
+    }
+  });
+  if (exactMatches.size === 1) {
+    const only = exactMatches.values().next().value;
+    if (only === 'approve' && payload.data && payload.data.approved === false) return 'timeout';
+    return only;
+  }
+
+  // Pass 2 (fallback fuzzy scan): only reached when pass 1 found nothing
+  // decisive. Excludes reason/note/comment-keyed prose from the haystack so
+  // a rejection's free-text explanation can't be mistaken for the decision.
+  const hay = collectFuzzyHaystack(payload).join(' | ').toLowerCase();
 
   // order matters: "both" before "copy"/"image", since the label contains neither alone
   if (/regenerate both|regen both|\bboth\b/.test(hay)) return 'both';
@@ -1095,11 +1189,42 @@ function normalizeDecision(payload) {
   return 'unknown';
 }
 
+// Walks the payload at any depth (same bounded-depth traversal as
+// collectStrings) and returns the first non-empty string value whose key
+// looks like a free-text reason/note/comment field. Checks every key at the
+// current level before descending, so a reason at a shallower level wins
+// over one further down.
+function findReason(obj, depth) {
+  depth = depth || 0;
+  if (obj == null || depth > 6 || typeof obj !== 'object') return null;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      const found = findReason(obj[i], depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  const keys = Object.keys(obj);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const v = obj[k];
+    if (/reason|note|comment|why|feedback/i.test(k) && typeof v === 'string' && v.trim() !== '') {
+      return v.trim();
+    }
+  }
+  for (let i = 0; i < keys.length; i++) {
+    const v = obj[keys[i]];
+    if (v && typeof v === 'object') {
+      const found = findReason(v, depth + 1);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
 function extractReason(payload) {
   if (!payload || typeof payload !== 'object') return '';
-  const src = payload.data && typeof payload.data === 'object' ? payload.data : payload;
-  const key = Object.keys(src).find((k) => /reason|note|comment|why|feedback/i.test(k));
-  return key ? String(src[key] || '').trim() : '';
+  return findReason(payload, 0) || '';
 }
 
 function loopGuard(state, cfg) {
@@ -1129,7 +1254,7 @@ function loopGuard(state, cfg) {
     if (copyRetry >= maxCopyRetries) {
       return {
         action: 'needs_manual', attempt, copy_retry: copyRetry, status: 'needs_manual',
-        message: 'Copy validation failed twice, needs a human. Row id ' + rowId + '. Last reason: ' + reason,
+        message: 'Copy validation failed ' + (maxCopyRetries + 1) + ' times, needs a human. Row id ' + rowId + '. Last reason: ' + reason,
         revision_note: reason,
       };
     }
