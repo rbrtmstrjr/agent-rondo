@@ -402,6 +402,85 @@ section('flow', 'Decision routing and loop counters', () => {
   check('stop message derives the failure count from maxCopyRetries', /3 times/.test(v2.message));
 });
 
+// ---------------------------------------------------------------- sheet rules
+section('sheet', 'Queue selection, row shaping, metric mapping', () => {
+  const S = L('sheet-rules.js');
+
+  check('queue has 16 columns', S.QUEUE_HEADERS.length === 16);
+  check('queue starts with id', S.QUEUE_HEADERS[0] === 'id');
+  check('queue includes every workflow-written column',
+    ['status', 'caption', 'image_url', 'fb_post_id', 'posted_at', 'likes', 'comments', 'shares', 'reach']
+      .every(c => S.QUEUE_HEADERS.includes(c)));
+  check('attempts has 9 columns', S.ATTEMPT_HEADERS.length === 9);
+
+  const rows = [
+    { id: 'FP-001', status: 'posted' },
+    { id: 'FP-002', status: 'in_review' },
+    { id: 'FP-003', status: 'ready' },
+    { id: 'FP-004', status: 'ready' },
+    { id: 'FP-005', status: 'blocked_needs_asset' },
+  ];
+  check('picks the first ready row', S.selectRow(rows, '').id === 'FP-003');
+  check('never picks in_review', S.selectRow(rows, '').status === 'ready');
+  check('re-entry picks the named row regardless of status', S.selectRow(rows, 'FP-002').id === 'FP-002');
+  check('re-entry with an unknown id returns null', S.selectRow(rows, 'FP-999') === null);
+  check('no ready rows returns null', S.selectRow([{ id: 'x', status: 'posted' }], '') === null);
+  check('blocked rows are never selected', S.selectRow([rows[4]], '') === null);
+
+  const now = Date.parse('2026-09-10T12:00:00Z');
+  const due = [
+    { id: 'A', status: 'posted', posted_at: '2026-09-09T00:00:00Z', reach: '' },
+    { id: 'B', status: 'posted', posted_at: '2026-09-10T11:00:00Z', reach: '' },
+    { id: 'C', status: 'posted', posted_at: '2026-09-08T00:00:00Z', reach: '412' },
+    { id: 'D', status: 'measured', posted_at: '2026-09-01T00:00:00Z', reach: '' },
+    { id: 'E', status: 'posted', posted_at: '', reach: '' },
+  ];
+  const sel = S.selectDueRows(due, now, 24).map(r => r.id);
+  check('selects a post older than 24h with no reach', sel.includes('A'));
+  check('skips a post younger than 24h', !sel.includes('B'));
+  check('skips a post that already has reach', !sel.includes('C'));
+  check('skips a row already measured', !sel.includes('D'));
+  check('skips a row with no posted_at', !sel.includes('E'));
+  check('selects exactly one row here', sel.length === 1);
+
+  const att = S.buildAttemptRow({
+    row_id: 'FP-003', attempt: 2, pillar: 'safety', headline: 'H', caption: 'C',
+    image_url: 'https://cdn/x.jpg', decision: 'image', revision_note: 'too dark',
+  });
+  check('attempt row has a timestamp', /^\d{4}-\d{2}-\d{2}T/.test(att.ts));
+  check('attempt row keeps the decision', att.decision === 'image');
+  check('attempt row keeps the note', att.revision_note === 'too dark');
+  check('attempt row keys match the headers', S.ATTEMPT_HEADERS.every(h => h in att));
+
+  const upd = S.buildQueueUpdate({
+    id: 'FP-003', status: 'posted', caption: 'C', image_url: 'https://cdn/x.jpg', fb_post_id: '123_456',
+  });
+  check('queue update carries the row id', upd.id === 'FP-003');
+  check('queue update stamps posted_at', /^\d{4}-\d{2}-\d{2}T/.test(upd.posted_at));
+  check('queue update carries the post id', upd.fb_post_id === '123_456');
+  check('non-posted updates do not stamp posted_at',
+    S.buildQueueUpdate({ id: 'FP-003', status: 'expired' }).posted_at === '');
+
+  const insights = { data: [
+    { name: 'post_impressions', values: [{ value: 1820 }] },
+    { name: 'post_engaged_users', values: [{ value: 96 }] },
+    { name: 'post_reactions_by_type_total', values: [{ value: { like: 40, love: 7, wow: 3 } }] },
+  ] };
+  const engagement = { comments: { summary: { total_count: 12 } }, shares: { count: 5 },
+    reactions: { summary: { total_count: 50 } } };
+  const m = S.mapMetrics(insights, engagement);
+  check('reach comes from impressions', m.reach === 1820);
+  check('likes prefer the reactions summary', m.likes === 50);
+  check('comments come from the summary', m.comments === 12);
+  check('shares come from the share count', m.shares === 5);
+
+  const partial = S.mapMetrics({ data: [] }, {});
+  check('missing metrics degrade to zero, not NaN', partial.reach === 0 && partial.likes === 0);
+  check('missing shares degrade to zero', partial.shares === 0 && partial.comments === 0);
+  const noSummary = S.mapMetrics(insights, { shares: { count: 2 } });
+  check('falls back to summing reaction types', noSummary.likes === 50);
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
