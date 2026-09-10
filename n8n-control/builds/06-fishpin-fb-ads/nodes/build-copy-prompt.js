@@ -1,6 +1,6 @@
 // Glue: build the Gemini copy request from the brand bible.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 
 const body = {
   system_instruction: { parts: [{ text: buildSystemPrompt() }] },

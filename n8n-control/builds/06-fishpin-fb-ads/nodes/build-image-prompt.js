@@ -1,7 +1,7 @@
 // Glue: build the Gemini image request. On a "regenerate image" pass the
 // approved caption is reused and the reviewer's note steers the visual only.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const v = $('Validate Copy').first().json;
 
 let prompt = buildImagePrompt(v.copy, q.row.pillar);

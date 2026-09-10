@@ -1,20 +1,20 @@
 // Assembles fishpin-fb-ads.workflow.json.
-// Libs are inlined VERBATIM ahead of each glue file: their `module.exports` is
-// guarded by `typeof module !== 'undefined'`, which is false in the n8n Code
-// sandbox, so no source transformation is needed.
+// Libs are inlined ahead of each glue file. Each lib's own `module.exports =`
+// line is guarded by `typeof module !== 'undefined'`, which is false in the
+// n8n Code sandbox, so the export itself is already inert there — but the
+// `lib()` helper below still neutralizes it (`module.exports =` -> `void `)
+// rather than relying on that guard alone. `void {...}` is a valid no-op
+// expression statement under either of this repo's two guard styles
+// (single-line or block), survives a multi-line export object without
+// leaving a dangling fragment, and never leaves the literal substring
+// `module.exports` in a Code node body for the sandbox-safety assertion to
+// (correctly) flag.
 // Run: node build.js
 const fs = require('fs');
 const path = require('path');
 
 const read = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
-// Libs are inlined verbatim except for their trailing `module.exports` line(s):
-// that line is always dead code in the n8n sandbox (`module` is undefined
-// there, so the `typeof module !== 'undefined'` guard is always false), and
-// dropping it — rather than the guard wrapper around it — leaves every lib's
-// real logic untouched while guaranteeing no Code node ships a bare
-// `module.exports =` for the sandbox-safety check to trip on, regardless of
-// which of the two equivalent guard styles a given lib happens to use.
-const lib = (n) => read(path.join('lib', n)).split('\n').filter((l) => !/module\.exports/.test(l)).join('\n');
+const lib = (n) => read(path.join('lib', n)).replace(/module\.exports\s*=/g, 'void ');
 const glue = (n) => read(path.join('nodes', n));
 const code = (libs, g) => libs.map(lib).join('\n\n') + '\n\n' + glue(g);
 
@@ -63,7 +63,15 @@ const nodes = [
     ] } },
     id: 'n-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-620, 200) },
   { parameters: {}, id: 'n-man', name: 'Manual Trigger', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: pos(-620, 360) },
-  { parameters: { httpMethod: 'POST', path: WEBHOOK_PATH, responseMode: 'lastNode', options: {} },
+  // onReceived: the caller (Re-invoke, the only caller) never reads the
+  // response body, and the re-invoked run can sit in a sendAndWait for up to
+  // reviewTimeoutHours. lastNode would hold the HTTP connection open for that
+  // whole duration; Re-invoke's own retryOnFail (3 tries) would then treat a
+  // timed-out connection as a failure and fire off additional full
+  // executions — multiple Slack review prompts and potentially multiple
+  // published posts for one queue row. onReceived acknowledges immediately,
+  // so a retry only ever fires on a genuinely dropped request.
+  { parameters: { httpMethod: 'POST', path: WEBHOOK_PATH, responseMode: 'onReceived', options: {} },
     id: 'n-wh', name: 'Loop Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: pos(-620, 520), webhookId: 'fishpin-ad-hook' },
 
   { parameters: { assignments: { assignments: [
@@ -189,6 +197,12 @@ const nodes = [
     ] }, options: {},
   }, 4220, 180, { facebookGraphApi: FB }),
   codeNode('n-wb', 'Write Back', code(['sheet-rules.js'], 'map-writeback.js'), 4440, 180),
+  // A failed Publish Post has onError continueRegularOutput, so the run does
+  // not abort — it falls through to Write Back with pub.error set. Without
+  // this gate the failure would flow straight into Write Back Row's
+  // targeted-range write with an undefined _rowNumber (a swallowed 400) and
+  // Notify Success would report a post id that was never created.
+  ifNode('n-ifpub', 'Published?', '={{ $json.ok }}', 4660, 180),
   // Two targeted ranges in one call: G = status, I:L = caption, image_url,
   // fb_post_id, posted_at. Column H (scheduled_for) is deliberately skipped so
   // the human's value is not blanked.
@@ -197,10 +211,16 @@ const nodes = [
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!I' + $json._rowNumber + ':L' + $json._rowNumber, values: [[ $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] } ] }) }}",
     options: {},
-  }, 4660, 180, { googleApi: SHEETS }),
+  }, 4880, 100, { googleApi: SHEETS }),
   slackMsg('n-ok', 'Notify Success', cfgVal('opsChannel'),
     "=:white_check_mark: Posted to the FishPin Page — row `{{ $('Route Decision').first().json.row_id }}` ({{ $('Route Decision').first().json.pillar }})\nPost id: {{ $('Publish Post').first().json.id }}\n{{ $('Route Decision').first().json.image_url }}",
-    4880, 180),
+    5100, 100),
+
+  // The captured error/row id come straight off Write Back's failure output,
+  // which is still $json here (Published? just routes, it doesn't reshape).
+  slackMsg('n-pubfail', 'Notify Publish Failed', cfgVal('opsChannel'),
+    "=:x: FishPin ad FAILED to publish to the FB Page — row `{{ $json.id }}`.\nError: {{ $json.error }}\nThe row has been marked failed; it will not be retried automatically.",
+    4880, 260),
 
   codeNode('n-guard', 'Loop Guard', code(['flow-rules.js'], 'loop-guard.js'), 4220, 400),
   ifNode('n-ifloop', 'Re-invoke?', '={{ $json.reinvoke }}', 4440, 400),
@@ -209,10 +229,17 @@ const nodes = [
     authentication: 'none', sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify($json.payload) }}',
     options: {},
   }, 4660, 340, {}),
+  // Fed from three predecessors: Re-invoke? false (Loop Guard's own json has
+  // .status already — 'expired' or 'needs_manual'), Notify Publish Failed,
+  // and Notify Image Failed. The latter two are Slack nodes, so by the time
+  // execution reaches here $json is the Slack API response, not our shaped
+  // payload — it carries no .status. The `|| 'failed'` fallback is what
+  // still lets this row reach a terminal status on those two paths instead
+  // of being left at in_review forever.
   http('n-term', 'Mark Terminal', {
     method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status ]] }] }) }}",
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status || 'failed' ]] }] }) }}",
     options: {},
   }, 4660, 460, { googleApi: SHEETS }),
   slackMsg('n-stop', 'Notify Stopped', cfgVal('opsChannel'),
@@ -240,6 +267,9 @@ const connections = Object.assign({},
   c('Generate Image', 'Validate Image'),
   c('Validate Image', 'Image Valid?'),
   cIf('Image Valid?', 'Upload Photo (unpublished)', 'Notify Image Failed'),
+  // Without this the row was already flipped to in_review by Claim Row and
+  // would never reach a terminal status on an image-generation failure.
+  c('Notify Image Failed', 'Mark Terminal'),
   c('Upload Photo (unpublished)', 'Get Photo URL'),
   c('Get Photo URL', 'Log Attempt'),
   c('Log Attempt', 'Write Attempt'),
@@ -249,8 +279,11 @@ const connections = Object.assign({},
   c('Route Decision', 'Approved?'),
   cIf('Approved?', 'Publish Post', 'Loop Guard'),
   c('Publish Post', 'Write Back'),
-  c('Write Back', 'Write Back Row'),
+  c('Write Back', 'Published?'),
+  cIf('Published?', 'Write Back Row', 'Notify Publish Failed'),
   c('Write Back Row', 'Notify Success'),
+  // Marks the row terminal so a failed publish is not stranded at in_review.
+  c('Notify Publish Failed', 'Mark Terminal'),
   c('Loop Guard', 'Re-invoke?'),
   cIf('Re-invoke?', 'Re-invoke', 'Mark Terminal'),
   c('Mark Terminal', 'Notify Stopped'),

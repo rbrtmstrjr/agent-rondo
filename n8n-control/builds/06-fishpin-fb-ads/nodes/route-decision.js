@@ -1,5 +1,5 @@
 // Glue: normalise whatever the Slack custom form returned.
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const v = $('Validate Copy').first().json;
 const img = $('Get Photo URL').first().json;
 const url = (img && img.images && img.images.length) ? img.images[0].source : '';

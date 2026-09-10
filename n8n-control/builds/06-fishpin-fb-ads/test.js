@@ -528,8 +528,9 @@ section('workflow', 'Main workflow structure', () => {
    'Claim Row', 'Queue Empty?', 'Build Copy Prompt', 'Generate Copy', 'Validate Copy', 'Copy Valid?',
    'Build Image Prompt', 'Generate Image', 'Validate Image', 'Image Valid?',
    'Upload Photo (unpublished)', 'Get Photo URL', 'Log Attempt', 'Write Attempt', 'Post Preview',
-   'Slack Review', 'Route Decision', 'Approved?', 'Publish Post', 'Write Back', 'Write Back Row',
-   'Notify Success', 'Loop Guard', 'Re-invoke?', 'Re-invoke', 'Mark Terminal', 'Notify Stopped',
+   'Slack Review', 'Route Decision', 'Approved?', 'Publish Post', 'Write Back', 'Published?',
+   'Write Back Row', 'Notify Success', 'Notify Publish Failed', 'Loop Guard', 'Re-invoke?',
+   'Re-invoke', 'Mark Terminal', 'Notify Stopped',
    'Notify Queue Empty', 'Notify Image Failed'].forEach(n => check('has node: ' + n, has(n)));
 
   // every external call retries and continues into an explicit gate.
@@ -551,6 +552,15 @@ section('workflow', 'Main workflow structure', () => {
     .forEach(k => check('Config defines ' + k, cfg.includes(k)));
   const price = byName['Config'].parameters.assignments.assignments.find(a => a.name === 'appPrice');
   check('Config price is 499', Number(price.value) === 499);
+
+  // Loop Webhook must ack immediately: the re-invoked run can sit in a
+  // sendAndWait for up to reviewTimeoutHours, and Re-invoke retries on
+  // failure. lastNode would hold that connection open for the whole wait,
+  // so a client-side timeout would look like a failure and Re-invoke's own
+  // retryOnFail could fire off duplicate executions (duplicate Slack
+  // prompts, potentially duplicate published posts) for one queue row.
+  check('Loop Webhook responseMode is onReceived',
+    byName['Loop Webhook'].parameters.responseMode === 'onReceived');
 
   // the review gate really is a custom form with four decisions
   const rev = byName['Slack Review'].parameters;
@@ -576,12 +586,40 @@ section('workflow', 'Main workflow structure', () => {
   check('Attempts tab still appends (it is a log)',
     /:append/.test(JSON.stringify(byName['Write Attempt'].parameters)));
 
+  // CRITICAL regression guard: 'Load Queue Row' is the raw-Sheets-payload HTTP
+  // node ({range, majorDimension, values:[[...]]}); 'Pick Row' is the Code
+  // node that parses it into {found, row, attempt, copy_retry, ...}. Five
+  // glue files were written against $('Load Queue Row') instead of
+  // $('Pick Row') and read undefined for q.row/q.attempt/q.copy_retry —
+  // Build Copy Prompt, Build Image Prompt, Log Attempt and Route Decision
+  // threw, Validate Copy silently emitted undefined attempt/copy_retry/row
+  // (which zeroes the machine copy-retry budget in loopGuard, turning a
+  // banned word into an unbounded self-POST loop through Re-invoke). No Code
+  // node body may reference the raw HTTP node directly — only the build.js
+  // connection wiring may name it.
+  const codeNodesForRefCheck = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code');
+  codeNodesForRefCheck.forEach(n => {
+    check(n.name + ' does not reference $(\'Load Queue Row\')',
+      !n.parameters.jsCode.includes("$('Load Queue Row')"));
+  });
+  ['Build Copy Prompt', 'Build Image Prompt', 'Log Attempt', 'Route Decision', 'Validate Copy']
+    .forEach(n => check(n + ' reads the parsed row via $(\'Pick Row\')',
+      byName[n].parameters.jsCode.includes("$('Pick Row')")));
+
   // publish is gated: nothing reaches it except the approved branch
   const inbound = (target) => wf.nodes.filter(n =>
     JSON.stringify((wf.connections[n.name] || {}).main || []).includes('"' + target + '"')).map(n => n.name);
   check('only Approved? feeds Publish Post', JSON.stringify(inbound('Publish Post')) === '["Approved?"]');
   check('Image Valid? gates the upload', inbound('Upload Photo (unpublished)').includes('Image Valid?'));
   check('Copy Valid? gates the image prompt', inbound('Build Image Prompt').includes('Copy Valid?'));
+
+  // A failed Publish Post (onError continueRegularOutput) must not fall
+  // through to a targeted-range write with an undefined _rowNumber, nor let
+  // Notify Success report a post id that was never created. Published? gates
+  // that, and only its true branch may feed Write Back Row.
+  check('only Published? feeds Write Back Row', JSON.stringify(inbound('Write Back Row')) === '["Published?"]');
+  check('Published? gates Write Back Row on $json.ok',
+    /\$json\.ok/.test(JSON.stringify(byName['Published?'].parameters)));
 
   // every node is reachable and every connection target exists
   const names = new Set(wf.nodes.map(n => n.name));
@@ -607,6 +645,17 @@ section('workflow', 'Main workflow structure', () => {
   const orphans = wf.nodes.filter(n => n.type !== 'n8n-nodes-base.stickyNote' && !reached.has(n.name)).map(n => n.name);
   check('no orphan nodes: ' + orphans.join(','), orphans.length === 0);
 
+  // Notify Publish Failed must exist AND actually be wired into the graph
+  // (a lone 'has node' check would pass even if nothing pointed at it).
+  check('Notify Publish Failed is reachable', reached.has('Notify Publish Failed'));
+  // Notify Image Failed used to be a dead end: the row was already flipped
+  // to in_review by Claim Row and had no path to a terminal status on an
+  // image-generation failure. It must now continue into Mark Terminal.
+  check('Notify Image Failed feeds Mark Terminal',
+    inbound('Mark Terminal').includes('Notify Image Failed'));
+  check('Notify Publish Failed feeds Mark Terminal',
+    inbound('Mark Terminal').includes('Notify Publish Failed'));
+
   // the libs actually made it into the code nodes
   const codeBodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code')
     .map(n => n.parameters.jsCode).join('\n');
@@ -615,6 +664,22 @@ section('workflow', 'Main workflow structure', () => {
   check('buildSystemPrompt is inlined', /function buildSystemPrompt/.test(codeBodies));
   check('inlined exports are guarded for the n8n sandbox',
     !/^\s*module\.exports\s*=/m.test(codeBodies));
+
+  // Every Code node body must actually parse. n8n wraps Code node bodies in
+  // an async function, so top-level `await` (used by Validate Image, which
+  // awaits this.helpers.prepareBinaryData) is legal there but is a
+  // SyntaxError under a plain `new Function`, which would falsely fail a
+  // node that is actually fine — so this uses AsyncFunction, matching the
+  // real n8n sandbox, not a stand-in that rejects valid n8n Code bodies.
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    try {
+      new AsyncFunction(n.parameters.jsCode);
+      check(n.name + ' Code node body parses', true);
+    } catch (e) {
+      check(n.name + ' Code node body parses: ' + e.message, false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- results

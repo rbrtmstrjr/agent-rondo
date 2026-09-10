@@ -1,6 +1,6 @@
 // Glue: parse the Gemini response and run every deterministic copy rule.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const res = $json;
 
 let copy = null; let parseError = '';
