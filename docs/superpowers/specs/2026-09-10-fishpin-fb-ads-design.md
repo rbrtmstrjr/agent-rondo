@@ -174,7 +174,7 @@ alt_text     STRING
 
 ### Hard product facts injected
 
-Live features only, per section 1 of the source prompt. Price is **PHP 500, one-time,
+Live features only, per section 1 of the source prompt. Price is **PHP 499, one-time,
 no subscription** — corrected 2026-09-10 from an earlier PHP 499 figure that came from a
 stale copy of the FishPin chatbot knowledge base (`builds/fishpin-chatbot/`), which is the
 established source of truth for this venture. The figure is a product fact only: the

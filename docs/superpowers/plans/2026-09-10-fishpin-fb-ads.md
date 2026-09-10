@@ -14,7 +14,7 @@
 
 Every task's requirements implicitly include this section.
 
-- **Price is exactly PHP 500, one-time, no subscription** (corrected 2026-09-10 from an earlier PHP 499 figure). **No price or peso amount of any kind may appear in generated copy, ever** — not FishPin's own price, not a comparison figure. Ads lead with the problem, never a number.
+- **Price is exactly PHP 499, one-time, no subscription**. **No price or peso amount of any kind may appear in generated copy, ever** — not FishPin's own price, not a comparison figure. Ads lead with the problem, never a number.
 - **No em dash (`—`, U+2014) anywhere in generated copy.** Use commas, colons, or parentheses.
 - **Banned words:** revolutionary, game-changer, seamless, cutting-edge, unlock, elevate, empower, "in today's fast-paced world", "we are excited to announce".
 - **Forbidden product claims:** iPhone/iOS support, live tracking of other boats, typhoon warnings, government or BFAR endorsement, guaranteed rescue.
@@ -75,7 +75,7 @@ This refines spec §14's flat layout by splitting `lib/` from `nodes/`. The spli
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `PRODUCT` — `{ name, price: 500, currency: 'PHP', priceModel, platform, promise, features: string[], forbiddenClaims: string[] }`
+  - `PRODUCT` — `{ name, price: 499, currency: 'PHP', priceModel, platform, promise, features: string[], forbiddenClaims: string[] }`
   - `BANNED_WORDS: string[]`
   - `COMPETITORS: string[]`
   - `PILLARS: { [key: string]: string }` — pillar key to its one-line rule
@@ -124,7 +124,7 @@ section('brand', 'Brand bible', () => {
     'cost comparison', 'social proof', 'behind the scenes',
   ];
 
-  check('price is exactly 500 PHP', B.PRODUCT.price === 500 && B.PRODUCT.currency === 'PHP');
+  check('price is exactly 499 PHP', B.PRODUCT.price === 499 && B.PRODUCT.currency === 'PHP');
   check('ten live features listed', B.PRODUCT.features.length === 10);
   check('banned list has all 9 entries', B.BANNED_WORDS.length >= 9);
   check('banned list contains the 9 required words',
@@ -202,7 +202,7 @@ Create `lib/brand.js`. Product facts, audience, and voice are transcribed from s
 
 const PRODUCT = {
   name: 'FishPin',
-  price: 500,
+  price: 499,
   currency: 'PHP',
   priceModel: 'one-time in-app purchase, no subscription',
   platform: 'Android only, Play Store only, no iOS yet',
@@ -3900,7 +3900,7 @@ tasks is not misled:
     it as FishPin's own price. The reason text no longer reads as an instruction to restate
     the number.
 
-    **D6 superseded, 2026-09-10 (owner-requested):** the app price is corrected to PHP 500,
+    **D6 superseded, 2026-09-10 (owner-requested):** the app price is PHP 499,
     and the context-sniffing rule above is deleted entirely. A later review proved it could
     still be fooled the other way: a wrong app price disguised as a comparison, e.g.
     "Halagang P999 lang, at wala nang bayad kada buwan", passed because "kada buwan" read as

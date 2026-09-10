@@ -33,7 +33,7 @@ section('brand', 'Brand bible', () => {
     'cost comparison', 'social proof', 'behind the scenes',
   ];
 
-  check('price is exactly 500 PHP', B.PRODUCT.price === 500 && B.PRODUCT.currency === 'PHP');
+  check('price is exactly 499 PHP', B.PRODUCT.price === 499 && B.PRODUCT.currency === 'PHP');
   check('ten live features listed', B.PRODUCT.features.length === 10);
   check('banned list has all 9 entries', B.BANNED_WORDS.length >= 9);
   check('banned list contains the 9 required words',
@@ -221,13 +221,13 @@ section('copy', 'Copy validation', () => {
   // notations (₱, PHP/Php/php, bare P-prefix, trailing pesos/piso) so an
   // ordinary count is unaffected.
   check('a clean sample with no figure at all passes', validateCopy(good, OPTS).valid === true);
-  rejects('₱500 (FishPin\'s own new price) rejects',
+  rejects('₱500 (a wrong figure) rejects',
     w({ caption: good.caption + ' Halaga lang ay ₱500.' }));
   rejects('PHP 500 rejects', w({ caption: good.caption + ' Halaga lang ay PHP 500.' }));
   rejects('P500 (bare shorthand) rejects', w({ caption: good.caption + ' Halaga lang ay P500.' }));
   rejects('"500 pesos" rejects', w({ caption: good.caption + ' Halaga lang ay 500 pesos.' }));
   rejects('999 as PHP rejects', w({ caption: good.caption + ' Halaga lang ay PHP 999.' }));
-  rejects('499 (the old, now-wrong price) as PHP rejects',
+  rejects('499 (FishPin PHP price) as PHP rejects',
     w({ caption: good.caption + ' Halaga lang ay PHP 499.' }));
   rejects('499 as bare P shorthand rejects', w({ caption: good.caption + ' Halaga lang ay P499.' }));
   rejects('999 as peso-sign form rejects', w({ caption: good.caption + ' Halaga lang ay ₱999.' }));

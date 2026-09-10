@@ -6,7 +6,7 @@
 
 const PRODUCT = {
   name: 'FishPin',
-  price: 500,
+  price: 499,
   currency: 'PHP',
   priceModel: 'one-time in-app purchase, no subscription',
   platform: 'Android only, Play Store only, no iOS yet',
