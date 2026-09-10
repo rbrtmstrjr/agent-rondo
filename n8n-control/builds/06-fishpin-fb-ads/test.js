@@ -252,10 +252,73 @@ section('image', 'Image prompt and validation', () => {
   check('reads JPEG dimensions', jpgSize && jpgSize.width === 1080 && jpgSize.height === 1350 && jpgSize.type === 'jpeg');
   check('returns null for non-image bytes', I.readImageSize(Buffer.from('not an image')) === null);
 
+  // ---- WebP: three FourCC variants, each with a different dimension encoding
+  const buildVP8 = (width, height) => {
+    const b = Buffer.alloc(30);
+    b.write('RIFF', 0, 'ascii');
+    b.writeUInt32LE(18, 4);
+    b.write('WEBP', 8, 'ascii');
+    b.write('VP8 ', 12, 'ascii');
+    b.writeUInt32LE(10, 16);
+    b[20] = 0x00; b[21] = 0x00; b[22] = 0x00;
+    b[23] = 0x9d; b[24] = 0x01; b[25] = 0x2a;
+    b.writeUInt16LE(width & 0x3FFF, 26);
+    b.writeUInt16LE(height & 0x3FFF, 28);
+    return b;
+  };
+  const buildVP8L = (width, height) => {
+    const b = Buffer.alloc(26);
+    b.write('RIFF', 0, 'ascii');
+    b.writeUInt32LE(14, 4);
+    b.write('WEBP', 8, 'ascii');
+    b.write('VP8L', 12, 'ascii');
+    b.writeUInt32LE(9, 16);
+    b[20] = 0x2f;
+    const packed = (((height - 1) << 14) | (width - 1)) >>> 0;
+    b.writeUInt32LE(packed, 21);
+    return b;
+  };
+  const buildVP8X = (width, height) => {
+    const b = Buffer.alloc(30);
+    b.write('RIFF', 0, 'ascii');
+    b.writeUInt32LE(22, 4);
+    b.write('WEBP', 8, 'ascii');
+    b.write('VP8X', 12, 'ascii');
+    b.writeUInt32LE(10, 16);
+    b[20] = 0x00; b[21] = 0x00; b[22] = 0x00; b[23] = 0x00;
+    const w = width - 1, h = height - 1;
+    b[24] = w & 0xFF; b[25] = (w >> 8) & 0xFF; b[26] = (w >> 16) & 0xFF;
+    b[27] = h & 0xFF; b[28] = (h >> 8) & 0xFF; b[29] = (h >> 16) & 0xFF;
+    return b;
+  };
+
+  const vp8Size = I.readImageSize(buildVP8(640, 480));
+  check('reads WebP VP8 (lossy) dimensions', vp8Size && vp8Size.width === 640 && vp8Size.height === 480 && vp8Size.type === 'webp');
+  const vp8lSize = I.readImageSize(buildVP8L(400, 300));
+  check('reads WebP VP8L (lossless) dimensions', vp8lSize && vp8lSize.width === 400 && vp8lSize.height === 300 && vp8lSize.type === 'webp');
+  const vp8xSize = I.readImageSize(buildVP8X(1024, 768));
+  check('reads WebP VP8X (extended) dimensions', vp8xSize && vp8xSize.width === 1024 && vp8xSize.height === 768 && vp8xSize.type === 'webp');
+
+  const truncatedWebp = buildVP8(640, 480).subarray(0, 26);
+  check('returns null for a truncated WebP', I.readImageSize(truncatedWebp) === null);
+  const riffNotWebp = Buffer.alloc(30);
+  riffNotWebp.write('RIFF', 0, 'ascii');
+  riffNotWebp.write('AVI ', 8, 'ascii');
+  check('returns null for RIFF bytes that are not WEBP', I.readImageSize(riffNotWebp) === null);
+
   const big = Buffer.concat([png, Buffer.alloc(30000)]).toString('base64');
   const okRes = I.validateImage({ b64: big, mime: 'image/png' }, { minBytes: 20480 });
   check('accepts a large enough PNG', okRes.valid === true);
   check('reports the decoded byte count', okRes.bytes > 20480);
+  check('validateImage returns the exact PNG width through the real call path', okRes.width === 1);
+  check('validateImage returns the exact PNG height through the real call path', okRes.height === 1);
+  check('validateImage returns the exact PNG aspect through the real call path', okRes.aspect === '1:1');
+
+  const bigJpg = Buffer.concat([jpg, Buffer.alloc(30000)]).toString('base64');
+  const jpgRes = I.validateImage({ b64: bigJpg, mime: 'image/jpeg' }, { minBytes: 20480 });
+  check('validateImage returns the exact JPEG width through the real call path', jpgRes.width === 1080);
+  check('validateImage returns the exact JPEG height through the real call path', jpgRes.height === 1350);
+  check('validateImage returns the exact JPEG aspect through the real call path', jpgRes.aspect === '4:5');
 
   const noRes = I.validateImage({ b64: '', mime: 'image/png' }, {});
   check('rejects an empty payload', noRes.valid === false && /no image/i.test(noRes.reasons[0]));

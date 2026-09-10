@@ -55,6 +55,30 @@ function readImageSize(buf) {
       }
       i += 2 + buf.readUInt16BE(i + 2);
     }
+    return null;
+  }
+  // WebP: 'RIFF' .... 'WEBP', then a FourCC-specific chunk carries the dimensions.
+  // Guard every read with a length check and return null on anything short or
+  // malformed, same as the PNG and JPEG paths above -- never throw.
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+    && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) {
+    const fourcc = buf.toString('ascii', 12, 16);
+    if (fourcc === 'VP8 ') {
+      if (buf.length < 30 || buf[23] !== 0x9d || buf[24] !== 0x01 || buf[25] !== 0x2a) return null;
+      return { width: buf.readUInt16LE(26) & 0x3FFF, height: buf.readUInt16LE(28) & 0x3FFF, type: 'webp' };
+    }
+    if (fourcc === 'VP8L') {
+      if (buf.length < 25 || buf[20] !== 0x2f) return null;
+      const b = buf.readUInt32LE(21);
+      return { width: (b & 0x3FFF) + 1, height: ((b >> 14) & 0x3FFF) + 1, type: 'webp' };
+    }
+    if (fourcc === 'VP8X') {
+      if (buf.length < 30) return null;
+      const width = (buf[24] | (buf[25] << 8) | (buf[26] << 16)) + 1;
+      const height = (buf[27] | (buf[28] << 8) | (buf[29] << 16)) + 1;
+      return { width, height, type: 'webp' };
+    }
+    return null;
   }
   return null;
 }
