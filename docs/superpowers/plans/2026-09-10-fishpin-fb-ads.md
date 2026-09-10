@@ -1593,8 +1593,9 @@ section('workflow', 'Main workflow structure', () => {
    'Claim Row', 'Queue Empty?', 'Build Copy Prompt', 'Generate Copy', 'Validate Copy', 'Copy Valid?',
    'Build Image Prompt', 'Generate Image', 'Validate Image', 'Image Valid?',
    'Upload Photo (unpublished)', 'Get Photo URL', 'Log Attempt', 'Write Attempt', 'Post Preview',
-   'Slack Review', 'Route Decision', 'Approved?', 'Publish Post', 'Write Back', 'Write Back Row',
-   'Notify Success', 'Loop Guard', 'Re-invoke?', 'Re-invoke', 'Mark Terminal', 'Notify Stopped',
+   'Slack Review', 'Route Decision', 'Approved?', 'Publish Post', 'Write Back', 'Published?',
+   'Write Back Row', 'Notify Success', 'Notify Publish Failed', 'Loop Guard', 'Re-invoke?',
+   'Re-invoke', 'Mark Terminal', 'Notify Stopped',
    'Notify Queue Empty', 'Notify Image Failed'].forEach(n => check('has node: ' + n, has(n)));
 
   // every external call retries and continues into an explicit gate.
@@ -1616,6 +1617,15 @@ section('workflow', 'Main workflow structure', () => {
     .forEach(k => check('Config defines ' + k, cfg.includes(k)));
   const price = byName['Config'].parameters.assignments.assignments.find(a => a.name === 'appPrice');
   check('Config price is 499', Number(price.value) === 499);
+
+  // Loop Webhook must ack immediately: the re-invoked run can sit in a
+  // sendAndWait for up to reviewTimeoutHours, and Re-invoke retries on
+  // failure. lastNode would hold that connection open for the whole wait,
+  // so a client-side timeout would look like a failure and Re-invoke's own
+  // retryOnFail could fire off duplicate executions (duplicate Slack
+  // prompts, potentially duplicate published posts) for one queue row.
+  check('Loop Webhook responseMode is onReceived',
+    byName['Loop Webhook'].parameters.responseMode === 'onReceived');
 
   // the review gate really is a custom form with four decisions
   const rev = byName['Slack Review'].parameters;
@@ -1641,12 +1651,40 @@ section('workflow', 'Main workflow structure', () => {
   check('Attempts tab still appends (it is a log)',
     /:append/.test(JSON.stringify(byName['Write Attempt'].parameters)));
 
+  // CRITICAL regression guard: 'Load Queue Row' is the raw-Sheets-payload HTTP
+  // node ({range, majorDimension, values:[[...]]}); 'Pick Row' is the Code
+  // node that parses it into {found, row, attempt, copy_retry, ...}. Five
+  // glue files were written against $('Load Queue Row') instead of
+  // $('Pick Row') and read undefined for q.row/q.attempt/q.copy_retry —
+  // Build Copy Prompt, Build Image Prompt, Log Attempt and Route Decision
+  // threw, Validate Copy silently emitted undefined attempt/copy_retry/row
+  // (which zeroes the machine copy-retry budget in loopGuard, turning a
+  // banned word into an unbounded self-POST loop through Re-invoke). No Code
+  // node body may reference the raw HTTP node directly — only the build.js
+  // connection wiring may name it.
+  const codeNodesForRefCheck = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code');
+  codeNodesForRefCheck.forEach(n => {
+    check(n.name + ' does not reference $(\'Load Queue Row\')',
+      !n.parameters.jsCode.includes("$('Load Queue Row')"));
+  });
+  ['Build Copy Prompt', 'Build Image Prompt', 'Log Attempt', 'Route Decision', 'Validate Copy']
+    .forEach(n => check(n + ' reads the parsed row via $(\'Pick Row\')',
+      byName[n].parameters.jsCode.includes("$('Pick Row')")));
+
   // publish is gated: nothing reaches it except the approved branch
   const inbound = (target) => wf.nodes.filter(n =>
     JSON.stringify((wf.connections[n.name] || {}).main || []).includes('"' + target + '"')).map(n => n.name);
   check('only Approved? feeds Publish Post', JSON.stringify(inbound('Publish Post')) === '["Approved?"]');
   check('Image Valid? gates the upload', inbound('Upload Photo (unpublished)').includes('Image Valid?'));
   check('Copy Valid? gates the image prompt', inbound('Build Image Prompt').includes('Copy Valid?'));
+
+  // A failed Publish Post (onError continueRegularOutput) must not fall
+  // through to a targeted-range write with an undefined _rowNumber, nor let
+  // Notify Success report a post id that was never created. Published? gates
+  // that, and only its true branch may feed Write Back Row.
+  check('only Published? feeds Write Back Row', JSON.stringify(inbound('Write Back Row')) === '["Published?"]');
+  check('Published? gates Write Back Row on $json.ok',
+    /\$json\.ok/.test(JSON.stringify(byName['Published?'].parameters)));
 
   // every node is reachable and every connection target exists
   const names = new Set(wf.nodes.map(n => n.name));
@@ -1672,6 +1710,17 @@ section('workflow', 'Main workflow structure', () => {
   const orphans = wf.nodes.filter(n => n.type !== 'n8n-nodes-base.stickyNote' && !reached.has(n.name)).map(n => n.name);
   check('no orphan nodes: ' + orphans.join(','), orphans.length === 0);
 
+  // Notify Publish Failed must exist AND actually be wired into the graph
+  // (a lone 'has node' check would pass even if nothing pointed at it).
+  check('Notify Publish Failed is reachable', reached.has('Notify Publish Failed'));
+  // Notify Image Failed used to be a dead end: the row was already flipped
+  // to in_review by Claim Row and had no path to a terminal status on an
+  // image-generation failure. It must now continue into Mark Terminal.
+  check('Notify Image Failed feeds Mark Terminal',
+    inbound('Mark Terminal').includes('Notify Image Failed'));
+  check('Notify Publish Failed feeds Mark Terminal',
+    inbound('Mark Terminal').includes('Notify Publish Failed'));
+
   // the libs actually made it into the code nodes
   const codeBodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code')
     .map(n => n.parameters.jsCode).join('\n');
@@ -1680,6 +1729,22 @@ section('workflow', 'Main workflow structure', () => {
   check('buildSystemPrompt is inlined', /function buildSystemPrompt/.test(codeBodies));
   check('inlined exports are guarded for the n8n sandbox',
     !/^\s*module\.exports\s*=/m.test(codeBodies));
+
+  // Every Code node body must actually parse. n8n wraps Code node bodies in
+  // an async function, so top-level `await` (used by Validate Image, which
+  // awaits this.helpers.prepareBinaryData) is legal there but is a
+  // SyntaxError under a plain `new Function`, which would falsely fail a
+  // node that is actually fine — so this uses AsyncFunction, matching the
+  // real n8n sandbox, not a stand-in that rejects valid n8n Code bodies.
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    try {
+      new AsyncFunction(n.parameters.jsCode);
+      check(n.name + ' Code node body parses', true);
+    } catch (e) {
+      check(n.name + ' Code node body parses: ' + e.message, false);
+    }
+  });
 });
 ```
 
@@ -1728,11 +1793,11 @@ return [{ json: {
 } }];
 ```
 
-`nodes/build-copy-prompt.js`:
+`nodes/build-copy-prompt.js` (corrected: reads the parsed row from `Pick Row`, not the raw Sheets HTTP node `Load Queue Row` — see the "Critical fix" note after Step 3b):
 ```js
 // Glue: build the Gemini copy request from the brand bible.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 
 const body = {
   system_instruction: { parts: [{ text: buildSystemPrompt() }] },
@@ -1746,11 +1811,11 @@ const body = {
 return [{ json: { geminiBody: body } }];
 ```
 
-`nodes/validate-copy.js`:
+`nodes/validate-copy.js` (corrected: `$('Pick Row')`):
 ```js
 // Glue: parse the Gemini response and run every deterministic copy rule.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const res = $json;
 
 let copy = null; let parseError = '';
@@ -1777,12 +1842,12 @@ return [{ json: {
 } }];
 ```
 
-`nodes/build-image-prompt.js`:
+`nodes/build-image-prompt.js` (corrected: `$('Pick Row')`):
 ```js
 // Glue: build the Gemini image request. On a "regenerate image" pass the
 // approved caption is reused and the reviewer's note steers the visual only.
 const cfg = $('Config').first().json;
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const v = $('Validate Copy').first().json;
 
 let prompt = buildImagePrompt(v.copy, q.row.pillar);
@@ -1819,11 +1884,11 @@ if (!r.valid) return [{ json: out }];
 return [{ json: out, binary: { data: await this.helpers.prepareBinaryData(Buffer.from(b64, 'base64'), 'creative.png', mime || 'image/png') } }];
 ```
 
-`nodes/log-attempt.js`:
+`nodes/log-attempt.js` (corrected: `$('Pick Row')`):
 ```js
 // Glue: shape the Attempts row. Runs before the review so a timed-out or
 // abandoned attempt is still on the record.
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const v = $('Validate Copy').first().json;
 const img = $('Get Photo URL').first().json;
 const url = (img && img.images && img.images.length) ? img.images[0].source : '';
@@ -1835,10 +1900,10 @@ return [{ json: buildAttemptRow({
 }) }];
 ```
 
-`nodes/route-decision.js`:
+`nodes/route-decision.js` (corrected: `$('Pick Row')`):
 ```js
 // Glue: normalise whatever the Slack custom form returned.
-const q = $('Load Queue Row').first().json;
+const q = $('Pick Row').first().json;
 const v = $('Validate Copy').first().json;
 const img = $('Get Photo URL').first().json;
 const url = (img && img.images && img.images.length) ? img.images[0].source : '';
@@ -1878,14 +1943,18 @@ return [{ json: Object.assign({}, g, {
 }) }];
 ```
 
-`nodes/map-writeback.js`:
+`nodes/map-writeback.js` (corrected: the failure branch now stamps `status: 'failed'`, which the new `Published?` gate and `Mark Terminal` depend on — see the "Critical fix" note after Step 3b):
 ```js
-// Glue: shape the Queue row update after a successful publish.
+// Glue: shape the Queue row update after a successful publish. On failure,
+// still stamp a terminal status: the Published? gate downstream routes a
+// failed publish to Mark Terminal instead of Write Back Row, and Mark
+// Terminal needs a status to write so the row does not stay stranded at
+// in_review forever.
 const d = $('Route Decision').first().json;
 const pub = $json;
 
 if (pub && pub.error) {
-  return [{ json: { ok: false, error: JSON.stringify(pub.error), id: d.row_id } }];
+  return [{ json: { ok: false, error: JSON.stringify(pub.error), id: d.row_id, status: 'failed' } }];
 }
 
 // _rowNumber is what the targeted batchUpdate writes against.
@@ -1901,15 +1970,22 @@ return [{ json: Object.assign({ ok: true, _rowNumber: rowNumber }, buildQueueUpd
 
 ```js
 // Assembles fishpin-fb-ads.workflow.json.
-// Libs are inlined VERBATIM ahead of each glue file: their `module.exports` is
-// guarded by `typeof module !== 'undefined'`, which is false in the n8n Code
-// sandbox, so no source transformation is needed.
+// Libs are inlined ahead of each glue file. Each lib's own `module.exports =`
+// line is guarded by `typeof module !== 'undefined'`, which is false in the
+// n8n Code sandbox, so the export itself is already inert there — but the
+// `lib()` helper below still neutralizes it (`module.exports =` -> `void `)
+// rather than relying on that guard alone. `void {...}` is a valid no-op
+// expression statement under either of this repo's two guard styles
+// (single-line or block), survives a multi-line export object without
+// leaving a dangling fragment, and never leaves the literal substring
+// `module.exports` in a Code node body for the sandbox-safety assertion to
+// (correctly) flag.
 // Run: node build.js
 const fs = require('fs');
 const path = require('path');
 
 const read = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
-const lib = (n) => read(path.join('lib', n));
+const lib = (n) => read(path.join('lib', n)).replace(/module\.exports\s*=/g, 'void ');
 const glue = (n) => read(path.join('nodes', n));
 const code = (libs, g) => libs.map(lib).join('\n\n') + '\n\n' + glue(g);
 
@@ -1958,7 +2034,15 @@ const nodes = [
     ] } },
     id: 'n-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-620, 200) },
   { parameters: {}, id: 'n-man', name: 'Manual Trigger', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: pos(-620, 360) },
-  { parameters: { httpMethod: 'POST', path: WEBHOOK_PATH, responseMode: 'lastNode', options: {} },
+  // onReceived: the caller (Re-invoke, the only caller) never reads the
+  // response body, and the re-invoked run can sit in a sendAndWait for up to
+  // reviewTimeoutHours. lastNode would hold the HTTP connection open for that
+  // whole duration; Re-invoke's own retryOnFail (3 tries) would then treat a
+  // timed-out connection as a failure and fire off additional full
+  // executions — multiple Slack review prompts and potentially multiple
+  // published posts for one queue row. onReceived acknowledges immediately,
+  // so a retry only ever fires on a genuinely dropped request.
+  { parameters: { httpMethod: 'POST', path: WEBHOOK_PATH, responseMode: 'onReceived', options: {} },
     id: 'n-wh', name: 'Loop Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: pos(-620, 520), webhookId: 'fishpin-ad-hook' },
 
   { parameters: { assignments: { assignments: [
@@ -2084,6 +2168,12 @@ const nodes = [
     ] }, options: {},
   }, 4220, 180, { facebookGraphApi: FB }),
   codeNode('n-wb', 'Write Back', code(['sheet-rules.js'], 'map-writeback.js'), 4440, 180),
+  // A failed Publish Post has onError continueRegularOutput, so the run does
+  // not abort — it falls through to Write Back with pub.error set. Without
+  // this gate the failure would flow straight into Write Back Row's
+  // targeted-range write with an undefined _rowNumber (a swallowed 400) and
+  // Notify Success would report a post id that was never created.
+  ifNode('n-ifpub', 'Published?', '={{ $json.ok }}', 4660, 180),
   // Two targeted ranges in one call: G = status, I:L = caption, image_url,
   // fb_post_id, posted_at. Column H (scheduled_for) is deliberately skipped so
   // the human's value is not blanked.
@@ -2092,10 +2182,16 @@ const nodes = [
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!I' + $json._rowNumber + ':L' + $json._rowNumber, values: [[ $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] } ] }) }}",
     options: {},
-  }, 4660, 180, { googleApi: SHEETS }),
+  }, 4880, 100, { googleApi: SHEETS }),
   slackMsg('n-ok', 'Notify Success', cfgVal('opsChannel'),
     "=:white_check_mark: Posted to the FishPin Page — row `{{ $('Route Decision').first().json.row_id }}` ({{ $('Route Decision').first().json.pillar }})\nPost id: {{ $('Publish Post').first().json.id }}\n{{ $('Route Decision').first().json.image_url }}",
-    4880, 180),
+    5100, 100),
+
+  // The captured error/row id come straight off Write Back's failure output,
+  // which is still $json here (Published? just routes, it doesn't reshape).
+  slackMsg('n-pubfail', 'Notify Publish Failed', cfgVal('opsChannel'),
+    "=:x: FishPin ad FAILED to publish to the FB Page — row `{{ $json.id }}`.\nError: {{ $json.error }}\nThe row has been marked failed; it will not be retried automatically.",
+    4880, 260),
 
   codeNode('n-guard', 'Loop Guard', code(['flow-rules.js'], 'loop-guard.js'), 4220, 400),
   ifNode('n-ifloop', 'Re-invoke?', '={{ $json.reinvoke }}', 4440, 400),
@@ -2104,10 +2200,17 @@ const nodes = [
     authentication: 'none', sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify($json.payload) }}',
     options: {},
   }, 4660, 340, {}),
+  // Fed from three predecessors: Re-invoke? false (Loop Guard's own json has
+  // .status already — 'expired' or 'needs_manual'), Notify Publish Failed,
+  // and Notify Image Failed. The latter two are Slack nodes, so by the time
+  // execution reaches here $json is the Slack API response, not our shaped
+  // payload — it carries no .status. The `|| 'failed'` fallback is what
+  // still lets this row reach a terminal status on those two paths instead
+  // of being left at in_review forever.
   http('n-term', 'Mark Terminal', {
     method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status ]] }] }) }}",
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status || 'failed' ]] }] }) }}",
     options: {},
   }, 4660, 460, { googleApi: SHEETS }),
   slackMsg('n-stop', 'Notify Stopped', cfgVal('opsChannel'),
@@ -2135,6 +2238,9 @@ const connections = Object.assign({},
   c('Generate Image', 'Validate Image'),
   c('Validate Image', 'Image Valid?'),
   cIf('Image Valid?', 'Upload Photo (unpublished)', 'Notify Image Failed'),
+  // Without this the row was already flipped to in_review by Claim Row and
+  // would never reach a terminal status on an image-generation failure.
+  c('Notify Image Failed', 'Mark Terminal'),
   c('Upload Photo (unpublished)', 'Get Photo URL'),
   c('Get Photo URL', 'Log Attempt'),
   c('Log Attempt', 'Write Attempt'),
@@ -2144,8 +2250,11 @@ const connections = Object.assign({},
   c('Route Decision', 'Approved?'),
   cIf('Approved?', 'Publish Post', 'Loop Guard'),
   c('Publish Post', 'Write Back'),
-  c('Write Back', 'Write Back Row'),
+  c('Write Back', 'Published?'),
+  cIf('Published?', 'Write Back Row', 'Notify Publish Failed'),
   c('Write Back Row', 'Notify Success'),
+  // Marks the row terminal so a failed publish is not stranded at in_review.
+  c('Notify Publish Failed', 'Mark Terminal'),
   c('Loop Guard', 'Re-invoke?'),
   cIf('Re-invoke?', 'Re-invoke', 'Mark Terminal'),
   c('Mark Terminal', 'Notify Stopped'),
@@ -2180,7 +2289,9 @@ const d = routed ? $json : {
 node build.js && node test.js
 ```
 
-Expected: `Wrote .../fishpin-fb-ads.workflow.json (35 nodes)` then every section passing, including all `workflow` structural checks. If `no orphan nodes` fails, the named node is not wired into `connections` — fix the connection, not the test.
+Expected: `Wrote .../fishpin-fb-ads.workflow.json (37 nodes)` then every section passing, including all `workflow` structural checks. If `no orphan nodes` fails, the named node is not wired into `connections` — fix the connection, not the test.
+
+(The first-draft node count was 35; it is 37 after the `Published?` gate and `Notify Publish Failed` node were added during post-implementation review — see the "Critical fix" note below.)
 
 - [ ] **Step 5: Commit**
 
@@ -2188,6 +2299,31 @@ Expected: `Wrote .../fishpin-fb-ads.workflow.json (35 nodes)` then every section
 git add n8n-control/builds/06-fishpin-fb-ads/
 git commit -m "feat(fishpin-ads): n8n glue nodes and main workflow builder"
 ```
+
+**Post-implementation fix (critical):** a review after Step 5 found five glue
+files (`build-copy-prompt.js`, `build-image-prompt.js`, `log-attempt.js`,
+`route-decision.js`, `validate-copy.js`) read `$('Load Queue Row')` — the raw
+Sheets HTTP response node — where they needed `$('Pick Row')`, the Code node
+that actually parses that response into `{found, row, attempt, copy_retry,
+...}`. This left `q.row`/`q.attempt`/`q.copy_retry` undefined: four nodes
+threw, and `Validate Copy` silently emitted `undefined` for `attempt` /
+`copy_retry` / `row`, which zeroed the machine copy-retry budget in
+`loopGuard` and turned a single banned word into an unbounded self-POST loop
+through `Re-invoke`. Since `Claim Row` had already flipped the queue row to
+`in_review` before any of this ran, every run stranded a row and the queue
+drained itself one row at a time. The code blocks above (both the five glue
+files and `build.js`) already reflect the fix — this note exists so the plan
+doesn't silently disagree with what was actually shipped. The same pass also
+fixed five secondary gaps: the `lib()` export-neutralizing regex (safe across
+multi-line export objects), a stale header comment, `Loop Webhook`'s
+`responseMode` (`lastNode` -> `onReceived`, to stop a client timeout from
+multiplying executions through `Re-invoke`'s retry), a `Published?` gate so a
+failed `Publish Post` can no longer report false success and corrupt the
+Sheet write, and wiring `Notify Image Failed` into `Mark Terminal` so an
+image-generation failure reaches a terminal status instead of stranding the
+row. Commit `a28bbe5` (`fix(fishpin-ads): critical node-name bug and 5 flow
+gaps in the FB ad workflow`) carries the fix and its test coverage; full
+detail in `.superpowers/sdd/2026-09-10-fishpin-fb-ads/task-6-report.md`.
 
 ---
 
