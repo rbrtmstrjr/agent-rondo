@@ -808,22 +808,35 @@ section('insights', 'Insights workflow structure', () => {
   const splitOut = due.map((r) => ({ json: { row: r } }));
   const insightsOut = insightsPayloads.map((v) => ({ json: v }));
   const engagementItems = engagementPayloads.map((v) => ({ json: v }));
-  const store = { 'Split Posts': splitOut, 'Get Insights': insightsOut };
-  const fakeDollar = (name) => ({ first: () => store[name][0], all: () => store[name] });
 
-  let mapOut = null, mapErr = null;
-  try {
-    const fn = new Function('$', 'items', '$json', byName['Map Metrics'].parameters.jsCode);
-    mapOut = fn(fakeDollar, engagementItems, engagementItems[0].json);
-  } catch (e) { mapErr = e; }
-  if (mapErr) console.log('    Map Metrics threw: ' + mapErr.message);
-  check('Map Metrics executes without throwing', mapErr === null);
+  // Reusable runner: builds the fake $() accessor for arbitrary Split
+  // Posts / Get Insights arrays (which may be shorter than the items
+  // array, to probe the bounds-safety fix below) and executes the real
+  // assembled Map Metrics jsCode against a given `items` array. Map
+  // Metrics contains no `await`, so a plain Function (not AsyncFunction)
+  // is enough to execute it and get a real return value back
+  // synchronously.
+  const runMapMetrics = (splitArr, insightsArr, itemsArr) => {
+    const store = { 'Split Posts': splitArr, 'Get Insights': insightsArr };
+    const fakeDollar = (name) => ({ first: () => store[name][0], all: () => store[name] });
+    let out = null, err = null;
+    try {
+      const fn = new Function('$', 'items', '$json', byName['Map Metrics'].parameters.jsCode);
+      out = fn(fakeDollar, itemsArr, itemsArr[0] ? itemsArr[0].json : {});
+    } catch (e) { err = e; }
+    if (err) console.log('    Map Metrics threw: ' + err.message);
+    return { out, err };
+  };
 
-  const shapeOk = Array.isArray(mapOut) && mapOut.length === 3;
+  // ---- happy path: 3 fully-paired due rows
+  const r3 = runMapMetrics(splitOut, insightsOut, engagementItems);
+  check('Map Metrics executes without throwing', r3.err === null);
+
+  const shapeOk = Array.isArray(r3.out) && r3.out.length === 3;
   check('Map Metrics returns one output item per due row (3, not 1)', shapeOk);
 
   const expected = due.map((r, i) => S.mapMetrics(insightsPayloads[i], engagementPayloads[i]));
-  const got = shapeOk ? mapOut.map((it) => it.json) : [];
+  const got = shapeOk ? r3.out.map((it) => it.json) : [];
   check('Map Metrics output ids are correctly paired, not collapsed to row 1',
     shapeOk && JSON.stringify(got.map((g) => g.id)) === JSON.stringify(due.map((r) => r.id)));
   check('Map Metrics output _rowNumbers are correctly paired, not collapsed to row 1',
@@ -838,6 +851,81 @@ section('insights', 'Insights workflow structure', () => {
     shapeOk && JSON.stringify(got.map((g) => g.shares)) === JSON.stringify(expected.map((e) => e.shares)));
   check('Map Metrics outputs 3 mutually distinct ids (not all identical)',
     shapeOk && new Set(got.map((g) => g.id)).size === 3);
+
+  // ---- happy path: single-row case still works
+  const oneDue = [due[0]];
+  const oneSplit = [splitOut[0]];
+  const oneInsights = [insightsOut[0]];
+  const oneItems = [engagementItems[0]];
+  const r1 = runMapMetrics(oneSplit, oneInsights, oneItems);
+  check('Map Metrics (1 item) executes without throwing', r1.err === null);
+  const oneOk = Array.isArray(r1.out) && r1.out.length === 1;
+  check('Map Metrics (1 item) returns exactly 1 output item', oneOk);
+  check('Map Metrics (1 item) output is correctly paired',
+    oneOk && r1.out[0].json.id === oneDue[0].id && r1.out[0].json._rowNumber === oneDue[0]._rowNumber);
+
+  // CRITICAL regression guard: Get Insights carries onError
+  // continueRegularOutput, so a Graph API failure on one item can plausibly
+  // leave its output array shorter than the other fan-out branches — Map
+  // Metrics must degrade, not crash the whole n8n run.
+  //
+  // 3 items, only 2 insights: indexing insightsAll[2] must not throw. A
+  // missing insights payload is recoverable — mapMetrics({}, {}) (verified
+  // in Task 5) returns all four metrics as finite zeros — so the row is
+  // still written as measured, just with zeros instead of real numbers,
+  // rather than crashing the run and leaving every due row unmeasured.
+  // mapMetrics sources reach from insights but likes/comments/shares
+  // primarily from engagement, so item 3's own engagement payload is left
+  // empty here too — this models a due row whose Graph calls both came
+  // back with nothing usable, isolating the assertion to what the
+  // bounds-fix is actually responsible for (not crashing, and degrading
+  // to real, correctly-computed zeros) rather than accidentally asserting
+  // something mapMetrics's real field-sourcing would never produce.
+  const shortInsights = insightsOut.slice(0, 2);
+  const engagementItemsThirdEmpty = [engagementItems[0], engagementItems[1], { json: {} }];
+  const rMissingInsights = runMapMetrics(splitOut, shortInsights, engagementItemsThirdEmpty);
+  check('Map Metrics (short insights) executes without throwing', rMissingInsights.err === null);
+  const miOk = Array.isArray(rMissingInsights.out) && rMissingInsights.out.length === 3;
+  check('Map Metrics (short insights) still returns all 3 items', miOk);
+  if (miOk) {
+    const third = rMissingInsights.out[2].json;
+    check('Map Metrics (short insights) item 3 reach is a finite zero',
+      Number.isFinite(third.reach) && third.reach === 0);
+    check('Map Metrics (short insights) item 3 likes is a finite zero',
+      Number.isFinite(third.likes) && third.likes === 0);
+    check('Map Metrics (short insights) item 3 comments is a finite zero',
+      Number.isFinite(third.comments) && third.comments === 0);
+    check('Map Metrics (short insights) item 3 shares is a finite zero',
+      Number.isFinite(third.shares) && third.shares === 0);
+    check('Map Metrics (short insights) item 3 still keeps its own id, not undefined',
+      third.id === due[2].id && third._rowNumber === due[2]._rowNumber);
+  } else {
+    ['reach', 'likes', 'comments', 'shares'].forEach((k) =>
+      check('Map Metrics (short insights) item 3 ' + k + ' is a finite zero', false));
+    check('Map Metrics (short insights) item 3 still keeps its own id, not undefined', false);
+  }
+
+  // 3 items, only 2 split rows: item 3 has no row id/_rowNumber to write —
+  // emitting it anyway would send Update Row a range like "Queue!Gundefined",
+  // the same silent-corruption class already fixed in the main workflow's
+  // Publish path. It must be skipped entirely, not emitted with undefined
+  // fields.
+  const shortSplit = splitOut.slice(0, 2);
+  const rMissingSplit = runMapMetrics(shortSplit, insightsOut, engagementItems);
+  check('Map Metrics (short split) executes without throwing', rMissingSplit.err === null);
+  const msOk = Array.isArray(rMissingSplit.out);
+  check('Map Metrics (short split) returns exactly 2 items, not 3', msOk && rMissingSplit.out.length === 2);
+  check('Map Metrics (short split) neither output item has an undefined id',
+    msOk && rMissingSplit.out.every((it) => it.json.id !== undefined && it.json.id !== null));
+  check('Map Metrics (short split) neither output item has an undefined _rowNumber',
+    msOk && rMissingSplit.out.every((it) => it.json._rowNumber !== undefined && it.json._rowNumber !== null));
+
+  // both arrays empty with 1 item: nothing to pair against at all — must
+  // degrade to zero output items, not throw.
+  const rBothEmpty = runMapMetrics([], [], [engagementItems[0]]);
+  check('Map Metrics (both arrays empty) executes without throwing', rBothEmpty.err === null);
+  check('Map Metrics (both arrays empty) returns 0 items',
+    Array.isArray(rBothEmpty.out) && rBothEmpty.out.length === 0);
 });
 
 // ---------------------------------------------------------------- results
