@@ -215,6 +215,57 @@ section('copy', 'Copy validation', () => {
     w({ caption: good.caption + ' Mas mura kaysa Garmin.' }), /competitor/i);
 });
 
+// ---------------------------------------------------------------- image rules
+section('image', 'Image prompt and validation', () => {
+  const I = L('image-rules.js');
+
+  const copy = {
+    headline: 'Nawala ang signal? Gumagana pa rin',
+    image_prompt: 'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+  };
+  const p = I.buildImagePrompt(copy, 'feature spotlight');
+
+  check('prompt carries the scene', p.includes('bangka with outriggers'));
+  check('prompt carries the exact headline verbatim', p.includes(copy.headline));
+  check('prompt demands exact spelling', /character for character|exactly as written/i.test(p));
+  check('prompt sets the documentary style suffix', /documentary/i.test(p));
+  check('prompt sets the palette', /navy/i.test(p) && /gold/i.test(p));
+  check('prompt reserves negative space', /negative space/i.test(p));
+  ['watermark', 'user interface', 'extra fingers', 'yacht', 'poverty', 'distress']
+    .forEach(n => check('prompt negates: ' + n, new RegExp(n, 'i').test(p)));
+
+  check('fish fact posts are square', I.aspectFor('fish fact') === '1:1');
+  check('other pillars are 4:5', I.aspectFor('feature spotlight') === '4:5');
+
+  // 1x1 PNG and a minimal JPEG, dimensions read straight from the byte headers
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const pngSize = I.readImageSize(png);
+  check('reads PNG dimensions', pngSize && pngSize.width === 1 && pngSize.height === 1 && pngSize.type === 'png');
+
+  const jpg = Buffer.from([
+    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+    0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+    0xFF, 0xC0, 0x00, 0x11, 0x08, 0x05, 0x46, 0x04, 0x38, 0x03, 0x01, 0x22, 0x00,
+    0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+  ]);
+  const jpgSize = I.readImageSize(jpg);
+  check('reads JPEG dimensions', jpgSize && jpgSize.width === 1080 && jpgSize.height === 1350 && jpgSize.type === 'jpeg');
+  check('returns null for non-image bytes', I.readImageSize(Buffer.from('not an image')) === null);
+
+  const big = Buffer.concat([png, Buffer.alloc(30000)]).toString('base64');
+  const okRes = I.validateImage({ b64: big, mime: 'image/png' }, { minBytes: 20480 });
+  check('accepts a large enough PNG', okRes.valid === true);
+  check('reports the decoded byte count', okRes.bytes > 20480);
+
+  const noRes = I.validateImage({ b64: '', mime: 'image/png' }, {});
+  check('rejects an empty payload', noRes.valid === false && /no image/i.test(noRes.reasons[0]));
+  const smallRes = I.validateImage({ b64: png.toString('base64'), mime: 'image/png' }, { minBytes: 20480 });
+  check('rejects an undersized payload', smallRes.valid === false && /too small/i.test(smallRes.reasons.join(' ')));
+  const mimeRes = I.validateImage({ b64: big, mime: 'text/plain' }, {});
+  check('rejects a non-image mime type', mimeRes.valid === false && /mime/i.test(mimeRes.reasons.join(' ')));
+  check('records the observed aspect for the attempts log', /^\d+:\d+$|^unknown$/.test(String(okRes.aspect)));
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
