@@ -81,6 +81,92 @@ section('brand', 'Brand bible', () => {
   check('schema types hashtags as an array', B.COPY_SCHEMA.properties.hashtags.type === 'ARRAY');
 });
 
+// ---------------------------------------------------------------- copy rules
+section('copy', 'Copy validation', () => {
+  const B = L('brand.js');
+  const { validateCopy } = L('copy-rules.js');
+  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, price: B.PRODUCT.price };
+
+  const good = {
+    headline: 'Nawala ang signal? Gumagana pa rin',
+    subhead: 'Offline maps para sa bawat biyahe sa laot',
+    caption: 'Nawala ang signal pagkalayo mo sa dalampasigan? Normal po yan, at hindi ibig sabihin '
+      + 'na wala ka nang mapa. Sa FishPin, i-download mo lang ang mapa habang naka Wi-Fi ka pa sa bahay, '
+      + 'tapos gamitin mo na sa laot kahit walang kahit anong signal. Nakikita mo pa rin kung nasaan ka, '
+      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang bayad '
+      + 'lang po, PHP 499, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
+      + 'Kung madalas kayong lumalayo at natatakot mawala ang direksyon, ito po ang tulong na kailangan ninyo. '
+      + 'Subukan ninyo bago ang susunod ninyong biyahe.',
+    cta: 'I-download sa Play Store',
+    hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps', '#Bangka'],
+    image_prompt: 'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+    alt_text: 'A fisherman on a bangka at dawn.',
+  };
+  const w = (o) => Object.assign({}, good, o);
+  const rejects = (name, obj, rx) => {
+    const r = validateCopy(obj, OPTS);
+    check(name, r.valid === false && (!rx || r.reasons.some(x => rx.test(x))));
+  };
+
+  // Fixture guard: if the sample caption drifts out of the 80-150 band, every
+  // other check below fails for the wrong reason. Fail loudly here instead.
+  const sampleWords = good.caption.trim().split(/\s+/).length;
+  check('sample caption is in the 80 to 150 word band (is ' + sampleWords + ')',
+    sampleWords >= 80 && sampleWords <= 150);
+
+  check('accepts a clean sample', validateCopy(good, OPTS).valid === true);
+  check('clean sample reports no reasons', validateCopy(good, OPTS).reasons.length === 0);
+
+  rejects('rejects a missing field', w({ cta: '' }), /cta/i);
+  rejects('rejects an em dash in the caption',
+    w({ caption: good.caption.replace('Normal po yan,', 'Normal po yan —') }), /em dash/i);
+  rejects('rejects an em dash in the headline', w({ headline: 'Walang signal — walang problema' }), /em dash/i);
+  B.BANNED_WORDS.forEach(word => {
+    rejects('rejects banned word: ' + word, w({ caption: good.caption + ' ' + word + '.' }), /banned/i);
+  });
+  rejects('rejects an 8-word headline',
+    w({ headline: 'Isa dalawa tatlo apat lima anim pito walo' }), /headline/i);
+  rejects('rejects a 13-word subhead',
+    w({ subhead: 'isa dalawa tatlo apat lima anim pito walo siyam sampu labing isa labing dalawa' }), /subhead/i);
+  rejects('rejects a caption under 80 words', w({ caption: 'Maikli lang po ito.' }), /caption/i);
+  rejects('rejects a caption over 150 words',
+    w({ caption: (good.caption + ' ').repeat(3) }), /caption/i);
+  rejects('rejects 4 emoji', w({ caption: good.caption + ' 🎣🐟⚓🌊' }), /emoji/i);
+  rejects('rejects a multi-word all-caps run',
+    w({ caption: good.caption.replace('Normal po yan', 'NORMAL LANG YAN') }), /caps/i);
+  check('allows consecutive known acronyms',
+    validateCopy(w({ caption: good.caption.replace('walang kahit anong signal', 'walang GPS SMS signal') }), OPTS).valid === true);
+  check('allows one all-caps word for emphasis',
+    validateCopy(w({ caption: good.caption.replace('Normal po yan', 'NORMAL po yan') }), OPTS).valid === true);
+
+  rejects('rejects a rescue guarantee (Tagalog)',
+    w({ caption: good.caption + ' Hindi ka mamamatay sa laot.' }), /rescue|guarantee/i);
+  rejects('rejects a rescue guarantee (English)',
+    w({ caption: good.caption + ' This app will save your life.' }), /rescue|guarantee/i);
+  rejects('rejects a fish-safety absolute',
+    w({ caption: good.caption + ' Ang isdang ito ay safe to eat.' }), /safe to eat/i);
+  check('allows the hedged fish-safety phrasing',
+    validateCopy(w({ caption: good.caption + ' It is generally considered safe to eat.' }), OPTS).valid === true);
+  rejects('rejects a named competitor', w({ caption: good.caption + ' Mas mura kaysa Garmin.' }), /competitor/i);
+  rejects('rejects a fabricated user count',
+    w({ caption: good.caption + ' Mahigit 10,000 users na ang gumagamit.' }), /fabricat|count/i);
+  rejects('rejects a fabricated star rating',
+    w({ caption: good.caption + ' 4.8 stars sa Play Store.' }), /fabricat|rating/i);
+  rejects('rejects a wrong peso price',
+    w({ caption: good.caption.replace('PHP 499', 'PHP 999') }), /price/i);
+  check('accepts the peso sign form',
+    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
+  rejects('rejects an iPhone claim',
+    w({ caption: good.caption + ' Available din po sa iPhone.' }), /forbidden claim/i);
+  rejects('rejects a typhoon-warning claim',
+    w({ caption: good.caption + ' May typhoon warning din po.' }), /forbidden claim/i);
+  rejects('rejects a BFAR endorsement claim',
+    w({ caption: good.caption + ' Endorsed po ito ng BFAR.' }), /forbidden claim/i);
+  rejects('rejects 2 hashtags', w({ hashtags: ['#FishPin', '#Bangka'] }), /hashtag/i);
+  rejects('rejects 6 hashtags',
+    w({ hashtags: ['#a', '#b', '#c', '#d', '#e', '#f'] }), /hashtag/i);
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
