@@ -99,7 +99,8 @@ function buildSystemPrompt() {
     '',
     'BANNED WORDS AND PHRASES, never use any of these: ' + BANNED_WORDS.join(', ') + '.',
     '',
-    'NEVER USE AN EM DASH in any caption or headline. Use commas, colons, or parentheses instead.',
+    'NEVER USE AN EM DASH (the — character) in ANY field you generate, including the headline, '
+      + 'subhead, caption, cta, hashtags and alt_text. Use commas, colons, or parentheses instead.',
     '',
     'COMPLIANCE, these are hard rules:',
     '- No fabricated reviews, testimonials, ratings, user counts, or download counts. Never invent a name or a face.',
