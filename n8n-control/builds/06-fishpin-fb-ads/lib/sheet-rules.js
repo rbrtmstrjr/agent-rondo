@@ -25,8 +25,8 @@ function selectDueRows(rows, nowMs, delayHours) {
   const cutoff = Number(nowMs) - Number(delayHours || 24) * 3600 * 1000;
   return list.filter((r) => {
     if (String(r.status || '').toLowerCase() !== 'posted') return false;
-    if (String(r.reach || '').trim() !== '') return false;
-    if (!r.fb_post_id && r.fb_post_id !== 0 && !r.posted_at) return false;
+    const reach = r.reach;
+    if (reach !== null && reach !== undefined && String(reach).trim() !== '') return false;
     const t = Date.parse(String(r.posted_at || ''));
     if (isNaN(t)) return false;
     return t <= cutoff;
@@ -74,7 +74,8 @@ function mapMetrics(insights, engagement) {
   let likes = 0;
   const e = engagement || {};
   if (e.reactions && e.reactions.summary && typeof e.reactions.summary.total_count === 'number') {
-    likes = e.reactions.summary.total_count;
+    const tc = e.reactions.summary.total_count;
+    likes = Number.isFinite(tc) ? tc : 0;
   } else {
     const byType = pick('post_reactions_by_type_total');
     if (byType && typeof byType === 'object') {

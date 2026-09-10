@@ -1392,6 +1392,36 @@ section('sheet', 'Queue selection, row shaping, metric mapping', () => {
   check('missing shares degrade to zero', partial.shares === 0 && partial.comments === 0);
   const noSummary = S.mapMetrics(insights, { shares: { count: 2 } });
   check('falls back to summing reaction types', noSummary.likes === 50);
+
+  // CRITICAL 1 regression: reactions.summary.total_count must be guarded like every
+  // sibling path (comments/shares/byType all use `Number(x) || 0`). typeof NaN === 'number'
+  // so the old code let NaN/Infinity through with no fallback.
+  const nanLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: NaN } } });
+  check('NaN total_count degrades to zero likes', nanLikes.likes === 0);
+  const infLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: Infinity } } });
+  check('Infinity total_count degrades to zero likes', infLikes.likes === 0);
+  const normalLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: 50 } } });
+  check('a normal numeric total_count still yields the value', normalLikes.likes === 50);
+  const strLikes = S.mapMetrics(insights, { reactions: { summary: { total_count: 'lots' } } });
+  check('a non-numeric total_count falls through to the byType sum', strLikes.likes === 50);
+
+  // IMPORTANT 2 regression: a genuinely-zero-reach post (numeric 0) must count as
+  // measured, not as "not yet measured". `0 || ''` is `''`, which was the bug.
+  const reachRows = [
+    { id: 'num-zero', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: 0 },
+    { id: 'str-zero', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: '0' },
+    { id: 'null-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: null },
+    { id: 'undef-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z' },
+    { id: 'empty-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: '' },
+    { id: 'num-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: 412 },
+  ];
+  const reachSel = S.selectDueRows(reachRows, now, 24).map(r => r.id);
+  check('numeric zero reach is not re-selected', !reachSel.includes('num-zero'));
+  check('string zero reach is not re-selected', !reachSel.includes('str-zero'));
+  check('null reach is selected', reachSel.includes('null-reach'));
+  check('missing reach key is selected', reachSel.includes('undef-reach'));
+  check('empty-string reach is selected', reachSel.includes('empty-reach'));
+  check('a real numeric reach value is not re-selected', !reachSel.includes('num-reach'));
 });
 ```
 
@@ -1435,8 +1465,10 @@ function selectDueRows(rows, nowMs, delayHours) {
   const cutoff = Number(nowMs) - Number(delayHours || 24) * 3600 * 1000;
   return list.filter((r) => {
     if (String(r.status || '').toLowerCase() !== 'posted') return false;
-    if (String(r.reach || '').trim() !== '') return false;
-    if (!r.fb_post_id && r.fb_post_id !== 0 && !r.posted_at) return false;
+    // Numeric 0 is a real measured value (a post nobody saw), not "unmeasured".
+    // `String(r.reach || '')` would coerce 0 to '' via the `||` and re-select it forever.
+    const reach = r.reach;
+    if (reach !== null && reach !== undefined && String(reach).trim() !== '') return false;
     const t = Date.parse(String(r.posted_at || ''));
     if (isNaN(t)) return false;
     return t <= cutoff;
@@ -1484,7 +1516,12 @@ function mapMetrics(insights, engagement) {
   let likes = 0;
   const e = engagement || {};
   if (e.reactions && e.reactions.summary && typeof e.reactions.summary.total_count === 'number') {
-    likes = e.reactions.summary.total_count;
+    // Guard like every sibling path below: typeof NaN === 'number' and typeof
+    // Infinity === 'number', so a bare assignment here would let a non-finite
+    // value through with no fallback to 0. `Number(x) || 0` still fails on
+    // Infinity (Infinity is truthy), so this needs an explicit finite check.
+    const tc = e.reactions.summary.total_count;
+    likes = Number.isFinite(tc) ? tc : 0;
   } else {
     const byType = pick('post_reactions_by_type_total');
     if (byType && typeof byType === 'object') {

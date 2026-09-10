@@ -479,6 +479,36 @@ section('sheet', 'Queue selection, row shaping, metric mapping', () => {
   check('missing shares degrade to zero', partial.shares === 0 && partial.comments === 0);
   const noSummary = S.mapMetrics(insights, { shares: { count: 2 } });
   check('falls back to summing reaction types', noSummary.likes === 50);
+
+  // CRITICAL 1 regression: reactions.summary.total_count must be guarded like every
+  // sibling path (comments/shares/byType all use `Number(x) || 0`). typeof NaN === 'number'
+  // so the old code let NaN/Infinity through with no fallback.
+  const nanLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: NaN } } });
+  check('NaN total_count degrades to zero likes', nanLikes.likes === 0);
+  const infLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: Infinity } } });
+  check('Infinity total_count degrades to zero likes', infLikes.likes === 0);
+  const normalLikes = S.mapMetrics({ data: [] }, { reactions: { summary: { total_count: 50 } } });
+  check('a normal numeric total_count still yields the value', normalLikes.likes === 50);
+  const strLikes = S.mapMetrics(insights, { reactions: { summary: { total_count: 'lots' } } });
+  check('a non-numeric total_count falls through to the byType sum', strLikes.likes === 50);
+
+  // IMPORTANT 2 regression: a genuinely-zero-reach post (numeric 0) must count as
+  // measured, not as "not yet measured". `0 || ''` is `''`, which was the bug.
+  const reachRows = [
+    { id: 'num-zero', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: 0 },
+    { id: 'str-zero', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: '0' },
+    { id: 'null-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: null },
+    { id: 'undef-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z' },
+    { id: 'empty-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: '' },
+    { id: 'num-reach', status: 'posted', posted_at: '2026-09-01T00:00:00Z', reach: 412 },
+  ];
+  const reachSel = S.selectDueRows(reachRows, now, 24).map(r => r.id);
+  check('numeric zero reach is not re-selected', !reachSel.includes('num-zero'));
+  check('string zero reach is not re-selected', !reachSel.includes('str-zero'));
+  check('null reach is selected', reachSel.includes('null-reach'));
+  check('missing reach key is selected', reachSel.includes('undef-reach'));
+  check('empty-string reach is selected', reachSel.includes('empty-reach'));
+  check('a real numeric reach value is not re-selected', !reachSel.includes('num-reach'));
 });
 
 // ---------------------------------------------------------------- results
