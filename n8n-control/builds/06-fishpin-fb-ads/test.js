@@ -165,6 +165,54 @@ section('copy', 'Copy validation', () => {
   rejects('rejects 2 hashtags', w({ hashtags: ['#FishPin', '#Bangka'] }), /hashtag/i);
   rejects('rejects 6 hashtags',
     w({ hashtags: ['#a', '#b', '#c', '#d', '#e', '#f'] }), /hashtag/i);
+
+  // ---- fix 1: bare "P" peso shorthand (e.g. "P999") must still be price-checked
+  rejects('rejects a wrong price in bare P shorthand',
+    w({ caption: good.caption.replace('PHP 499', 'P999') }), /price/i);
+  check('accepts a correct price in bare P shorthand',
+    validateCopy(w({ caption: good.caption.replace('PHP 499', 'P499') }), OPTS).valid === true);
+  check('still accepts the peso sign form (regression)',
+    validateCopy(w({ caption: good.caption.replace('PHP 499', '₱499') }), OPTS).valid === true);
+  check('still accepts the PHP form (regression)',
+    validateCopy(good, OPTS).valid === true);
+
+  // ---- fix 2: acronym scrub must be word-boundary aware, not a substring replace
+  rejects('rejects shouting where PH is a substring of a real word (PHILIPPINES)',
+    w({ caption: good.caption + ' PHILIPPINES TALAGA.' }), /caps/i);
+  rejects('rejects shouting where AI is a substring of a real word (SAILING)',
+    w({ caption: good.caption + ' SAILING NOW.' }), /caps/i);
+  check('still allows consecutive known acronyms (regression)',
+    validateCopy(w({ caption: good.caption.replace('walang kahit anong signal', 'walang GPS SMS signal') }), OPTS).valid === true);
+  check('still allows a real acronym plus one emphasis word',
+    validateCopy(w({ caption: good.caption + ' GPS TALAGA.' }), OPTS).valid === true);
+
+  // ---- fix 3: all-caps shouting rule must be scoped per field, not the joined string
+  check('allows one all-caps emphasis word in each of two different fields',
+    validateCopy(w({ headline: 'Ito TALAGA', subhead: 'GRABE ganda ng app' }), OPTS).valid === true);
+  rejects('still rejects a multi-word all-caps run within a single field (regression)',
+    w({ caption: good.caption.replace('Normal po yan', 'NORMAL LANG YAN') }), /caps/i);
+
+  // ---- fix 4: fabricated counts/ratings written in phrasings the regexes missed
+  rejects('rejects a Tagalog thousands quantifier user count (libo-libong)',
+    w({ caption: good.caption + ' May libo-libong users na gumagamit.' }), /fabricat|count/i);
+  rejects('rejects a k-suffixed digit download count',
+    w({ caption: good.caption + ' 10k downloads na.' }), /fabricat|count/i);
+  rejects('rejects a hyphenated star rating',
+    w({ caption: good.caption + ' 5-star daw sa Play Store.' }), /fabricat|rating/i);
+  rejects('rejects a spelled-out star rating',
+    w({ caption: good.caption + ' Four stars daw sa Play Store.' }), /fabricat|rating/i);
+  rejects('rejects a slash-out-of-5 rating',
+    w({ caption: good.caption + ' 4.8/5 daw sa Play Store.' }), /fabricat|rating/i);
+  check('a plain number with no count noun still accepts (control)',
+    validateCopy(w({ caption: good.caption + ' Tumagal ng 3 taon bago ito nagawa.' }), OPTS).valid === true);
+
+  // ---- fix 5: competitor name check must catch pluralized/suffixed forms
+  rejects('rejects a pluralized competitor name (Garmins)',
+    w({ caption: good.caption + ' Mas mura kaysa sa mga Garmins.' }), /competitor/i);
+  rejects('still rejects the possessive competitor form (regression)',
+    w({ caption: good.caption + " Mas mura kaysa Garmin's." }), /competitor/i);
+  rejects('still rejects the bare competitor name (regression)',
+    w({ caption: good.caption + ' Mas mura kaysa Garmin.' }), /competitor/i);
 });
 
 // ---------------------------------------------------------------- results

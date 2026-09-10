@@ -51,12 +51,18 @@ function validateCopy(copy, opts) {
   const emoji = String(c.caption || '').match(/\p{Extended_Pictographic}/gu) || [];
   if (emoji.length > 3) reasons.push('caption has ' + emoji.length + ' emoji, max is 3');
 
-  // 6. all-caps shouting (two or more consecutive caps words, acronyms excluded)
-  let scrubbed = all;
-  OK_ACRONYMS.forEach((a) => { scrubbed = scrubbed.split(a).join('_'); });
-  if (/\b[A-Z]{2,}\b[^A-Za-z0-9]+\b[A-Z]{2,}\b/.test(scrubbed)) {
-    reasons.push('All caps run longer than one word. Only a single word may be capitalised for emphasis.');
-  }
+  // 6. all-caps shouting (two or more consecutive caps words, acronyms excluded).
+  // Scoped per field: a field-ending emphasis word followed by the next
+  // field's own emphasis word must not read as one cross-field shouting run.
+  Object.keys(textFields).forEach((f) => {
+    let fieldScrubbed = String(textFields[f] || '');
+    OK_ACRONYMS.forEach((a) => {
+      fieldScrubbed = fieldScrubbed.replace(new RegExp('\\b' + a + '\\b', 'g'), '_');
+    });
+    if (/\b[A-Z]{2,}\b[^A-Za-z0-9]+\b[A-Z]{2,}\b/.test(fieldScrubbed)) {
+      reasons.push('All caps run longer than one word in ' + f + '. Only a single word may be capitalised for emphasis.');
+    }
+  });
 
   // 7. compliance
   if (/hindi ka mamamatay|hindi ka malulunod|siguradong masasagip|will save your life|guaranteed rescue|guarantees rescue/i.test(all)) {
@@ -67,12 +73,27 @@ function validateCopy(copy, opts) {
     reasons.push('Fish-safety absolute. Write "generally considered safe to eat".');
   }
   competitors.forEach((brand) => {
-    if (new RegExp('\\b' + brand + '\\b', 'i').test(all)) reasons.push('Names a competitor brand: ' + brand);
+    // \w* (not \b at the end) so a plural/possessive/suffixed form of the
+    // brand name ("Garmins") still counts as naming the competitor.
+    if (new RegExp('\\b' + brand + '\\w*', 'i').test(all)) reasons.push('Names a competitor brand: ' + brand);
   });
-  if (/\b\d[\d,\.]*\s*(\+\s*)?(users|user|downloads|installs|reviews|ratings|mangingisda ang gumagamit|ang gumagamit)/i.test(all)) {
+  // Count quantifier: a digit run (with an optional k/M suffix, e.g. "10k") or
+  // a spelled-out/Tagalog quantifier (thousands of, libo-libo, daan-daang, ...).
+  const countQuantifier = '(?:\\d[\\d,\\.]*\\s*[kKmM]?\\+?|libo-?libong?|libu-?libong?|daan-?daang?|thousands?\\s+of|millions?\\s+of)';
+  const countNoun = '(?:users|user|downloads|installs|reviews|ratings|mangingisda ang gumagamit|ang gumagamit)';
+  if (new RegExp('\\b' + countQuantifier + '\\s*' + countNoun, 'i').test(all)) {
     reasons.push('Fabricated user or download count.');
   }
-  if (/\b\d(\.\d)?\s*(star|stars|bituin)\b/i.test(all)) reasons.push('Fabricated star rating.');
+  // Rating: digit (optionally hyphenated, e.g. "5-star") or spelled-out/Tagalog
+  // number before star/bituin, or a slash-out-of-5 form ("4.8/5").
+  const ratingDigit = '\\d(?:\\.\\d)?\\s*(?:-\\s*)?';
+  const ratingWord = '(?:four|five|apat|lima)\\s+';
+  const ratingNoun = '(star|stars|bituin)\\b';
+  if (new RegExp('\\b' + ratingDigit + ratingNoun, 'i').test(all)
+      || new RegExp('\\b' + ratingWord + ratingNoun, 'i').test(all)
+      || /\b\d(\.\d)?\s*\/\s*5\b/.test(all)) {
+    reasons.push('Fabricated star rating.');
+  }
 
   // 8. forbidden product claims
   if (/\biphone\b|\bios\b|\bapple\b/i.test(all)) reasons.push('Forbidden claim: iPhone or iOS support.');
@@ -91,6 +112,11 @@ function validateCopy(copy, opts) {
   while ((m = rx1.exec(all)) !== null) priceHits.push(m[1]);
   const rx2 = /([\d,]+)\s*(?:pesos?|piso)\b/gi;
   while ((m = rx2.exec(all)) !== null) priceHits.push(m[1]);
+  // Bare "P" shorthand (e.g. "P999") — the informal peso notation this
+  // audience actually writes. \bP requires the P itself to start a word, so
+  // this does not also fire on the "P" inside "PHP" (no boundary before it).
+  const rx3 = /\bP\s?(\d[\d,]*)\b/g;
+  while ((m = rx3.exec(all)) !== null) priceHits.push(m[1]);
   priceHits.forEach((raw) => {
     const n = parseInt(String(raw).replace(/,/g, ''), 10);
     if (!isNaN(n) && n !== price) reasons.push('Wrong price: ' + raw + '. The only allowed figure is ' + price + '.');
