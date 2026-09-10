@@ -329,6 +329,55 @@ section('image', 'Image prompt and validation', () => {
   check('records the observed aspect for the attempts log', /^\d+:\d+$|^unknown$/.test(String(okRes.aspect)));
 });
 
+// ---------------------------------------------------------------- flow rules
+section('flow', 'Decision routing and loop counters', () => {
+  const F = L('flow-rules.js');
+  const CFG = { maxAttempts: 3, maxCopyRetries: 1 };
+
+  // shape-agnostic: any field name, any nesting depth
+  check('approve, flat', F.normalizeDecision({ Decision: 'Approve' }) === 'approve');
+  check('approve, nested under data', F.normalizeDecision({ data: { Decision: 'Approve' } }) === 'approve');
+  check('approve, lowercase field', F.normalizeDecision({ decision: 'approve' }) === 'approve');
+  check('approve, unknown field name', F.normalizeDecision({ field_0: 'Approve' }) === 'approve');
+  check('regen copy', F.normalizeDecision({ data: { Decision: 'Regenerate copy' } }) === 'copy');
+  check('regen image', F.normalizeDecision({ data: { Decision: 'Regenerate image' } }) === 'image');
+  check('regen both', F.normalizeDecision({ data: { Decision: 'Regenerate both' } }) === 'both');
+  check('both wins over copy when both words appear',
+    F.normalizeDecision({ d: 'Regenerate both' }) === 'both');
+  check('timeout from the n8n approval shape', F.normalizeDecision({ data: { approved: false }, timeout: true }) === 'timeout');
+  check('legacy approved:true still means approve', F.normalizeDecision({ data: { approved: true } }) === 'approve');
+  check('empty payload is unknown', F.normalizeDecision({}) === 'unknown');
+  check('null payload is unknown', F.normalizeDecision(null) === 'unknown');
+
+  check('extracts a typed reason', F.extractReason({ data: { Decision: 'Regenerate image', Reason: 'headline garbled' } }) === 'headline garbled');
+  check('missing reason is an empty string', F.extractReason({ data: { Decision: 'Approve' } }) === '');
+
+  const g = (s) => F.loopGuard(Object.assign({ decision: 'copy', attempt: 1, copy_retry: 0, reason: 'r', row_id: 'FP-001' }, s), CFG);
+
+  check('approve publishes', g({ decision: 'approve' }).action === 'publish');
+  check('timeout expires', g({ decision: 'timeout' }).action === 'expired');
+  check('timeout sets the expired status', g({ decision: 'timeout' }).status === 'expired');
+  check('regen re-invokes', g({}).action === 'reinvoke');
+  check('regen increments attempt', g({ attempt: 1 }).attempt === 2);
+  check('regen does not touch copy_retry', g({ attempt: 1, copy_retry: 0 }).copy_retry === 0);
+  check('attempt 3 still re-invokes', g({ attempt: 3 }).action === 'reinvoke');
+  check('attempt 4 stops', g({ attempt: 4 }).action === 'needs_manual');
+  check('attempt 4 sets needs_manual', g({ attempt: 4 }).status === 'needs_manual');
+  check('stop message names the row', /FP-001/.test(g({ attempt: 4 }).message));
+  check('stop message names 3 attempts', /3 attempts/.test(g({ attempt: 4 }).message));
+  check('reason becomes the revision note', g({ reason: 'too salesy' }).revision_note === 'too salesy');
+
+  // machine copy-validation retry is a SEPARATE budget from the human loop
+  const v = (s) => F.loopGuard(Object.assign({ decision: 'copy_invalid', attempt: 1, copy_retry: 0, reason: 'em dash', row_id: 'FP-001' }, s), CFG);
+  check('first invalid copy re-invokes', v({}).action === 'reinvoke');
+  check('invalid copy increments copy_retry', v({ copy_retry: 0 }).copy_retry === 1);
+  check('invalid copy does NOT increment attempt', v({ attempt: 2, copy_retry: 0 }).attempt === 2);
+  check('second invalid copy stops', v({ copy_retry: 1 }).action === 'needs_manual');
+  check('copy_retry exhaustion is not a human rejection',
+    /validation/i.test(v({ copy_retry: 1 }).message));
+  check('human regen resets copy_retry', g({ attempt: 1, copy_retry: 1 }).copy_retry === 0);
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
