@@ -682,6 +682,84 @@ section('workflow', 'Main workflow structure', () => {
   });
 });
 
+// ---------------------------------------------------------------- insights wf
+section('insights', 'Insights workflow structure', () => {
+  const fs = require('fs');
+  const p = path.join(__dirname, 'fishpin-insights.workflow.json');
+  if (!fs.existsSync(p)) { check('fishpin-insights.workflow.json exists (run: node build-insights.js)', false); return; }
+  const wf = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const byName = {}; wf.nodes.forEach(n => { byName[n.name] = n; });
+
+  check('links the ops error workflow', wf.settings.errorWorkflow === '660Xkpo164VSNTDZ');
+  ['Schedule Trigger', 'Config', 'Read Queue', 'Select Due', 'Any Due?', 'Split Posts',
+   'Get Insights', 'Get Engagement', 'Map Metrics', 'Update Row', 'Notify Digest']
+    .forEach(n => check('has node: ' + n, Object.prototype.hasOwnProperty.call(byName, n)));
+
+  ['Read Queue', 'Get Insights', 'Get Engagement', 'Update Row'].forEach(n => {
+    check(n + ' retries on fail', byName[n].retryOnFail === true);
+    check(n + ' continues on error', byName[n].onError === 'continueRegularOutput');
+  });
+
+  const ins = JSON.stringify(byName['Get Insights'].parameters);
+  ['post_impressions', 'post_engaged_users', 'post_reactions_by_type_total']
+    .forEach(m => check('requests metric: ' + m, ins.includes(m)));
+  const eng = JSON.stringify(byName['Get Engagement'].parameters);
+  check('requests comments summary', eng.includes('comments.summary(true)'));
+  check('requests the share count', eng.includes('shares'));
+
+  const cfg = byName['Config'].parameters.assignments.assignments.map(a => a.name);
+  ['sheetId', 'queueTab', 'graphVersion', 'opsChannel', 'insightsDelayHours']
+    .forEach(k => check('Config defines ' + k, cfg.includes(k)));
+
+  const bodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').map(n => n.parameters.jsCode).join('\n');
+  check('selectDueRows is inlined', /function selectDueRows/.test(bodies));
+  check('mapMetrics is inlined', /function mapMetrics/.test(bodies));
+
+  // Update Row must write two separate targeted ranges (G, M:P) in one
+  // batchUpdate call, never a single G:P range — that would blank columns
+  // H-L (scheduled_for, caption, image_url, fb_post_id, posted_at), the
+  // record of what was actually published.
+  const updBody = JSON.stringify(byName['Update Row'].parameters);
+  check('Update Row does not write a single G:P range', !/!G' \+ \$json\._rowNumber \+ ':P/.test(updBody));
+  check('Update Row targets G (status) and M:P (metrics) separately',
+    /!G' \+ \$json\._rowNumber/.test(updBody) && /!M' \+ \$json\._rowNumber \+ ':P/.test(updBody));
+  check('Update Row uses a batched range update', /values:batchUpdate/.test(updBody));
+
+  // Every $('Node Name') reference in a Code node must name a node that
+  // actually exists in this workflow.
+  const refRe = /\$\(['"]([^'"]+)['"]\)/g;
+  const missingRefs = [];
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    let m;
+    while ((m = refRe.exec(n.parameters.jsCode))) {
+      if (!Object.prototype.hasOwnProperty.call(byName, m[1])) missingRefs.push(n.name + ' -> ' + m[1]);
+    }
+  });
+  check('every $(\'Node Name\') reference names an existing node: ' + missingRefs.join(','), missingRefs.length === 0);
+
+  // Every Code node body must actually parse under the same rules n8n
+  // applies (async wrapper, so top-level await is legal).
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    try {
+      new AsyncFunction(n.parameters.jsCode);
+      check(n.name + ' Code node body parses', true);
+    } catch (e) {
+      check(n.name + ' Code node body parses: ' + e.message, false);
+    }
+  });
+
+  // no connection points at a missing node
+  const names = new Set(wf.nodes.map(n => n.name));
+  let dangling = [];
+  Object.keys(wf.connections).forEach(src => {
+    (wf.connections[src].main || []).forEach(branch => (branch || []).forEach(c => {
+      if (!names.has(c.node)) dangling.push(src + ' -> ' + c.node);
+    }));
+  });
+  check('no connection points at a missing node', dangling.length === 0);
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');

@@ -1,0 +1,400 @@
+{
+  "name": "FishPin Ad Insights (24h)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "i-sched",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "i1",
+              "name": "sheetId",
+              "value": "FILL_IN_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "i2",
+              "name": "queueTab",
+              "value": "Queue",
+              "type": "string"
+            },
+            {
+              "id": "i3",
+              "name": "graphVersion",
+              "value": "v21.0",
+              "type": "string"
+            },
+            {
+              "id": "i4",
+              "name": "opsChannel",
+              "value": "C0BDSV5RB5G",
+              "type": "string"
+            },
+            {
+              "id": "i5",
+              "name": "insightsDelayHours",
+              "value": 24,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "i-cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "method": "GET",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Config').first().json.sheetId + '/values/' + $('Config').first().json.queueTab + '!A1:P1000' }}",
+        "nodeCredentialType": "googleApi",
+        "options": {}
+      },
+      "id": "i-read",
+      "name": "Read Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "AYzUUEYWUCPKxHFI",
+          "name": "Google Sheets - Content Log"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Google Sheet row selection and shaping, plus Graph metric mapping.\n// Pure: no n8n globals, no requires.\n// ============================================================================\n\nconst QUEUE_HEADERS = [\n  'id', 'pillar', 'topic', 'key_message', 'cta', 'notes', 'status', 'scheduled_for',\n  'caption', 'image_url', 'fb_post_id', 'posted_at', 'likes', 'comments', 'shares', 'reach',\n];\n\nconst ATTEMPT_HEADERS = [\n  'ts', 'row_id', 'attempt', 'pillar', 'headline', 'caption', 'image_url', 'decision', 'revision_note',\n];\n\n// Only 'ready' enters rotation. Everything else is either mid-flight (in_review)\n// or terminal, and only a human returning a row to 'ready' puts it back.\nfunction selectRow(rows, rowId) {\n  const list = Array.isArray(rows) ? rows : [];\n  if (rowId) return list.find((r) => String(r.id) === String(rowId)) || null;\n  return list.find((r) => String(r.status || '').trim().toLowerCase() === 'ready') || null;\n}\n\nfunction selectDueRows(rows, nowMs, delayHours) {\n  const list = Array.isArray(rows) ? rows : [];\n  const cutoff = Number(nowMs) - Number(delayHours || 24) * 3600 * 1000;\n  return list.filter((r) => {\n    if (String(r.status || '').toLowerCase() !== 'posted') return false;\n    const reach = r.reach;\n    if (reach !== null && reach !== undefined && String(reach).trim() !== '') return false;\n    const t = Date.parse(String(r.posted_at || ''));\n    if (isNaN(t)) return false;\n    return t <= cutoff;\n  });\n}\n\nfunction buildAttemptRow(ctx) {\n  const c = ctx || {};\n  return {\n    ts: new Date().toISOString(),\n    row_id: String(c.row_id || ''),\n    attempt: Number(c.attempt || 1),\n    pillar: String(c.pillar || ''),\n    headline: String(c.headline || ''),\n    caption: String(c.caption || ''),\n    image_url: String(c.image_url || ''),\n    decision: String(c.decision || ''),\n    revision_note: String(c.revision_note || ''),\n  };\n}\n\nfunction buildQueueUpdate(ctx) {\n  const c = ctx || {};\n  const status = String(c.status || '');\n  return {\n    id: String(c.id || ''),\n    status,\n    caption: String(c.caption || ''),\n    image_url: String(c.image_url || ''),\n    fb_post_id: String(c.fb_post_id || ''),\n    posted_at: status === 'posted' ? new Date().toISOString() : '',\n  };\n}\n\nfunction mapMetrics(insights, engagement) {\n  const data = (insights && Array.isArray(insights.data)) ? insights.data : [];\n  const pick = (name) => {\n    const row = data.find((d) => d.name === name);\n    if (!row || !Array.isArray(row.values) || !row.values.length) return null;\n    return row.values[0].value;\n  };\n\n  const reach = Number(pick('post_impressions')) || 0;\n\n  let likes = 0;\n  const e = engagement || {};\n  if (e.reactions && e.reactions.summary && typeof e.reactions.summary.total_count === 'number') {\n    const tc = e.reactions.summary.total_count;\n    likes = Number.isFinite(tc) ? tc : 0;\n  } else {\n    const byType = pick('post_reactions_by_type_total');\n    if (byType && typeof byType === 'object') {\n      likes = Object.keys(byType).reduce((a, k) => a + (Number(byType[k]) || 0), 0);\n    }\n  }\n\n  const comments = (e.comments && e.comments.summary && Number(e.comments.summary.total_count)) || 0;\n  const shares = (e.shares && Number(e.shares.count)) || 0;\n\n  return { reach, likes, comments, shares };\n}\n\nif (typeof module !== 'undefined') {\n  void  { QUEUE_HEADERS, ATTEMPT_HEADERS, selectRow, selectDueRows, buildAttemptRow, buildQueueUpdate, mapMetrics };\n}\n\n\n// Glue: which posted rows are old enough to have real numbers and have none yet.\nconst cfg = $('Config').first().json;\nconst vals = ($json.values || []);\nconst headers = vals[0] || [];\nconst rows = vals.slice(1).map((r, i) => {\n  const o = { _rowNumber: i + 2 };\n  headers.forEach((h, j) => { o[h] = r[j] === undefined ? '' : r[j]; });\n  return o;\n});\n\nconst due = selectDueRows(rows, Date.now(), Number(cfg.insightsDelayHours || 24));\nif (!due.length) return [{ json: { any: false, count: 0, due: [] } }];\nreturn due.map((r) => ({ json: { any: true, count: due.length, row: r } }));\n"
+      },
+      "id": "i-due",
+      "name": "Select Due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c",
+              "leftValue": "={{ $json.any }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "i-if",
+      "name": "Any Due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items;"
+      },
+      "id": "i-split",
+      "name": "Split Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "method": "GET",
+        "url": "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $json.row.fb_post_id + '/insights?metric=post_impressions,post_engaged_users,post_reactions_by_type_total' }}",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {}
+      },
+      "id": "i-ins",
+      "name": "Get Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "FB_CRED_ID",
+          "name": "FB Page - FishPin"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "method": "GET",
+        "url": "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Split Posts').first().json.row.fb_post_id + '?fields=comments.summary(true),shares,reactions.summary(true)' }}",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {}
+      },
+      "id": "i-eng",
+      "name": "Get Engagement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "FB_CRED_ID",
+          "name": "FB Page - FishPin"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Google Sheet row selection and shaping, plus Graph metric mapping.\n// Pure: no n8n globals, no requires.\n// ============================================================================\n\nconst QUEUE_HEADERS = [\n  'id', 'pillar', 'topic', 'key_message', 'cta', 'notes', 'status', 'scheduled_for',\n  'caption', 'image_url', 'fb_post_id', 'posted_at', 'likes', 'comments', 'shares', 'reach',\n];\n\nconst ATTEMPT_HEADERS = [\n  'ts', 'row_id', 'attempt', 'pillar', 'headline', 'caption', 'image_url', 'decision', 'revision_note',\n];\n\n// Only 'ready' enters rotation. Everything else is either mid-flight (in_review)\n// or terminal, and only a human returning a row to 'ready' puts it back.\nfunction selectRow(rows, rowId) {\n  const list = Array.isArray(rows) ? rows : [];\n  if (rowId) return list.find((r) => String(r.id) === String(rowId)) || null;\n  return list.find((r) => String(r.status || '').trim().toLowerCase() === 'ready') || null;\n}\n\nfunction selectDueRows(rows, nowMs, delayHours) {\n  const list = Array.isArray(rows) ? rows : [];\n  const cutoff = Number(nowMs) - Number(delayHours || 24) * 3600 * 1000;\n  return list.filter((r) => {\n    if (String(r.status || '').toLowerCase() !== 'posted') return false;\n    const reach = r.reach;\n    if (reach !== null && reach !== undefined && String(reach).trim() !== '') return false;\n    const t = Date.parse(String(r.posted_at || ''));\n    if (isNaN(t)) return false;\n    return t <= cutoff;\n  });\n}\n\nfunction buildAttemptRow(ctx) {\n  const c = ctx || {};\n  return {\n    ts: new Date().toISOString(),\n    row_id: String(c.row_id || ''),\n    attempt: Number(c.attempt || 1),\n    pillar: String(c.pillar || ''),\n    headline: String(c.headline || ''),\n    caption: String(c.caption || ''),\n    image_url: String(c.image_url || ''),\n    decision: String(c.decision || ''),\n    revision_note: String(c.revision_note || ''),\n  };\n}\n\nfunction buildQueueUpdate(ctx) {\n  const c = ctx || {};\n  const status = String(c.status || '');\n  return {\n    id: String(c.id || ''),\n    status,\n    caption: String(c.caption || ''),\n    image_url: String(c.image_url || ''),\n    fb_post_id: String(c.fb_post_id || ''),\n    posted_at: status === 'posted' ? new Date().toISOString() : '',\n  };\n}\n\nfunction mapMetrics(insights, engagement) {\n  const data = (insights && Array.isArray(insights.data)) ? insights.data : [];\n  const pick = (name) => {\n    const row = data.find((d) => d.name === name);\n    if (!row || !Array.isArray(row.values) || !row.values.length) return null;\n    return row.values[0].value;\n  };\n\n  const reach = Number(pick('post_impressions')) || 0;\n\n  let likes = 0;\n  const e = engagement || {};\n  if (e.reactions && e.reactions.summary && typeof e.reactions.summary.total_count === 'number') {\n    const tc = e.reactions.summary.total_count;\n    likes = Number.isFinite(tc) ? tc : 0;\n  } else {\n    const byType = pick('post_reactions_by_type_total');\n    if (byType && typeof byType === 'object') {\n      likes = Object.keys(byType).reduce((a, k) => a + (Number(byType[k]) || 0), 0);\n    }\n  }\n\n  const comments = (e.comments && e.comments.summary && Number(e.comments.summary.total_count)) || 0;\n  const shares = (e.shares && Number(e.shares.count)) || 0;\n\n  return { reach, likes, comments, shares };\n}\n\nif (typeof module !== 'undefined') {\n  void  { QUEUE_HEADERS, ATTEMPT_HEADERS, selectRow, selectDueRows, buildAttemptRow, buildQueueUpdate, mapMetrics };\n}\n\n\n// Glue: fold the two Graph responses into the four sheet columns.\nconst row = $('Split Posts').first().json.row;\nconst insights = $('Get Insights').first().json;\nconst engagement = $json;\n\nconst m = mapMetrics(insights, engagement);\nreturn [{ json: Object.assign({ id: row.id, _rowNumber: row._rowNumber, status: 'measured' }, m) }];\n"
+      },
+      "id": "i-map",
+      "name": "Map Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Config').first().json.sheetId + '/values:batchUpdate' }}",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!M' + $json._rowNumber + ':P' + $json._rowNumber, values: [[ $json.likes, $json.comments, $json.shares, $json.reach ]] } ] }) }}",
+        "options": {}
+      },
+      "id": "i-upd",
+      "name": "Update Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "AYzUUEYWUCPKxHFI",
+          "name": "Google Sheets - Content Log"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config').first().json.opsChannel }}",
+          "mode": "id"
+        },
+        "text": "=:bar_chart: FishPin 24h numbers for `{{ $json.id }}`: reach {{ $json.reach }}, likes {{ $json.likes }}, comments {{ $json.comments }}, shares {{ $json.shares }}",
+        "otherOptions": {}
+      },
+      "id": "i-slack",
+      "name": "Notify Digest",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1800,
+        220
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "slackApi": {
+          "id": "DnfgaCSu303JPlI3",
+          "name": "Slack - n8n Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Read Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Queue": {
+      "main": [
+        [
+          {
+            "node": "Select Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Due": {
+      "main": [
+        [
+          {
+            "node": "Any Due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Due?": {
+      "main": [
+        [
+          {
+            "node": "Split Posts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Split Posts": {
+      "main": [
+        [
+          {
+            "node": "Get Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Insights": {
+      "main": [
+        [
+          {
+            "node": "Get Engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Engagement": {
+      "main": [
+        [
+          {
+            "node": "Map Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Metrics": {
+      "main": [
+        [
+          {
+            "node": "Update Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Row": {
+      "main": [
+        [
+          {
+            "node": "Notify Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "660Xkpo164VSNTDZ"
+  }
+}
