@@ -511,6 +511,112 @@ section('sheet', 'Queue selection, row shaping, metric mapping', () => {
   check('a real numeric reach value is not re-selected', !reachSel.includes('num-reach'));
 });
 
+// ---------------------------------------------------------------- workflow
+section('workflow', 'Main workflow structure', () => {
+  const fs = require('fs');
+  const wfPath = path.join(__dirname, 'fishpin-fb-ads.workflow.json');
+  if (!fs.existsSync(wfPath)) { check('fishpin-fb-ads.workflow.json exists (run: node build.js)', false); return; }
+  const wf = JSON.parse(fs.readFileSync(wfPath, 'utf8'));
+  const byName = {}; wf.nodes.forEach(n => { byName[n.name] = n; });
+  const has = (n) => Object.prototype.hasOwnProperty.call(byName, n);
+
+  check('workflow is named', /FishPin/.test(wf.name));
+  check('links the ops error workflow', wf.settings.errorWorkflow === '660Xkpo164VSNTDZ');
+  check('uses execution order v1', wf.settings.executionOrder === 'v1');
+
+  ['Schedule Trigger', 'Manual Trigger', 'Loop Webhook', 'Config', 'Load Queue Row', 'Pick Row',
+   'Claim Row', 'Queue Empty?', 'Build Copy Prompt', 'Generate Copy', 'Validate Copy', 'Copy Valid?',
+   'Build Image Prompt', 'Generate Image', 'Validate Image', 'Image Valid?',
+   'Upload Photo (unpublished)', 'Get Photo URL', 'Log Attempt', 'Write Attempt', 'Post Preview',
+   'Slack Review', 'Route Decision', 'Approved?', 'Publish Post', 'Write Back', 'Write Back Row',
+   'Notify Success', 'Loop Guard', 'Re-invoke?', 'Re-invoke', 'Mark Terminal', 'Notify Stopped',
+   'Notify Queue Empty', 'Notify Image Failed'].forEach(n => check('has node: ' + n, has(n)));
+
+  // every external call retries and continues into an explicit gate.
+  // Note these are the HTTP nodes only — 'Log Attempt', 'Write Back', 'Pick Row',
+  // 'Route Decision' and 'Loop Guard' are Code nodes and carry no retry settings.
+  ['Generate Copy', 'Generate Image', 'Upload Photo (unpublished)', 'Get Photo URL',
+   'Publish Post', 'Load Queue Row', 'Claim Row', 'Write Attempt', 'Write Back Row',
+   'Mark Terminal', 'Re-invoke']
+    .forEach(n => {
+      check(n + ' retries on fail', byName[n] && byName[n].retryOnFail === true);
+      check(n + ' continues on error', byName[n] && byName[n].onError === 'continueRegularOutput');
+    });
+
+  // config completeness
+  const cfg = byName['Config'].parameters.assignments.assignments.map(a => a.name);
+  ['pageId', 'graphVersion', 'sheetId', 'queueTab', 'attemptsTab', 'copyModel', 'imageModel',
+   'copyTemperature', 'maxAttempts', 'maxCopyRetries', 'reviewTimeoutHours', 'reviewChannel',
+   'opsChannel', 'appPrice', 'playStoreUrl', 'selfWebhookUrl']
+    .forEach(k => check('Config defines ' + k, cfg.includes(k)));
+  const price = byName['Config'].parameters.assignments.assignments.find(a => a.name === 'appPrice');
+  check('Config price is 499', Number(price.value) === 499);
+
+  // the review gate really is a custom form with four decisions
+  const rev = byName['Slack Review'].parameters;
+  check('review uses sendAndWait', rev.operation === 'sendAndWait');
+  check('review uses a custom form', rev.responseType === 'customForm');
+  const fields = JSON.stringify(rev.formFields);
+  ['Approve', 'Regenerate copy', 'Regenerate image', 'Regenerate both']
+    .forEach(o => check('review offers: ' + o, fields.includes(o)));
+  check('review has a reason field', /reason/i.test(fields));
+  check('review limits the wait time', rev.options && rev.options.limitWaitTime === true);
+
+  // Queue writes must target THIS row, never append. An append would leave the
+  // original row still 'ready' and the next scheduled run would repost the idea.
+  ['Claim Row', 'Write Back Row', 'Mark Terminal'].forEach(n => {
+    const p = JSON.stringify(byName[n].parameters);
+    check(n + ' does not append to the Queue tab', !/:append/.test(p));
+    check(n + ' targets a row by _rowNumber', /_rowNumber/.test(p));
+    check(n + ' uses a batched range update', /values:batchUpdate/.test(p));
+  });
+  check('Write Back Row does not blank scheduled_for',
+    !/!G' \+ \$json\._rowNumber \+ ':L/.test(JSON.stringify(byName['Write Back Row'].parameters)));
+  check('Pick Row attaches _rowNumber', /_rowNumber/.test(byName['Pick Row'].parameters.jsCode));
+  check('Attempts tab still appends (it is a log)',
+    /:append/.test(JSON.stringify(byName['Write Attempt'].parameters)));
+
+  // publish is gated: nothing reaches it except the approved branch
+  const inbound = (target) => wf.nodes.filter(n =>
+    JSON.stringify((wf.connections[n.name] || {}).main || []).includes('"' + target + '"')).map(n => n.name);
+  check('only Approved? feeds Publish Post', JSON.stringify(inbound('Publish Post')) === '["Approved?"]');
+  check('Image Valid? gates the upload', inbound('Upload Photo (unpublished)').includes('Image Valid?'));
+  check('Copy Valid? gates the image prompt', inbound('Build Image Prompt').includes('Copy Valid?'));
+
+  // every node is reachable and every connection target exists
+  const names = new Set(wf.nodes.map(n => n.name));
+  let dangling = [];
+  Object.keys(wf.connections).forEach(src => {
+    (wf.connections[src].main || []).forEach(branch => (branch || []).forEach(c => {
+      if (!names.has(c.node)) dangling.push(src + ' -> ' + c.node);
+    }));
+  });
+  check('no connection points at a missing node', dangling.length === 0);
+
+  const reached = new Set(['Schedule Trigger', 'Manual Trigger', 'Loop Webhook']);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    Object.keys(wf.connections).forEach(src => {
+      if (!reached.has(src)) return;
+      (wf.connections[src].main || []).forEach(branch => (branch || []).forEach(c => {
+        if (!reached.has(c.node)) { reached.add(c.node); grew = true; }
+      }));
+    });
+  }
+  const orphans = wf.nodes.filter(n => n.type !== 'n8n-nodes-base.stickyNote' && !reached.has(n.name)).map(n => n.name);
+  check('no orphan nodes: ' + orphans.join(','), orphans.length === 0);
+
+  // the libs actually made it into the code nodes
+  const codeBodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code')
+    .map(n => n.parameters.jsCode).join('\n');
+  check('validateCopy is inlined', /function validateCopy/.test(codeBodies));
+  check('normalizeDecision is inlined', /function normalizeDecision/.test(codeBodies));
+  check('buildSystemPrompt is inlined', /function buildSystemPrompt/.test(codeBodies));
+  check('inlined exports are guarded for the n8n sandbox',
+    !/^\s*module\.exports\s*=/m.test(codeBodies));
+});
+
 // ---------------------------------------------------------------- results
 console.log('\n' + '─'.repeat(40));
 console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
