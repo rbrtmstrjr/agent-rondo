@@ -1277,6 +1277,20 @@ section('workflow', 'Main workflow structure', () => {
   check('review has a reason field', /reason/i.test(fields));
   check('review limits the wait time', rev.options && rev.options.limitWaitTime === true);
 
+  // Queue writes must target THIS row, never append. An append would leave the
+  // original row still 'ready' and the next scheduled run would repost the idea.
+  ['Claim Row', 'Write Back Row', 'Mark Terminal'].forEach(n => {
+    const p = JSON.stringify(byName[n].parameters);
+    check(n + ' does not append to the Queue tab', !/:append/.test(p));
+    check(n + ' targets a row by _rowNumber', /_rowNumber/.test(p));
+    check(n + ' uses a batched range update', /values:batchUpdate/.test(p));
+  });
+  check('Write Back Row does not blank scheduled_for',
+    !/!G' \+ \$json\._rowNumber \+ ':L/.test(JSON.stringify(byName['Write Back Row'].parameters)));
+  check('Pick Row attaches _rowNumber', /_rowNumber/.test(byName['Pick Row'].parameters.jsCode));
+  check('Attempts tab still appends (it is a log)',
+    /:append/.test(JSON.stringify(byName['Write Attempt'].parameters)));
+
   // publish is gated: nothing reaches it except the approved branch
   const inbound = (target) => wf.nodes.filter(n =>
     JSON.stringify((wf.connections[n.name] || {}).main || []).includes('"' + target + '"')).map(n => n.name);
@@ -1334,8 +1348,17 @@ Each file is the *tail* of a Code node; `build.js` prepends the libs it needs.
 `nodes/load-queue.js`:
 ```js
 // Glue: pick the row to work on. On loop re-entry the webhook names a row id.
+// The Sheets values endpoint returns ONE item holding a `values` matrix, not one
+// item per row, so parse it here. _rowNumber is what every later write targets.
 const cfg = $('Config').first().json;
-const rows = items.map((i) => i.json);
+const vals = ($json.values || []);
+const headers = vals[0] || [];
+const rows = vals.slice(1).map((r, i) => {
+  const o = { _rowNumber: i + 2 }; // +1 for the header, +1 because sheets are 1-based
+  headers.forEach((h, j) => { o[h] = r[j] === undefined ? '' : r[j]; });
+  return o;
+});
+
 const wh = $('Loop Webhook').isExecuted ? ($('Loop Webhook').first().json.body || {}) : {};
 const rowId = String(wh.row_id || '');
 
@@ -1515,7 +1538,10 @@ if (pub && pub.error) {
   return [{ json: { ok: false, error: JSON.stringify(pub.error), id: d.row_id } }];
 }
 
-return [{ json: Object.assign({ ok: true }, buildQueueUpdate({
+// _rowNumber is what the targeted batchUpdate writes against.
+const rowNumber = $('Pick Row').first().json.row._rowNumber;
+
+return [{ json: Object.assign({ ok: true, _rowNumber: rowNumber }, buildQueueUpdate({
   id: d.row_id, status: 'posted', caption: d.copy.caption,
   image_url: d.image_url, fb_post_id: pub.id || '',
 })) }];
@@ -1614,11 +1640,13 @@ const nodes = [
   slackMsg('n-empty-msg', 'Notify Queue Empty', cfgVal('opsChannel'),
     '=:inbox_tray: FishPin ad queue is empty. Nothing was posted. Add rows with status=ready.', 480, 200),
 
+  // Targeted single-cell write to column G (status) of THIS row. Appending here
+  // would add a second row with the same id, leaving the original still 'ready'
+  // for the next scheduled run to pick up again.
   http('n-claim', 'Claim Row', {
-    method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.queueTab + \"!G' + ($('Pick Row').first().json.row._rowNumber) + ':G' + ($('Pick Row').first().json.row._rowNumber) + '\" + ':append'"),
+    method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ values: [["in_review"]] }) }}',
-    sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }] },
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [['in_review']] }] }) }}",
     options: {},
   }, 480, 420, { googleApi: SHEETS }),
 
@@ -1706,11 +1734,14 @@ const nodes = [
     ] }, options: {},
   }, 4220, 180, { facebookGraphApi: FB }),
   codeNode('n-wb', 'Write Back', code(['sheet-rules.js'], 'map-writeback.js'), 4440, 180),
+  // Two targeted ranges in one call: G = status, I:L = caption, image_url,
+  // fb_post_id, posted_at. Column H (scheduled_for) is deliberately skipped so
+  // the human's value is not blanked.
   http('n-wbw', 'Write Back Row', {
-    method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.queueTab + '!A:P:append"),
+    method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ values: [[ $json.id, "", "", "", "", "", $json.status, "", $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] }) }}',
-    sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }] }, options: {},
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!I' + $json._rowNumber + ':L' + $json._rowNumber, values: [[ $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] } ] }) }}",
+    options: {},
   }, 4660, 180, { googleApi: SHEETS }),
   slackMsg('n-ok', 'Notify Success', cfgVal('opsChannel'),
     "=:white_check_mark: Posted to the FishPin Page — row `{{ $('Route Decision').first().json.row_id }}` ({{ $('Route Decision').first().json.pillar }})\nPost id: {{ $('Publish Post').first().json.id }}\n{{ $('Route Decision').first().json.image_url }}",
@@ -1724,10 +1755,10 @@ const nodes = [
     options: {},
   }, 4660, 340, {}),
   http('n-term', 'Mark Terminal', {
-    method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.queueTab + '!A:P:append"),
+    method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ values: [[ $json.row_id, "", "", "", "", "", $json.status ]] }) }}',
-    sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }] }, options: {},
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status ]] }] }) }}",
+    options: {},
   }, 4660, 460, { googleApi: SHEETS }),
   slackMsg('n-stop', 'Notify Stopped', cfgVal('opsChannel'),
     '=:octagonal_sign: {{ $json.message }}', 4880, 460),
@@ -1959,12 +1990,14 @@ const nodes = [
   }, 1140, 220, { facebookGraphApi: FB }),
   { parameters: { jsCode: code(['sheet-rules.js'], 'map-metrics.js') },
     id: 'i-map', name: 'Map Metrics', type: 'n8n-nodes-base.code', typeVersion: 2, position: pos(1360, 220) },
+  // G = status, M:P = likes, comments, shares, reach. Writing G:P as one range
+  // would blank columns H-L (scheduled_for, caption, image_url, fb_post_id,
+  // posted_at), destroying the record of what was actually published.
   http('i-upd', 'Update Row', {
-    method: 'PUT',
-    url: sheetUrl("/values/' + $('Config').first().json.queueTab + '!G' + $json._rowNumber + ':P' + $json._rowNumber + '"),
+    method: 'POST', url: sheetUrl('/values:batchUpdate'),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ values: [[ $json.status, "", "", "", "", "", $json.likes, $json.comments, $json.shares, $json.reach ]] }) }}',
-    sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }] }, options: {},
+    jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!M' + $json._rowNumber + ':P' + $json._rowNumber, values: [[ $json.likes, $json.comments, $json.shares, $json.reach ]] } ] }) }}",
+    options: {},
   }, 1580, 220, { googleApi: SHEETS }),
   { parameters: { select: 'channel',
       channelId: { __rl: true, value: "={{ $('Config').first().json.opsChannel }}", mode: 'id' },
@@ -2203,4 +2236,12 @@ git commit -m "feat(fishpin-ads): deploy both workflows and record live IDs"
 
 **Spec coverage.** Every spec section maps to a task: §3 architecture → Tasks 6, 7; §4 data model → Task 5; §5 copy generation → Task 1; §6 validation → Task 2; §7 image → Task 3; §8 approval loop → Tasks 4, 6; §9 publishing → Task 6; §10 pillars and the social-proof block → Tasks 1, 8; §11 error handling → Global Constraints, enforced by the Task 6 structural tests; §12 credentials → Tasks 6, 8, 9; §13 testing → every task, plus Task 9; §14 file layout → File Structure; §15 seed queue → Task 8; §16 open items → items 1 and 2 are designed away (dimensions read from bytes, decision routing is shape-agnostic), item 3 is a Task 8 README deliverable verified in Task 9.
 
-**Known adjustment points during implementation.** The Sheets range expressions in `build.js` (`Claim Row`, `Write Back Row`, `Mark Terminal`) append rather than update in place, because the Sheets REST append endpoint is simpler to express than a targeted range write. If the owner prefers in-place row updates, switch those three nodes to `PUT .../values/{tab}!A{row}:P{row}` using `_rowNumber`, exactly as `Update Row` already does in the insights workflow. `Pick Row` must then attach `_rowNumber`, which `select-due.js` already demonstrates.
+**Pre-flight corrections (applied 2026-09-10, before Task 1).** A scan before dispatch found three defects in this plan and they are now fixed above:
+
+1. `Claim Row`, `Write Back Row`, and `Mark Terminal` appended new rows instead of updating the row in place. An append leaves the original row still `ready`, so the next scheduled run reposts the same idea forever, defeating the row-claiming mechanism the spec added in §4. All three now use `values:batchUpdate` against `_rowNumber`.
+2. `load-queue.js` treated the Sheets response as one item per row. The values endpoint returns a single object holding a `values` matrix. It now parses that matrix and attaches `_rowNumber`, matching `select-due.js`.
+3. The insights `Update Row` wrote the range `G:P` in one shot, blanking columns H through L — `scheduled_for`, `caption`, `image_url`, `fb_post_id`, `posted_at` — and so destroying the record of what was published. It now writes `G` and `M:P` as two ranges in one batched call.
+
+Task 6's structural tests assert all three: no `:append` on Queue writes, `_rowNumber` targeting, and `batchUpdate` usage. The Attempts tab still appends, which is correct for a log.
+
+**Known plan-mandated patterns a reviewer may flag.** Two are deliberate. `build.js` and `build-insights.js` each redeclare the credential constants and the `pos`/`http`/`sheetUrl` helpers rather than sharing a module, because every existing `builds/*/build.js` in this repo is self-contained and deployable on its own. The insights `Split Posts` node is a Code node whose body is `return items;`, which exists to give `map-metrics.js` a stable `$('Split Posts')` reference for per-item fan-out. Neither is an oversight; if a reviewer raises them, adjudicate against this note.
