@@ -928,8 +928,59 @@ section('insights', 'Insights workflow structure', () => {
     Array.isArray(rBothEmpty.out) && rBothEmpty.out.length === 0);
 });
 
-// ---------------------------------------------------------------- results
-console.log('\n' + '─'.repeat(40));
-console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
-if (fails.length) console.log('Failed: ' + fails.join('; '));
-process.exit(fail ? 1 : 0);
+// ---------------------------------------------------------------- live
+if (LIVE) {
+  const B = L('brand.js');
+  const { validateCopy } = L('copy-rules.js');
+  const KEY = process.env.GEMINI_API_KEY || '';
+  const MODEL = process.env.COPY_MODEL || 'gemini-2.5-flash';
+
+  const seedRows = [
+    { id: 'FP-001', pillar: 'feature spotlight', topic: 'Offline maps work with zero signal offshore',
+      key_message: 'Download the map on Wi-Fi once, use it forever at sea', cta: 'I-download sa Play Store', notes: '' },
+    { id: 'FP-003', pillar: 'safety', topic: 'SOS sends your exact coordinates to saved contacts by SMS',
+      key_message: 'Mas mabilis kang mahanap kung may aberya', cta: 'I-download sa Play Store', notes: '' },
+    { id: 'FP-005', pillar: 'fish fact', topic: 'Species of the day from the fish guide',
+      key_message: 'Alamin ang tamang season at habitat', cta: 'I-download sa Play Store', notes: '' },
+    { id: 'FP-008', pillar: 'cost comparison', topic: 'One-time PHP 499 versus a handheld GPS device',
+      key_message: 'Isang bayad lang, walang subscription', cta: 'I-download sa Play Store', notes: '' },
+  ];
+
+  (async () => {
+    console.log('\n■ Live copy generation (' + MODEL + ')');
+    if (!KEY) { console.log('  ! set GEMINI_API_KEY to run the live test'); process.exit(fail ? 1 : 0); }
+
+    for (const row of seedRows) {
+      const res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent',
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: B.buildSystemPrompt() }] },
+            contents: [{ role: 'user', parts: [{ text: B.buildUserPrompt(row, '', '') }] }],
+            generationConfig: { temperature: 0.8, responseMimeType: 'application/json', responseSchema: B.COPY_SCHEMA },
+          }) }).then(r => r.json());
+
+      let copy = null;
+      try { copy = JSON.parse(res.candidates[0].content.parts[0].text); } catch (e) { /* reported below */ }
+      check(row.pillar + ': returned parseable JSON', !!copy);
+      if (!copy) { console.log('     raw: ' + JSON.stringify(res).slice(0, 400)); continue; }
+
+      const v = validateCopy(copy, { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, price: B.PRODUCT.price });
+      check(row.pillar + ': passes the validator unmodified', v.valid);
+      if (!v.valid) console.log('     reasons: ' + v.reasons.join(' | '));
+      check(row.pillar + ': image_prompt requests no text of its own', !!copy.image_prompt);
+      console.log('     headline: ' + copy.headline);
+    }
+
+    console.log('\n' + '─'.repeat(40));
+    console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
+    if (fails.length) console.log('Failed: ' + fails.join('; '));
+    process.exit(fail ? 1 : 0);
+  })();
+} else {
+  // ---------------------------------------------------------------- results
+  console.log('\n' + '─'.repeat(40));
+  console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
+  if (fails.length) console.log('Failed: ' + fails.join('; '));
+  process.exit(fail ? 1 : 0);
+}
