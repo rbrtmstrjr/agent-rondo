@@ -1,0 +1,13 @@
+# Secrets - never commit. Rotate any key that was previously committed.
+.env
+*.env
+!*.env.example
+
+# Isolated worktrees (superpowers)
+.worktrees/
+
+# Subagent-driven-development scratch (ledgers, briefs, review packages)
+.superpowers/
+
+# Node
+node_modules/
