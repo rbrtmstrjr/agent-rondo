@@ -2377,6 +2377,130 @@ section('insights', 'Insights workflow structure', () => {
   const bodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').map(n => n.parameters.jsCode).join('\n');
   check('selectDueRows is inlined', /function selectDueRows/.test(bodies));
   check('mapMetrics is inlined', /function mapMetrics/.test(bodies));
+
+  // Update Row must write two separate targeted ranges (G, M:P) in one
+  // batchUpdate call, never a single G:P range — that would blank columns
+  // H-L (scheduled_for, caption, image_url, fb_post_id, posted_at), the
+  // record of what was actually published.
+  const updBody = JSON.stringify(byName['Update Row'].parameters);
+  check('Update Row does not write a single G:P range', !/!G' \+ \$json\._rowNumber \+ ':P/.test(updBody));
+  check('Update Row targets G (status) and M:P (metrics) separately',
+    /!G' \+ \$json\._rowNumber/.test(updBody) && /!M' \+ \$json\._rowNumber \+ ':P/.test(updBody));
+  check('Update Row uses a batched range update', /values:batchUpdate/.test(updBody));
+
+  // Every $('Node Name') reference in a Code node must name a node that
+  // actually exists in this workflow.
+  const refRe = /\$\(['"]([^'"]+)['"]\)/g;
+  const missingRefs = [];
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    let m;
+    while ((m = refRe.exec(n.parameters.jsCode))) {
+      if (!Object.prototype.hasOwnProperty.call(byName, m[1])) missingRefs.push(n.name + ' -> ' + m[1]);
+    }
+  });
+  check('every $(\'Node Name\') reference names an existing node: ' + missingRefs.join(','), missingRefs.length === 0);
+
+  // Every Code node body must actually parse under the same rules n8n
+  // applies (async wrapper, so top-level await is legal).
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  wf.nodes.filter(n => n.type === 'n8n-nodes-base.code').forEach(n => {
+    try {
+      new AsyncFunction(n.parameters.jsCode);
+      check(n.name + ' Code node body parses', true);
+    } catch (e) {
+      check(n.name + ' Code node body parses: ' + e.message, false);
+    }
+  });
+
+  // no connection points at a missing node
+  const names = new Set(wf.nodes.map(n => n.name));
+  let dangling = [];
+  Object.keys(wf.connections).forEach(src => {
+    (wf.connections[src].main || []).forEach(branch => (branch || []).forEach(c => {
+      if (!names.has(c.node)) dangling.push(src + ' -> ' + c.node);
+    }));
+  });
+  check('no connection points at a missing node', dangling.length === 0);
+
+  // CRITICAL regression guard: $('Node').first() always returns index 0 of
+  // that node's output regardless of which item is currently being
+  // processed — it deliberately bypasses pairedItem matching. Split Posts
+  // and Get Insights are fan-out nodes (one output item per due row); any
+  // downstream reference to their output via .first() collapses every due
+  // row onto the first one. Get Engagement's URL expression and Map
+  // Metrics both fell into this trap in an earlier draft: with 3 due rows
+  // in one hourly run, Get Engagement fetched row 1's engagement 3 times,
+  // Map Metrics re-read index 0 for every item, Update Row wrote row 1's
+  // row 3 times with identical values, rows 2 and 3 never got reach
+  // populated, and Notify Digest posted the same message 3 times.
+  // $('Config').first() is fine and must keep working — Config is a
+  // single-item node, so .first() is simply "the only item" there.
+  const raw = fs.readFileSync(p, 'utf8');
+  check("no $('Split Posts').first() anywhere in the built workflow",
+    !raw.includes("$('Split Posts').first()"));
+  check("no $('Get Insights').first() anywhere in the built workflow",
+    !raw.includes("$('Get Insights').first()"));
+
+  // Behavioural per-item test for Map Metrics: this is the test that would
+  // have caught the .first() bug above — the structural checks above only
+  // prove the string ".first()" is absent, not that per-item pairing is
+  // actually correct. Build a fake $() accessor + a 3-item `items` array
+  // representing three due rows with DISTINCT fb_post_ids, row ids,
+  // _rowNumbers and distinct insight/engagement payloads, run the real
+  // assembled Map Metrics jsCode (lib inlined, straight from the built
+  // workflow JSON — not reimplemented here), and assert the three output
+  // items are correctly paired and mutually distinct. Map Metrics contains
+  // no `await`, so a plain Function (not AsyncFunction) is enough to
+  // execute it and get a real return value back synchronously.
+  const S = require(path.join(__dirname, 'lib', 'sheet-rules.js'));
+  const due = [
+    { id: 'FP-201', _rowNumber: 20, fb_post_id: 'p_201' },
+    { id: 'FP-202', _rowNumber: 21, fb_post_id: 'p_202' },
+    { id: 'FP-203', _rowNumber: 22, fb_post_id: 'p_203' },
+  ];
+  const insightsPayloads = due.map((r, i) => ({ data: [
+    { name: 'post_impressions', values: [{ value: 1000 * (i + 1) }] },
+    { name: 'post_engaged_users', values: [{ value: 50 * (i + 1) }] },
+    { name: 'post_reactions_by_type_total', values: [{ value: { like: 7 * (i + 1) } }] },
+  ] }));
+  const engagementPayloads = due.map((r, i) => ({
+    comments: { summary: { total_count: 10 + i } },
+    shares: { count: 30 + i },
+    reactions: { summary: { total_count: 90 + i } },
+  }));
+  const splitOut = due.map((r) => ({ json: { row: r } }));
+  const insightsOut = insightsPayloads.map((v) => ({ json: v }));
+  const engagementItems = engagementPayloads.map((v) => ({ json: v }));
+  const store = { 'Split Posts': splitOut, 'Get Insights': insightsOut };
+  const fakeDollar = (name) => ({ first: () => store[name][0], all: () => store[name] });
+
+  let mapOut = null, mapErr = null;
+  try {
+    const fn = new Function('$', 'items', '$json', byName['Map Metrics'].parameters.jsCode);
+    mapOut = fn(fakeDollar, engagementItems, engagementItems[0].json);
+  } catch (e) { mapErr = e; }
+  if (mapErr) console.log('    Map Metrics threw: ' + mapErr.message);
+  check('Map Metrics executes without throwing', mapErr === null);
+
+  const shapeOk = Array.isArray(mapOut) && mapOut.length === 3;
+  check('Map Metrics returns one output item per due row (3, not 1)', shapeOk);
+
+  const expected = due.map((r, i) => S.mapMetrics(insightsPayloads[i], engagementPayloads[i]));
+  const got = shapeOk ? mapOut.map((it) => it.json) : [];
+  check('Map Metrics output ids are correctly paired, not collapsed to row 1',
+    shapeOk && JSON.stringify(got.map((g) => g.id)) === JSON.stringify(due.map((r) => r.id)));
+  check('Map Metrics output _rowNumbers are correctly paired, not collapsed to row 1',
+    shapeOk && JSON.stringify(got.map((g) => g._rowNumber)) === JSON.stringify(due.map((r) => r._rowNumber)));
+  check('Map Metrics output reach values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.reach)) === JSON.stringify(expected.map((e) => e.reach)));
+  check('Map Metrics output likes values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.likes)) === JSON.stringify(expected.map((e) => e.likes)));
+  check('Map Metrics output comments values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.comments)) === JSON.stringify(expected.map((e) => e.comments)));
+  check('Map Metrics output shares values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.shares)) === JSON.stringify(expected.map((e) => e.shares)));
+  check('Map Metrics outputs 3 mutually distinct ids (not all identical)',
+    shapeOk && new Set(got.map((g) => g.id)).size === 3);
 });
 ```
 
@@ -2410,23 +2534,51 @@ return due.map((r) => ({ json: { any: true, count: due.length, row: r } }));
 `nodes/map-metrics.js`:
 ```js
 // Glue: fold the two Graph responses into the four sheet columns.
-const row = $('Split Posts').first().json.row;
-const insights = $('Get Insights').first().json;
-const engagement = $json;
-
-const m = mapMetrics(insights, engagement);
-return [{ json: Object.assign({ id: row.id, _rowNumber: row._rowNumber, status: 'measured' }, m) }];
+// Map Metrics runs once for ALL items (one per due row). Calling .first()
+// on another node's accessor always returns index 0 of that node's output
+// regardless of which item is being processed — it bypasses pairedItem
+// matching entirely — so reading Split Posts/Get Insights that way here
+// would collapse every due row onto the first one. Every node in this
+// chain (Split Posts -> Get Insights -> Get Engagement -> Map Metrics) is
+// 1:1 per item and preserves order, so index-aligning against `items`
+// (Map Metrics' own input, i.e. Get Engagement's output) is deterministic
+// and does not depend on pairedItem propagation through the HTTP nodes.
+const split = $('Split Posts').all();
+const insightsAll = $('Get Insights').all();
+return items.map((it, i) => {
+  const row = split[i].json.row;
+  const m = mapMetrics(insightsAll[i].json, it.json);
+  return { json: Object.assign({ id: row.id, _rowNumber: row._rowNumber, status: 'measured' }, m) };
+});
 ```
 
 `build-insights.js`:
 ```js
 // Assembles fishpin-insights.workflow.json — hourly scan for posts that are
-// 24h old and still unmeasured. A 24h Wait node does not survive an n8n restart.
+// 24h old and still unmeasured. A 24h Wait node does not survive an n8n
+// restart, so this runs as its own schedule-triggered workflow instead of a
+// long Wait tacked onto the main publish flow.
+//
+// Libs are inlined ahead of each glue file, same mechanism as build.js: each
+// lib's own `module.exports =` line is guarded by `typeof module !==
+// 'undefined'`, which is false in the n8n Code sandbox, so the export itself
+// is already inert there — but the `lib()` helper below still neutralizes it
+// (`module.exports =` -> `void `) rather than relying on that guard alone.
+// `void {...}` is a valid no-op expression statement under either of this
+// repo's two guard styles (single-line or block), survives a multi-line
+// export object without leaving a dangling fragment, and never leaves the
+// literal substring `module.exports` in a Code node body for the
+// sandbox-safety assertion to (correctly) flag — see build.js's header for
+// the full rationale (a line-filter that drops lines matching
+// /module\.exports/ is brace-unsafe for a multi-line export object).
 // Run: node build-insights.js
 const fs = require('fs');
 const path = require('path');
+
 const read = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
-const code = (libs, g) => libs.map((n) => read(path.join('lib', n))).join('\n\n') + '\n\n' + read(path.join('nodes', g));
+const lib = (n) => read(path.join('lib', n)).replace(/module\.exports\s*=/g, 'void ');
+const glue = (n) => read(path.join('nodes', n));
+const code = (libs, g) => libs.map(lib).join('\n\n') + '\n\n' + glue(g);
 
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
 const SLACK = { id: 'DnfgaCSu303JPlI3', name: 'Slack - n8n Bot' };
@@ -2469,9 +2621,17 @@ const nodes = [
     url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $json.row.fb_post_id + '/insights?metric=post_impressions,post_engaged_users,post_reactions_by_type_total' }}",
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 920, 220, { facebookGraphApi: FB }),
+  // Split Posts fans out to one item per due row. $('Split Posts').first()
+  // always returns index 0 of that node's output regardless of which item
+  // Get Engagement is currently processing — it bypasses pairedItem
+  // matching — so with N due rows it would fetch row 1's engagement N
+  // times and rows 2..N would never get measured. Get Engagement runs 1:1
+  // and in order against Split Posts' output, so $itemIndex deterministic
+  // index-alignment is correct here without depending on pairedItem
+  // propagation through the HTTP node.
   http('i-eng', 'Get Engagement', {
     method: 'GET',
-    url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Split Posts').first().json.row.fb_post_id + '?fields=comments.summary(true),shares,reactions.summary(true)' }}",
+    url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Split Posts').all()[$itemIndex].json.row.fb_post_id + '?fields=comments.summary(true),shares,reactions.summary(true)' }}",
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 1140, 220, { facebookGraphApi: FB }),
   { parameters: { jsCode: code(['sheet-rules.js'], 'map-metrics.js') },

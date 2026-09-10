@@ -758,6 +758,86 @@ section('insights', 'Insights workflow structure', () => {
     }));
   });
   check('no connection points at a missing node', dangling.length === 0);
+
+  // CRITICAL regression guard: $('Node').first() always returns index 0 of
+  // that node's output regardless of which item is currently being
+  // processed — it deliberately bypasses pairedItem matching. Split Posts
+  // and Get Insights are fan-out nodes (one output item per due row); any
+  // downstream reference to their output via .first() collapses every due
+  // row onto the first one. Get Engagement's URL expression and Map
+  // Metrics both fell into this trap in an earlier draft: with 3 due rows
+  // in one hourly run, Get Engagement fetched row 1's engagement 3 times,
+  // Map Metrics re-read index 0 for every item, Update Row wrote row 1's
+  // row 3 times with identical values, rows 2 and 3 never got reach
+  // populated, and Notify Digest posted the same message 3 times.
+  // $('Config').first() is fine and must keep working — Config is a
+  // single-item node, so .first() is simply "the only item" there.
+  const raw = fs.readFileSync(p, 'utf8');
+  check("no $('Split Posts').first() anywhere in the built workflow",
+    !raw.includes("$('Split Posts').first()"));
+  check("no $('Get Insights').first() anywhere in the built workflow",
+    !raw.includes("$('Get Insights').first()"));
+
+  // Behavioural per-item test for Map Metrics: this is the test that would
+  // have caught the .first() bug above — the structural checks above only
+  // prove the string ".first()" is absent, not that per-item pairing is
+  // actually correct. Build a fake $() accessor + a 3-item `items` array
+  // representing three due rows with DISTINCT fb_post_ids, row ids,
+  // _rowNumbers and distinct insight/engagement payloads, run the real
+  // assembled Map Metrics jsCode (lib inlined, straight from the built
+  // workflow JSON — not reimplemented here), and assert the three output
+  // items are correctly paired and mutually distinct. Map Metrics contains
+  // no `await`, so a plain Function (not AsyncFunction) is enough to
+  // execute it and get a real return value back synchronously.
+  const S = require(path.join(__dirname, 'lib', 'sheet-rules.js'));
+  const due = [
+    { id: 'FP-201', _rowNumber: 20, fb_post_id: 'p_201' },
+    { id: 'FP-202', _rowNumber: 21, fb_post_id: 'p_202' },
+    { id: 'FP-203', _rowNumber: 22, fb_post_id: 'p_203' },
+  ];
+  const insightsPayloads = due.map((r, i) => ({ data: [
+    { name: 'post_impressions', values: [{ value: 1000 * (i + 1) }] },
+    { name: 'post_engaged_users', values: [{ value: 50 * (i + 1) }] },
+    { name: 'post_reactions_by_type_total', values: [{ value: { like: 7 * (i + 1) } }] },
+  ] }));
+  const engagementPayloads = due.map((r, i) => ({
+    comments: { summary: { total_count: 10 + i } },
+    shares: { count: 30 + i },
+    reactions: { summary: { total_count: 90 + i } },
+  }));
+  const splitOut = due.map((r) => ({ json: { row: r } }));
+  const insightsOut = insightsPayloads.map((v) => ({ json: v }));
+  const engagementItems = engagementPayloads.map((v) => ({ json: v }));
+  const store = { 'Split Posts': splitOut, 'Get Insights': insightsOut };
+  const fakeDollar = (name) => ({ first: () => store[name][0], all: () => store[name] });
+
+  let mapOut = null, mapErr = null;
+  try {
+    const fn = new Function('$', 'items', '$json', byName['Map Metrics'].parameters.jsCode);
+    mapOut = fn(fakeDollar, engagementItems, engagementItems[0].json);
+  } catch (e) { mapErr = e; }
+  if (mapErr) console.log('    Map Metrics threw: ' + mapErr.message);
+  check('Map Metrics executes without throwing', mapErr === null);
+
+  const shapeOk = Array.isArray(mapOut) && mapOut.length === 3;
+  check('Map Metrics returns one output item per due row (3, not 1)', shapeOk);
+
+  const expected = due.map((r, i) => S.mapMetrics(insightsPayloads[i], engagementPayloads[i]));
+  const got = shapeOk ? mapOut.map((it) => it.json) : [];
+  check('Map Metrics output ids are correctly paired, not collapsed to row 1',
+    shapeOk && JSON.stringify(got.map((g) => g.id)) === JSON.stringify(due.map((r) => r.id)));
+  check('Map Metrics output _rowNumbers are correctly paired, not collapsed to row 1',
+    shapeOk && JSON.stringify(got.map((g) => g._rowNumber)) === JSON.stringify(due.map((r) => r._rowNumber)));
+  check('Map Metrics output reach values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.reach)) === JSON.stringify(expected.map((e) => e.reach)));
+  check('Map Metrics output likes values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.likes)) === JSON.stringify(expected.map((e) => e.likes)));
+  check('Map Metrics output comments values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.comments)) === JSON.stringify(expected.map((e) => e.comments)));
+  check('Map Metrics output shares values are correctly paired per item',
+    shapeOk && JSON.stringify(got.map((g) => g.shares)) === JSON.stringify(expected.map((e) => e.shares)));
+  check('Map Metrics outputs 3 mutually distinct ids (not all identical)',
+    shapeOk && new Set(got.map((g) => g.id)).size === 3);
 });
 
 // ---------------------------------------------------------------- results

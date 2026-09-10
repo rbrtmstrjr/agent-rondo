@@ -68,9 +68,17 @@ const nodes = [
     url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $json.row.fb_post_id + '/insights?metric=post_impressions,post_engaged_users,post_reactions_by_type_total' }}",
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 920, 220, { facebookGraphApi: FB }),
+  // Split Posts fans out to one item per due row. $('Split Posts').first()
+  // always returns index 0 of that node's output regardless of which item
+  // Get Engagement is currently processing — it bypasses pairedItem
+  // matching — so with N due rows it would fetch row 1's engagement N
+  // times and rows 2..N would never get measured. Get Engagement runs 1:1
+  // and in order against Split Posts' output, so $itemIndex deterministic
+  // index-alignment is correct here without depending on pairedItem
+  // propagation through the HTTP node.
   http('i-eng', 'Get Engagement', {
     method: 'GET',
-    url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Split Posts').first().json.row.fb_post_id + '?fields=comments.summary(true),shares,reactions.summary(true)' }}",
+    url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Split Posts').all()[$itemIndex].json.row.fb_post_id + '?fields=comments.summary(true),shares,reactions.summary(true)' }}",
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 1140, 220, { facebookGraphApi: FB }),
   { parameters: { jsCode: code(['sheet-rules.js'], 'map-metrics.js') },
