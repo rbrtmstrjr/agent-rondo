@@ -349,8 +349,24 @@ section('flow', 'Decision routing and loop counters', () => {
   check('empty payload is unknown', F.normalizeDecision({}) === 'unknown');
   check('null payload is unknown', F.normalizeDecision(null) === 'unknown');
 
+  // a reviewer's free-text reason must never hijack routing away from an explicit decision
+  check('approve survives a reason mentioning rewrite',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'please rewrite the CTA next time' }) === 'approve');
+  check('approve survives a reason mentioning copy and approve',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'love the new copy on this one, approve' }) === 'approve');
+  check('approve survives a reason mentioning both and approved',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'both photos look great, approved' }) === 'approve');
+  check('approve survives a reason mentioning image',
+    F.normalizeDecision({ Decision: 'Approve', Reason: 'the new image is perfect' }) === 'approve');
+  check('regenerate copy survives a reason mentioning both',
+    F.normalizeDecision({ Decision: 'Regenerate copy', Reason: 'both the tone and the length are off' }) === 'copy');
+
   check('extracts a typed reason', F.extractReason({ data: { Decision: 'Regenerate image', Reason: 'headline garbled' } }) === 'headline garbled');
   check('missing reason is an empty string', F.extractReason({ data: { Decision: 'Approve' } }) === '');
+  check('extracts a reason nested two levels deep',
+    F.extractReason({ data: { inner: { Reason: 'too salesy' } } }) === 'too salesy');
+  check('extracts a reason nested three levels deep',
+    F.extractReason({ data: { inner: { deeper: { Reason: 'too salesy' } } } }) === 'too salesy');
 
   const g = (s) => F.loopGuard(Object.assign({ decision: 'copy', attempt: 1, copy_retry: 0, reason: 'r', row_id: 'FP-001' }, s), CFG);
 
@@ -376,6 +392,14 @@ section('flow', 'Decision routing and loop counters', () => {
   check('copy_retry exhaustion is not a human rejection',
     /validation/i.test(v({ copy_retry: 1 }).message));
   check('human regen resets copy_retry', g({ attempt: 1, copy_retry: 1 }).copy_retry === 0);
+
+  // the failure count in the stop message must track maxCopyRetries, not be hardcoded
+  const CFG2 = { maxAttempts: 3, maxCopyRetries: 2 };
+  const v2 = F.loopGuard(
+    { decision: 'copy_invalid', attempt: 1, copy_retry: 2, reason: 'em dash', row_id: 'FP-001' },
+    CFG2
+  );
+  check('stop message derives the failure count from maxCopyRetries', /3 times/.test(v2.message));
 });
 
 // ---------------------------------------------------------------- results
