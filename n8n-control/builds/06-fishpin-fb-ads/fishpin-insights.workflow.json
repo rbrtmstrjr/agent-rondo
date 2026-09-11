@@ -178,7 +178,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "facebookGraphApi": {
-          "id": "FB_CRED_ID",
+          "id": "HFWwLB58m3JWzduP",
           "name": "FB Page - FishPin"
         }
       }
@@ -205,7 +205,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "facebookGraphApi": {
-          "id": "FB_CRED_ID",
+          "id": "HFWwLB58m3JWzduP",
           "name": "FB Page - FishPin"
         }
       }

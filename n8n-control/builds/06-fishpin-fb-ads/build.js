@@ -22,10 +22,18 @@ const GEMINI = { id: 'S0qfsjLzQfKC04iG', name: 'Gemini - Brand Variations' };
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
 const SLACK = { id: 'DnfgaCSu303JPlI3', name: 'Slack - n8n Bot' };
 // Created by the owner after the Meta setup; see README section "Facebook token".
-const FB = { id: 'FB_CRED_ID', name: 'FB Page - FishPin' };
+const FB = { id: 'HFWwLB58m3JWzduP', name: 'FB Page - FishPin' };
 
 const ERROR_WF = '660Xkpo164VSNTDZ';
 const WEBHOOK_PATH = 'fishpin-ad';
+
+// Loop-webhook shared secret. NEVER hardcode it here: this repo pushes to a
+// GitHub remote, and the built workflow JSON is committed alongside it.
+// Sourced ONLY from the FISHPIN_LOOP_SECRET environment variable, so a plain
+// `node build.js` always emits the placeholder that Pick Row refuses.
+// Deploy with:  FISHPIN_LOOP_SECRET=<value> node build.js
+// The value lives in n8n-control/.env, which is git-ignored.
+const LOOP_SECRET = process.env.FISHPIN_LOOP_SECRET || 'FILL_IN_LOOP_SECRET';
 const SHEET_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const pos = (x, y) => [x, y];
@@ -85,7 +93,7 @@ const nodes = [
     id: 'n-wh', name: 'Loop Webhook', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: pos(-620, 520), webhookId: 'fishpin-ad-hook' },
 
   { parameters: { assignments: { assignments: [
-      { id: 'c1', name: 'pageId', value: 'FILL_IN_FISHPIN_PAGE_ID', type: 'string' },
+      { id: 'c1', name: 'pageId', value: '1020295897824587', type: 'string' },
       { id: 'c2', name: 'graphVersion', value: 'v21.0', type: 'string' },
       { id: 'c3', name: 'sheetId', value: 'FILL_IN_SHEET_ID', type: 'string' },
       { id: 'c4', name: 'queueTab', value: 'Queue', type: 'string' },
@@ -105,7 +113,7 @@ const nodes = [
       // re-invoke payload and Pick Row refuses any webhook call without it.
       // Replace the placeholder at deploy time — Pick Row refuses every
       // webhook call while it is still FILL_IN_*.
-      { id: 'c17', name: 'loopSecret', value: 'FILL_IN_LOOP_SECRET', type: 'string' },
+      { id: 'c17', name: 'loopSecret', value: LOOP_SECRET, type: 'string' },
     ] }, options: {} },
     id: 'n-cfg', name: 'Config', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos(-400, 360) },
 

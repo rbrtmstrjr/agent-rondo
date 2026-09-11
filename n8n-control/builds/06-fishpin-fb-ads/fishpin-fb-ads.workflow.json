@@ -61,7 +61,7 @@
             {
               "id": "c1",
               "name": "pageId",
-              "value": "FILL_IN_FISHPIN_PAGE_ID",
+              "value": "1020295897824587",
               "type": "string"
             },
             {
@@ -593,7 +593,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "facebookGraphApi": {
-          "id": "FB_CRED_ID",
+          "id": "HFWwLB58m3JWzduP",
           "name": "FB Page - FishPin"
         }
       }
@@ -620,7 +620,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "facebookGraphApi": {
-          "id": "FB_CRED_ID",
+          "id": "HFWwLB58m3JWzduP",
           "name": "FB Page - FishPin"
         }
       }
@@ -888,7 +888,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "facebookGraphApi": {
-          "id": "FB_CRED_ID",
+          "id": "HFWwLB58m3JWzduP",
           "name": "FB Page - FishPin"
         }
       }

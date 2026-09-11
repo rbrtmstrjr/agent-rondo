@@ -27,7 +27,7 @@ const code = (libs, g) => libs.map(lib).join('\n\n') + '\n\n' + glue(g);
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
 const SLACK = { id: 'DnfgaCSu303JPlI3', name: 'Slack - n8n Bot' };
 // Created by the owner after the Meta setup; see README section "Facebook token".
-const FB = { id: 'FB_CRED_ID', name: 'FB Page - FishPin' };
+const FB = { id: 'HFWwLB58m3JWzduP', name: 'FB Page - FishPin' };
 
 const ERROR_WF = '660Xkpo164VSNTDZ';
 const SHEET_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
