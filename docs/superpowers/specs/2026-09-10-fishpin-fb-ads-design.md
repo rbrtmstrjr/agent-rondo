@@ -162,13 +162,42 @@ because a model follows examples far more reliably than adjectives. Every earlie
 3 emoji, no all-caps run, no em dash, no banned words, no price figure, problem-first hook)
 is unchanged.
 
-**REVISED 2026-09-11 (owner) — every caption carries both links.** The caption must end
-with `www.fishpin.app` and the Play Store listing, after the CTA, each on its own line.
-Both urls come from the Config node (`websiteUrl`, `playStoreUrl`) and are handed to
-`buildSystemPrompt` and to `validateCopy` by the glue, so the prompt and the validator
-read one source and cannot drift. The Play Store package id was also **corrected** here:
-Config carried `id=app.fishpin`, which is not the app; the real listing is
-`id=com.fishpin.app`.
+**REVISED 2026-09-11 (owner) — every caption carries both links.** ~~The caption must end
+with `www.fishpin.app` and the Play Store listing, after the CTA, each on its own line.~~
+**SUPERSEDED the same day by the caption-format revision below.** What survives from it is
+that both urls come from the Config node (`websiteUrl`, `playStoreUrl`), and that the Play
+Store package id was **corrected** here: Config carried `id=app.fishpin`, which is not the
+app; the real listing is `id=com.fishpin.app`.
+
+**REVISED 2026-09-11 (owner, after the first live post) — the caption is PROSE ONLY and the
+post is assembled in code.** The first published post read as one unbroken ~110-word block,
+then the CTA, then the links, then the CTA **again**, then the hashtags. Two defects: the
+system prompt told the model to end the caption with the CTA and both links while
+`Publish Post` independently appended the CTA and the hashtags (a duplicate CTA in every
+post), and nothing asked for paragraphs (an unscannable wall on a phone).
+
+The fix makes the published post deterministic instead of model-formatted:
+
+- **`caption` is body text only.** `buildSystemPrompt()` now instructs that the caption must
+  contain no CTA, no url and no hashtag, and states that all three are appended
+  automatically afterwards. It takes **no urls at all** — a url named in the prompt is a url
+  the model can copy into the prose — while every voice rule (spoken Filipino, Taglish,
+  problem-first hook, no price figure, no em dash, no banned words, max 3 emoji) is
+  unchanged.
+- **Shape:** 2 to 4 paragraphs separated by a blank line, each 1 to 3 sentences, the first
+  paragraph the hook and the shortest (Facebook truncates after a few lines behind
+  "See more"). The prompt carries a short delimited `CAPTION_EXAMPLE` so the model copies a
+  shape rather than a description of one.
+- **Word band back to 80 to 150** words of prose: the two urls no longer live in the
+  caption, so the +2 allowance for them is gone.
+- **`buildPostMessage(copy, cfg)` in `lib/copy-rules.js` is the ONE place a post is
+  assembled**, in exactly this order: `caption`, blank line, `cta`, blank line, `websiteUrl`
+  and `playStoreUrl` on consecutive lines, blank line, hashtags joined by a space.
+  `Collect Photos` — the single-item join that both `Publish Post` and `Post Preview` read
+  from — calls it once and puts the result on `message`; `Publish Post` sends
+  `$json.message` and the Slack preview shows the same field, so the reviewer approves
+  character-for-character what is published. Neither node builds a message string of its
+  own any more; that duplication is how the two drifted apart.
 
 **REVISED 2026-09-11 (owner) — never repeat a topic exactly.** `Pick Row` collects the
 `topic` and published `caption` of every Queue row whose status is `posted` or `measured`
@@ -188,7 +217,9 @@ Temperature 0.8. On a regeneration, `revision_note` is injected:
 ```
 headline      STRING  max 7 words, Taglish, rendered into the FIRST image
 subhead       STRING  max 12 words, optional
-caption       STRING  80 to 150 words of prose + the two required links (152 max)
+caption       STRING  80 to 150 words of PROSE ONLY, 2 to 4 paragraphs (blank-line
+                      separated), 1 to 3 sentences each. No cta, no url, no hashtags:
+                      buildPostMessage appends those. REVISED 2026-09-11.
 cta           STRING  one short line
 hashtags      ARRAY of STRING, 3 to 5
 image_prompts ARRAY of STRING, 1 to 5   <- REVISED 2026-09-11, was one image_prompt
@@ -232,11 +263,11 @@ Deterministic, no model in the loop. Rejects on any of:
 3. Any banned word: revolutionary, game-changer, seamless, cutting-edge, unlock, elevate,
    empower, "in today's fast-paced world", "we are excited to announce".
 4. `headline` longer than 7 words; `subhead` longer than 12 words.
-5. `caption` outside 80 to **152** words. The prose band the prompt asks for is still
-   80 to 150; the two required links are added after it and a whitespace word count counts
-   each url as one word, so the ceiling is 150 + 2. Without that the model could be
-   rejected for obeying the links rule. (`CAPTION_MIN_WORDS` / `CAPTION_PROSE_MAX_WORDS` /
-   `CAPTION_MAX_WORDS` in `lib/copy-rules.js`.)
+5. `caption` outside **80 to 150** words (`CAPTION_MIN_WORDS` / `CAPTION_MAX_WORDS` in
+   `lib/copy-rules.js`). REVISED 2026-09-11: the ceiling was 152 while the two links lived
+   inside the caption and counted as one word each; with the links appended by
+   `buildPostMessage` the band is simply the prose band the prompt asks for, and
+   `CAPTION_PROSE_MAX_WORDS` is gone as a distinct concept.
 6. More than 3 emoji in the caption.
 7. All-caps run longer than one word.
 8. Compliance breach: a rescue guarantee ("hindi ka mamamatay", "will save your life"),
@@ -244,12 +275,25 @@ Deterministic, no model in the loop. Rejects on any of:
    a named competitor brand, a fabricated review or user count, or any peso figure at all
    (never FishPin's own price, never a comparison figure — see §6a).
 
-9. **The caption is missing either required link** (revised 2026-09-11). Both
-   `Config.websiteUrl` and `Config.playStoreUrl` must appear verbatim in the caption; the
-   rejection names the missing one so the machine retry can fix it. The urls arrive through
-   `opts`, never hardcoded in the lib, exactly as `bannedWords` and `competitors` do — so a
-   caller that supplies neither simply does not get the check. Neither url trips any other
-   rule (no em dash, no caps run, no peso notation, no digits that read as a count).
+9. **The caption is not prose only** (revised 2026-09-11, replacing "the caption is missing
+   either required link"). Rejected if the caption contains a link (`http`, `www.`, or
+   either configured url), a `#hashtag`, or the CTA string (normalised for case and
+   whitespace). All three are appended by `buildPostMessage`, so writing them into the
+   caption publishes them **twice** — the duplicate CTA observed on the first live post.
+
+9a. **The caption is the wrong shape** (added 2026-09-11). Rejected if it is not 2 to 4
+   paragraphs separated by a blank line, or if any paragraph runs past 3 sentences.
+   `captionParagraphs` treats one or more blank lines (LF or CRLF) as the break and drops
+   leading/trailing blanks; `sentenceCount` splits on `.`, `!`, `?` and the ellipsis. Both
+   are exported, so the prompt's own worked example is checked against them in the suite.
+
+9b. **The ASSEMBLED MESSAGE is missing either required link** (revised 2026-09-11 — the old
+   rule 9, moved rather than deleted; a post with no links gives the reader no way to act).
+   The check runs against `buildPostMessage(copy, opts)`, or against an already-composed
+   `opts.message` when the caller supplies one, and it is what catches a regression in the
+   composer itself. The urls still arrive through `opts`, never hardcoded in the lib,
+   exactly as `bannedWords` and `competitors` do — so a caller that supplies neither simply
+   does not get the check.
 10. **The caption or headline is an EXACT repeat of an already-published post** (added
    2026-09-11). Compared against `opts.priorPosts` (from `Pick Row`) after normalising:
    trim, collapse whitespace, lowercase. **Exact match only** — deliberately no fuzzy
@@ -463,8 +507,12 @@ budget.
 
 1. `POST /{graphVersion}/{pageId}/photos` with `published=false` and the image binary,
    during the preview step. Returns `media_fbid`.
-2. On approval, `POST /{graphVersion}/{pageId}/feed` with
-   `message = caption + "\n\n" + cta + "\n\n" + hashtags.join(" ")` and
+2. On approval, `POST /{graphVersion}/{pageId}/feed` with `message = $json.message` — the
+   string `Collect Photos` composed with `buildPostMessage` and `Route Decision` carried
+   through, identical to what the Slack preview showed (**REVISED 2026-09-11**; this step
+   used to build `caption + "\n\n" + cta + "\n\n" + hashtags.join(" ")` itself while the
+   prompt ALSO asked the model to end the caption with the cta and both links, which is why
+   the first real post carried the cta twice) — and
    `attached_media = [{"media_fbid": "..."}, ...]` — **REVISED 2026-09-11**, 1 to 5 entries,
    built by `Collect Photos` and carried through `Route Decision`. One `/feed` call publishes
    the whole album. A single-image post takes the same path with a one-entry array;
@@ -530,9 +578,11 @@ channel exists and the bot is invited.
 `imageModel`, `copyTemperature`, `maxAttempts`, `reviewTimeoutHours`, `reviewChannel`,
 `opsChannel`, `websiteUrl`, `playStoreUrl`, `selfWebhookUrl`, `insightsDelayHours`.
 (`websiteUrl` added 2026-09-11; `playStoreUrl` corrected the same day from the wrong
-package id `app.fishpin` to `com.fishpin.app`. Both are required in every caption and
-`websiteUrl` is also set under the image lockup, so they are read by three places — the
-copy prompt, the validator and the image prompt — and all three read Config.)
+package id `app.fishpin` to `com.fishpin.app`. REVISED 2026-09-11: both are **appended to
+every post** by `buildPostMessage` rather than written into the caption by the model, so
+they are read by three places — `Collect Photos` (the composer), the validator's
+assembled-message check, and the image prompt's lockup — and all three read Config. The
+copy prompt no longer receives them at all.)
 (`appPrice` was removed 2026-09-10: the price rule no longer reads the app's price to
 decide validity — see §6a — so nothing consumed the tunable any more.)
 
@@ -563,9 +613,21 @@ Offline (pure Code-node assertions, no network):
 - The system prompt carries the spoken-Filipino voice rules and at least two stiff/natural
   rewrite pairs, and still carries every earlier rule (Taglish, em dash, caps, emoji, banned
   words, problem-first).
-- `validateCopy` rejects a caption missing either link, accepts 150 words of prose plus
-  both links (152), rejects 153, and rejects an exact repeat of a published caption or
-  headline while allowing a near-duplicate.
+- `validateCopy` accepts 80 to 150 words of prose and rejects 79 and 151, and rejects an
+  exact repeat of a published caption or headline while allowing a near-duplicate.
+- **Caption format (added 2026-09-11):** `validateCopy` rejects a caption containing a link,
+  a hashtag or the CTA; rejects 1 and 5 paragraphs and accepts 2, 3 and 4; treats a blank
+  line (LF or CRLF) as the only paragraph break and a single newline as none; rejects a
+  4-sentence paragraph and accepts a 3-sentence one.
+- **`buildPostMessage`:** asserts the exact assembled string (caption / blank / cta / blank /
+  both urls on consecutive lines / blank / hashtags), that the CTA appears exactly once, that
+  a missing block leaves no double blank line and no trailing newline, and that it survives a
+  null copy and cfg. Structurally: `buildPostMessage(copy, {` appears exactly once in the
+  whole built workflow, `Publish Post` sends `$json.message` and builds no string of its own,
+  and `Post Preview` shows that same field.
+- The prompt's own `CAPTION_EXAMPLE` is extracted back out of the generated system prompt and
+  checked against the real `captionParagraphs` / `sentenceCount` — the example the model
+  copies must itself obey the rules stated above it.
 - Behavioural: `Pick Row` collects `prior_posts` from posted AND measured rows, never from
   ready/in_review/blocked rows, never lists the current row, and caps the list at 15 most
   recent.

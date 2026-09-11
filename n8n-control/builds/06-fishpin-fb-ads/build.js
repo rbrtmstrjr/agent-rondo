@@ -231,7 +231,10 @@ const nodes = [
   // and the shared copy. It also does the per-photo images[0].source check for
   // every photo and reduces it to one all-or-nothing `ok` flag, which is what
   // makes the gate below possible at all with more than one image.
-  codeNode('n-collect', 'Collect Photos', code([], 'collect-photos.js'), 2900, 260),
+  // copy-rules.js is inlined here for buildPostMessage: Collect Photos is the
+  // single-item join BOTH Publish Post and Post Preview read from, so it is the
+  // one place the published message can be composed once and shared.
+  codeNode('n-collect', 'Collect Photos', code(['copy-rules.js'], 'collect-photos.js'), 2900, 260),
 
   // FAIL-CLOSED GATE. Get Photo URL carries onError continueRegularOutput, so
   // a failure there does not abort the run. The Post Preview message ends with
@@ -268,7 +271,13 @@ const nodes = [
     // every photo url. The urls are safe to read unconditionally — Image URL
     // OK? upstream guarantees all image_count of them exist on this branch.
     // Each url goes on its own line so Slack unfurls it into a visible image.
-    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Collect Photos').first().json.copy.headline }}\n*Subhead:* {{ $('Collect Photos').first().json.copy.subhead }}\n\n{{ $('Collect Photos').first().json.copy.caption }}\n\n{{ $('Collect Photos').first().json.copy.cta }}\n{{ $('Collect Photos').first().json.copy.hashtags.join(' ') }}\n\n*Images:* {{ $('Collect Photos').first().json.image_count }} in this post\n{{ $('Collect Photos').first().json.urls.join('\\n') }}",
+    // The body of the preview is the EXACT message Publish Post will send: one
+    // field, composed once by Collect Photos' buildPostMessage call and never
+    // re-assembled from caption/cta/hashtags here. Re-assembling it in two node
+    // expressions is how the preview and the published post drifted apart.
+    // Headline and subhead are shown separately because they are rendered into
+    // image 1; they are not part of the post text.
+    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Collect Photos').first().json.copy.headline }}\n*Subhead:* {{ $('Collect Photos').first().json.copy.subhead }}\n\n{{ $('Collect Photos').first().json.message }}\n\n*Images:* {{ $('Collect Photos').first().json.image_count }} in this post\n{{ $('Collect Photos').first().json.urls.join('\\n') }}",
     otherOptions: {},
   }, 3780, 200),
 
@@ -300,7 +309,15 @@ const nodes = [
     // and carried through Route Decision; a single-image post is the same
     // body with one entry, which /feed accepts.
     bodyParameters: { parameters: [
-      { name: 'message', value: "={{ $json.copy.caption + '\\n\\n' + $json.copy.cta + '\\n\\n' + $json.copy.hashtags.join(' ') }}" },
+      // The message is NOT assembled here. Collect Photos composed it once with
+      // buildPostMessage (caption, blank line, cta, blank line, both links on
+      // consecutive lines, blank line, hashtags) and Route Decision carried it
+      // through, so what publishes is byte-for-byte what the reviewer approved in
+      // the Slack preview. This expression used to build its own
+      // caption + cta + hashtags string while the copy prompt ALSO asked the model
+      // to end the caption with the cta and both links, which is why the first real
+      // published post carried the call to action twice.
+      { name: 'message', value: '={{ $json.message }}' },
       { name: 'attached_media', value: '={{ $json.attached_media }}' },
     ] }, options: {},
   }, 4440, 180, { facebookGraphApi: FB }),

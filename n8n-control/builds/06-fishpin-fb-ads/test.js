@@ -170,27 +170,76 @@ section('brand', 'Brand bible', () => {
   check('A1 regression: problem-first and the banned-word list are kept',
     /PROBLEM FIRST/.test(sys) && /BANNED WORDS/.test(sys));
 
-  // ---- A2 (2026-09-11): every caption carries BOTH links, and the urls come
-  // from Config, never from this lib.
-  check('A2: the system prompt carries the website link', sys.includes(LINKS.websiteUrl));
-  check('A2: the system prompt carries the Play Store link', sys.includes(LINKS.playStoreUrl));
-  check('A2: the link rule says both are required in every caption',
-    /LINKS, required in EVERY caption/.test(sys));
-  check('A2: the link rule places them at the end, after the CTA, never mid-sentence',
-    /at the END of the caption, after the call to action/i.test(sys)
-      && /Never in the middle of a sentence/i.test(sys));
-  check('A2: the urls are NOT hardcoded in brand.js',
+  // ---- F1 (2026-09-11, caption formatting): the caption is PROSE ONLY and the
+  // pipeline appends the rest. These checks REPLACE the A2 block that asserted
+  // the opposite (that the prompt carried both urls and told the model to end
+  // the caption with them). That instruction, plus Publish Post appending the
+  // CTA and hashtags itself, is exactly what put the call to action in the
+  // published post twice. The rule did not disappear: both links are now
+  // appended by buildPostMessage and asserted on the assembled message in the
+  // copy section below.
+  check('F1: the prompt tells the model the caption is body text only',
+    /THE CAPTION IS BODY TEXT ONLY/.test(sys));
+  check('F1: it says the cta, the links and the hashtags are appended automatically',
+    /the pipeline appends, automatically/i.test(sys)
+      && /call to action on its own line/i.test(sys)
+      && /then the hashtags/i.test(sys));
+  check('F1: it forbids a call to action inside the caption',
+    /No call to action in the caption/i.test(sys));
+  check('F1: it forbids any link or url inside the caption',
+    /No link, no url, no "www", no "http" anywhere in the caption/i.test(sys));
+  check('F1: it forbids hashtags inside the caption',
+    /No hashtags in the caption/i.test(sys));
+  check('F1: no url appears anywhere in the system prompt, so none can be copied into the caption',
+    !/https?:\/\//i.test(sys) && !/www\./i.test(sys) && !sys.includes('play.google.com'));
+  check('A2 (kept): the urls are NOT hardcoded in brand.js',
     !B.buildSystemPrompt().includes('fishpin.app'));
-  check('A2: with no Config urls there is no link section at all, rather than an empty one',
-    !/LINKS, required/.test(B.buildSystemPrompt()));
-  check('A2: buildLinkRule returns nothing when given nothing', B.buildLinkRule('', '') === '');
-  check('A2: buildLinkRule lists whichever url it is given',
-    B.buildLinkRule('www.a.test', '').includes('www.a.test'));
+  check('F1: passing Config urls in cannot smuggle them into the prompt either',
+    !B.buildSystemPrompt(LINKS).includes('fishpin.app'));
+
+  // ---- F1 caption shape: 2 to 4 paragraphs, blank line between, 1 to 3
+  // sentences each, hook first and shortest.
+  check('F1: the prompt asks for 2 to 4 paragraphs separated by a blank line',
+    /2 to 4 short paragraphs/.test(sys) && /BLANK LINE between paragraphs/.test(sys));
+  check('F1: it caps a paragraph at 3 sentences',
+    /Each paragraph is 1 to 3 sentences/.test(sys));
+  check('F1: it says the first paragraph is the hook and must be the shortest',
+    /FIRST paragraph is the hook and must be the SHORTEST/.test(sys));
+  check('F1: it explains why (Facebook truncates behind "See more")',
+    /See more/.test(sys) && /hides everything after the first few lines/i.test(sys));
+  check('F1: the prompt carries a formatted example caption, so the model copies a shape',
+    /EXAMPLE CAPTION, copy this shape/.test(sys) && sys.includes('<<<EXAMPLE'));
+
+  // The example is not decoration: a model copies it. So it must itself obey
+  // every rule stated above it, and it is delimited precisely so this test can
+  // pull it back out of the prompt and check that.
+  const exampleFromPrompt = (sys.split('<<<EXAMPLE')[1] || '').split('EXAMPLE>>>')[0].trim();
+  const CR = L('copy-rules.js');
+  const exParas = CR.captionParagraphs(exampleFromPrompt);
+  check('F1: the example can be extracted from the prompt by its delimiters',
+    exampleFromPrompt.length > 40 && exampleFromPrompt === B.CAPTION_EXAMPLE);
+  check('F1: the example is 2 to 4 blank-line-separated paragraphs',
+    exParas.length >= 2 && exParas.length <= 4);
+  check('F1: every paragraph of the example is 1 to 3 sentences',
+    exParas.every(p => CR.sentenceCount(p) >= 1 && CR.sentenceCount(p) <= 3));
+  check('F1: the example\'s first paragraph is the shortest (it is the hook)',
+    exParas.every((p, i) => i === 0 || p.length >= exParas[0].length));
+  check('F1: the example contains no link, no hashtag and no em dash',
+    !/https?:|www\.|#/.test(exampleFromPrompt) && !/—/.test(exampleFromPrompt));
+  check('F1: the example speaks like a fisherman (particles), not like a brochure',
+    /\b(yung|po|kasi|lang|na)\b/i.test(exampleFromPrompt));
+
   const lenRule = B.buildUserPrompt(row, '', '');
-  check('A2: the length rule still asks for 80 to 150 words of prose',
+  check('A2 (kept): the length rule still asks for 80 to 150 words of prose',
     /80 to 150 words/.test(lenRule));
-  check('A2: and states the 152-word ceiling the two links push it to',
-    /152 words/.test(lenRule) && /links/i.test(lenRule));
+  check('F1: the length rule asks for 2 to 4 paragraphs of 1 to 3 sentences',
+    /2 to 4 paragraphs separated by a blank line/.test(lenRule)
+      && /each paragraph 1 to 3 sentences/.test(lenRule));
+  check('F1: the length rule says the cta, links and hashtags are not part of the caption',
+    /no call to action, no link, no hashtags/i.test(lenRule)
+      && /added automatically/i.test(lenRule));
+  check('F1: the 152-word ceiling is gone from the prompt (the links no longer live in the caption)',
+    !/152/.test(lenRule) && !/152/.test(sys));
 
   // ---- A4 (2026-09-11): the same subject may come round again, the same
   // wording and angle may not.
@@ -233,16 +282,27 @@ section('copy', 'Copy validation', () => {
   const { validateCopy } = C;
   const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS };
 
+  // F1 (2026-09-11): the fixture caption is now 3 blank-line-separated
+  // paragraphs, because a single unbroken block is exactly the defect this
+  // change rejects (the first real published post was one ~110-word wall).
+  // Every substring the tests below patch ('Normal po yan,', 'walang kahit
+  // anong signal') is preserved, and the LAST paragraph is deliberately kept
+  // to two sentences so the many `good.caption + ' one more sentence.'`
+  // fixtures stay inside the 3-sentences-per-paragraph rule.
+  const PARA = String.fromCharCode(10) + String.fromCharCode(10);
   const good = {
     headline: 'Nawala ang signal? Gumagana pa rin',
     subhead: 'Offline maps para sa bawat biyahe sa laot',
-    caption: 'Nawala ang signal pagkalayo mo sa dalampasigan? Normal po yan, at hindi ibig sabihin '
-      + 'na wala ka nang mapa. Sa FishPin, i-download mo lang ang mapa habang naka Wi-Fi ka pa sa bahay, '
-      + 'tapos gamitin mo na sa laot kahit walang kahit anong signal. Nakikita mo pa rin kung nasaan ka, '
-      + 'kung saan ang mga naka-save mong tagpuan, at kung gaano ka pa kalayo sa uuwian mo. Isang beses '
-      + 'ka lang bibili, walang buwanang bayad at walang subscription. Hindi po kailangan ng load sa laot. '
-      + 'Kung madalas kayong lumalayo at natatakot mawala ang direksyon, ito po ang tulong na kailangan ninyo. '
-      + 'Subukan ninyo bago ang susunod ninyong biyahe.',
+    caption: 'Nawala ang signal pagkalayo mo sa dalampasigan?'
+      + PARA
+      + 'Normal po yan, at hindi ibig sabihin na wala ka nang mapa. Sa FishPin, i-download mo lang '
+      + 'ang mapa habang naka Wi-Fi ka pa sa bahay, tapos gamitin mo na sa laot kahit walang kahit '
+      + 'anong signal. Nakikita mo pa rin kung nasaan ka, kung saan ang mga naka-save mong tagpuan, '
+      + 'at kung gaano ka pa kalayo sa uuwian mo.'
+      + PARA
+      + 'Isang beses ka lang bibili, walang buwanang bayad at walang subscription, at hindi po '
+      + 'kailangan ng load sa laot. Kung madalas kayong lumalayo at natatakot mawala ang direksyon, '
+      + 'ito po ang tulong na kailangan ninyo.',
     cta: 'I-download sa Play Store',
     hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps', '#Bangka'],
     // CHANGE 2: `image_prompt` (one string) became `image_prompts` (1 to 5
@@ -413,111 +473,240 @@ section('copy', 'Copy validation', () => {
   rejects('still rejects the bare competitor name (regression)',
     w({ caption: good.caption + ' Mas mura kaysa Garmin.' }), /competitor/i);
 
-  // ---- A2 (2026-09-11): every caption must carry BOTH links.
-  // The urls arrive through opts (Config.websiteUrl / Config.playStoreUrl),
-  // exactly as bannedWords and competitors do, so a caller that supplies
-  // neither gets no check at all — which is why every test above still passes
-  // against a link-free fixture.
+  // ---- F1 (2026-09-11): THE CAPTION IS PROSE ONLY, and the post is assembled
+  // in code.
+  //
+  // This block REPLACES the A2 block that required both links INSIDE the
+  // caption ('a caption carrying BOTH links passes', 'a caption with NEITHER
+  // link is rejected', the two missing-link reason checks, the truncated-url
+  // and wrong-package-id checks, and the five "the urls trip no other rule"
+  // checks). That behaviour is gone on purpose: the model wrote the CTA and
+  // the links at the end of the caption while Publish Post appended the CTA
+  // and the hashtags again, so the first real published post carried the call
+  // to action twice. The links requirement itself has NOT been dropped, it
+  // moved onto the assembled message, asserted further down.
   const WEB = 'www.fishpin.app';
   const PLAY = 'https://play.google.com/store/apps/details?id=com.fishpin.app';
   const NL = String.fromCharCode(10);
   const LINK_OPTS = Object.assign({}, OPTS, { websiteUrl: WEB, playStoreUrl: PLAY });
   const withLinks = (text) => text + NL + NL + WEB + NL + PLAY;
-  const linked = w({ caption: withLinks(good.caption) });
 
-  check('A2: a caption carrying BOTH links passes', validateCopy(linked, LINK_OPTS).valid === true);
-  check('A2: and reports no reasons at all (no rule false-positives on a url)',
-    validateCopy(linked, LINK_OPTS).reasons.length === 0);
-  check('A2: a caption with NEITHER link is rejected',
-    validateCopy(good, LINK_OPTS).valid === false);
-  check('A2: the missing-website rejection names the website url',
-    validateCopy(w({ caption: good.caption + NL + PLAY }), LINK_OPTS).reasons
-      .some(r => r.includes(WEB) && /missing the required website link/i.test(r)));
-  check('A2: the missing-Play-Store rejection names the Play Store url',
-    validateCopy(w({ caption: good.caption + NL + WEB }), LINK_OPTS).reasons
-      .some(r => r.includes(PLAY) && /missing the required Play Store link/i.test(r)));
-  check('A2: the reason tells the model where the links belong',
-    validateCopy(good, LINK_OPTS).reasons
-      .some(r => /end of the caption, after the call to action/i.test(r)));
-  check('A2: a truncated url does not count as the link',
-    validateCopy(w({ caption: withLinks(good.caption).replace(PLAY, 'https://play.google.com/store') }),
+  check('F1: a prose-only caption passes with both Config urls supplied',
+    validateCopy(good, LINK_OPTS).valid === true);
+  check('F1: and reports no reasons at all',
+    validateCopy(good, LINK_OPTS).reasons.length === 0);
+  check('F1: a caption carrying the website link is now REJECTED',
+    validateCopy(w({ caption: good.caption + NL + NL + WEB }), LINK_OPTS).valid === false);
+  check('F1: a caption carrying the Play Store link is now REJECTED',
+    validateCopy(w({ caption: good.caption + NL + NL + PLAY }), LINK_OPTS).valid === false);
+  check('F1: the exact shape the model used to be told to write (cta + both links) is rejected',
+    validateCopy(w({ caption: withLinks(good.caption) }), LINK_OPTS).valid === false);
+  check('F1: the link-in-caption reason explains it would be published twice',
+    validateCopy(w({ caption: good.caption + NL + NL + WEB }), LINK_OPTS).reasons
+      .some(r => /caption contains a link/i.test(r) && /twice/i.test(r)));
+  check('F1: any bare http url is rejected, not only the two configured ones',
+    validateCopy(w({ caption: good.caption + ' Bisitahin ang https://example.test na site.' }),
       LINK_OPTS).valid === false);
-  check('A2: the WRONG package id (the old app.fishpin) does not satisfy the Play Store link',
-    validateCopy(w({ caption: withLinks(good.caption)
-      .replace(PLAY, 'https://play.google.com/store/apps/details?id=app.fishpin') }),
+  check('F1: a bare www. url is rejected too',
+    validateCopy(w({ caption: good.caption + ' Bisitahin ang www.example.test na site.' }),
       LINK_OPTS).valid === false);
-  check('A2: with no urls supplied the link check does not run (opts contract, back-compat)',
+  check('F1: the link rule fires even with NO Config urls supplied (it is about shape, not identity)',
+    validateCopy(w({ caption: good.caption + ' Punta sa www.kahitano.test.' }), OPTS).valid === false);
+
+  check('F1: a caption containing a hashtag is rejected',
+    validateCopy(w({ caption: good.caption + ' #FishPin' }), LINK_OPTS).valid === false);
+  check('F1: the hashtag reason explains it would be published twice',
+    validateCopy(w({ caption: good.caption + ' #FishPin' }), LINK_OPTS).reasons
+      .some(r => /caption contains a hashtag/i.test(r) && /twice/i.test(r)));
+  check('F1: an ordinary "#" that is not a tag does not trip the hashtag rule',
+    validateCopy(w({ caption: good.caption.replace('Isang beses', 'Bilang # ay isang beses') }),
+      LINK_OPTS).reasons.every(r => !/hashtag/i.test(r)));
+
+  check('F1: a caption that repeats the CTA is rejected (the exact live-post defect)',
+    validateCopy(w({ caption: good.caption + ' ' + good.cta + '.' }), LINK_OPTS).valid === false);
+  check('F1: the repeated-CTA reason says the cta is added automatically',
+    validateCopy(w({ caption: good.caption + ' ' + good.cta + '.' }), LINK_OPTS).reasons
+      .some(r => /repeats the call to action/i.test(r) && /added automatically/i.test(r)));
+  check('F1: the CTA repeat check normalises case and whitespace',
+    validateCopy(w({ caption: good.caption + ' ' + good.cta.toUpperCase().replace(/ /g, '   ') }),
+      LINK_OPTS).reasons.some(r => /repeats the call to action/i.test(r)));
+
+  // ---- F1 caption SHAPE: 2 to 4 paragraphs, blank line between, 1 to 3
+  // sentences each. The defect this fixes: one unbroken block.
+  const sent = (n) => Array.from({ length: n }, (_, i) => 'Pangungusap bilang ' + (i + 1) + ' po ito.').join(' ');
+  const bigPara = Array.from({ length: 30 }, () => 'salamat').join(' ');
+  const oneBlock = w({ caption: good.caption.split(NL + NL).join(' ') });
+
+  check('F1: ONE unbroken paragraph is rejected (the wall the owner complained about)',
+    validateCopy(oneBlock, LINK_OPTS).valid === false);
+  check('F1: the one-paragraph reason names the 2 to 4 range and the blank line',
+    validateCopy(oneBlock, LINK_OPTS).reasons
+      .some(r => /1 paragraph/.test(r) && /2 to 4/.test(r) && /blank line/i.test(r)));
+  check('F1: the one-paragraph reason also says the hook must be the shortest',
+    validateCopy(oneBlock, LINK_OPTS).reasons
+      .some(r => /first paragraph is the hook/i.test(r)));
+  check('F1: 2 paragraphs pass',
+    validateCopy(w({ caption: [bigPara, bigPara + ' ' + bigPara].join(NL + NL) }),
+      LINK_OPTS).valid === true);
+  check('F1: 3 paragraphs pass (the fixture itself)',
+    validateCopy(good, LINK_OPTS).valid === true);
+  check('F1: 4 paragraphs pass',
+    validateCopy(w({ caption: [bigPara, bigPara, bigPara, bigPara].join(NL + NL) }),
+      LINK_OPTS).valid === true);
+  check('F1: 5 paragraphs are rejected',
+    validateCopy(w({ caption: [bigPara, bigPara, bigPara, bigPara, bigPara].join(NL + NL) }),
+      LINK_OPTS).valid === false);
+  check('F1: a SINGLE newline is not a paragraph break, only a blank line is',
+    validateCopy(w({ caption: good.caption.split(NL + NL).join(NL) }), LINK_OPTS).valid === false);
+  check('F1: Windows line endings still read as paragraph breaks',
+    validateCopy(w({ caption: good.caption.split(NL + NL).join('\r\n\r\n') }), LINK_OPTS).valid === true);
+  check('F1: leading and trailing blank lines do not create empty paragraphs',
+    validateCopy(w({ caption: NL + NL + good.caption + NL + NL }), LINK_OPTS).valid === true);
+  // paragraph 1 is padded to carry the word count; paragraph 2 is the one
+  // under test and holds EXACTLY the stated number of sentences.
+  const shape = (n) => w({ caption: [bigPara + ' ' + bigPara + ' ' + bigPara, sent(n)].join(NL + NL) });
+  check('F1: a paragraph of exactly 3 sentences passes',
+    validateCopy(shape(3), LINK_OPTS).valid === true);
+  check('F1: a paragraph of 4 sentences is rejected',
+    validateCopy(shape(4), LINK_OPTS).valid === false);
+  check('F1: the over-long-paragraph reason says WHICH paragraph and how many sentences',
+    validateCopy(shape(5), LINK_OPTS).reasons
+      .some(r => /Paragraph 2 of the caption has 5 sentences/.test(r)));
+  check('F1: question marks and exclamation marks end sentences too',
+    C.sentenceCount('Ano ba yan? Grabe naman! Oo nga.') === 3);
+  check('F1: a trailing fragment with no full stop still counts as a sentence',
+    C.sentenceCount('Una po ito. Tapos ito') === 2);
+  check('F1: captionParagraphs and sentenceCount are exported for reuse',
+    typeof C.captionParagraphs === 'function' && typeof C.sentenceCount === 'function');
+  check('F1: the shape constants match the rule (2 to 4 paragraphs, 3 sentences)',
+    C.CAPTION_MIN_PARAGRAPHS === 2 && C.CAPTION_MAX_PARAGRAPHS === 4
+      && C.PARAGRAPH_MAX_SENTENCES === 3);
+
+  // ---- F1: buildPostMessage — the ONE place the published post is assembled.
+  const FULL = {
+    caption: 'Unang talata po ito.' + NL + NL + 'Pangalawang talata naman ito.',
+    cta: 'I-download sa Play Store',
+    hashtags: ['#FishPin', '#Mangingisda', '#Bangka'],
+  };
+  const CFG = { websiteUrl: WEB, playStoreUrl: PLAY };
+  const msg = C.buildPostMessage(FULL, CFG);
+  check('F1: buildPostMessage is exported from copy-rules', typeof C.buildPostMessage === 'function');
+  check('F1: the assembled message is exactly caption / cta / links / hashtags, in that order',
+    msg === FULL.caption + NL + NL + FULL.cta + NL + NL + WEB + NL + PLAY + NL + NL
+      + '#FishPin #Mangingisda #Bangka');
+  check('F1: the two urls are on CONSECUTIVE lines, with no blank line between them',
+    msg.includes(WEB + NL + PLAY) && !msg.includes(WEB + NL + NL + PLAY));
+  check('F1: there is a blank line between every block',
+    // a one-paragraph caption, so every NL+NL in the result is a block break
+    C.buildPostMessage({ caption: 'Isa.', cta: 'Tara', hashtags: ['#a'] }, CFG)
+      .split(NL + NL).length === 4);
+  check('F1: a multi-paragraph caption keeps its breaks on top of the block breaks',
+    msg.split(NL + NL).length === 5);
+  check('F1: the caption keeps its own paragraph breaks inside the message',
+    msg.indexOf('Unang talata po ito.' + NL + NL + 'Pangalawang talata') === 0);
+  check('F1: the call to action appears EXACTLY ONCE (the live-post defect)',
+    msg.split(FULL.cta).length - 1 === 1);
+  check('F1: hashtags are joined by a single space',
+    /#FishPin #Mangingisda #Bangka$/.test(msg));
+  check('F1: the message never ends with a newline', !/\s$/.test(msg));
+  check('F1: no urls configured means no link block and no double blank line',
+    C.buildPostMessage(FULL, {}) === FULL.caption + NL + NL + FULL.cta + NL + NL
+      + '#FishPin #Mangingisda #Bangka');
+  check('F1: no hashtags means no trailing blank block',
+    C.buildPostMessage({ caption: 'Isa.' + NL + NL + 'Dalawa.', cta: 'Tara' }, CFG)
+      === 'Isa.' + NL + NL + 'Dalawa.' + NL + NL + 'Tara' + NL + NL + WEB + NL + PLAY);
+  check('F1: an empty hashtag entry is dropped rather than leaving a double space',
+    C.buildPostMessage({ caption: 'Isa.', cta: 'Tara', hashtags: ['#a', '', '  ', '#b'] }, {})
+      === 'Isa.' + NL + NL + 'Tara' + NL + NL + '#a #b');
+  check('F1: it survives a null copy and a null cfg rather than throwing',
+    C.buildPostMessage(null, null) === '');
+  check('F1: surrounding whitespace on the caption is trimmed, not published',
+    C.buildPostMessage({ caption: '  Isa.  ' }, {}) === 'Isa.');
+
+  // ---- F1: the "both links must appear" rule MOVED to the assembled message.
+  // It was not deleted: a post with no links gives the reader no way to act.
+  check('F1: the assembled message carries BOTH links',
+    msg.includes(WEB) && msg.includes(PLAY));
+  check('F1: validateCopy checks the links on the ASSEMBLED MESSAGE, not the caption',
+    validateCopy(good, Object.assign({}, LINK_OPTS, { message: 'walang link dito' })).valid === false);
+  check('F1: the missing-website reason names the website url and says it is appended',
+    validateCopy(good, Object.assign({}, LINK_OPTS, { message: 'walang link dito' })).reasons
+      .some(r => r.includes(WEB) && /assembled post message is missing the required website/i.test(r)));
+  check('F1: the missing-Play-Store reason names the Play Store url',
+    validateCopy(good, Object.assign({}, LINK_OPTS, { message: WEB })).reasons
+      .some(r => r.includes(PLAY) && /assembled post message is missing the required Play Store/i.test(r)));
+  check('F1: a truncated Play Store url in the message does not satisfy the rule',
+    validateCopy(good, Object.assign({}, LINK_OPTS,
+      { message: WEB + NL + 'https://play.google.com/store' })).valid === false);
+  check('F1: the WRONG package id (the old app.fishpin) does not satisfy the Play Store link',
+    validateCopy(good, Object.assign({}, LINK_OPTS,
+      { message: WEB + NL + 'https://play.google.com/store/apps/details?id=app.fishpin' })).valid === false);
+  check('F1: with no urls supplied the link check does not run (opts contract, back-compat)',
     validateCopy(good, OPTS).valid === true);
+  check('F1: with the real composer the link check passes (assembly and validator agree)',
+    validateCopy(good, LINK_OPTS).reasons.every(r => !/missing the required/i.test(r)));
 
-  // The links must not trip any OTHER rule. Each is asserted on its own so a
-  // failure says which rule the url broke.
-  const linkOnlyReasons = (extra) => validateCopy(w({ caption: withLinks(good.caption) + ' ' + extra }),
-    LINK_OPTS).reasons;
-  check('A2: a url contains no em dash', !/—/.test(WEB + PLAY));
-  check('A2: the urls trip no rule at all (em dash, caps, price, counts, banned words)',
-    linkOnlyReasons('').length === 0);
-  check('A2: the all-caps rule does not fire on the urls',
-    !validateCopy(linked, LINK_OPTS).reasons.some(r => /caps/i.test(r)));
-  check('A2: the price rule does not fire on the urls (no peso notation in either)',
-    !validateCopy(linked, LINK_OPTS).reasons.some(r => /price|peso/i.test(r)));
-  check('A2: the fabricated-count rule does not fire on the urls',
-    !validateCopy(linked, LINK_OPTS).reasons.some(r => /fabricat|count|rating/i.test(r)));
-
-  // ---- A2 word band: 80 to 150 words of PROSE, plus the two links, so the
-  // hard ceiling is 152. A model that writes a perfect 150-word caption and
-  // then obeys the links rule must not be rejected for a length it was told
-  // to write.
-  const words = (n) => Array.from({ length: n }, () => 'salamat').join(' ');
-  const bandCopy = (n) => w({ caption: words(n) + NL + WEB + NL + PLAY });
-  check('A2: 150 words of prose PLUS both links (152 total) passes',
-    validateCopy(bandCopy(150), LINK_OPTS).valid === true);
-  check('A2: 151 words of prose plus both links (153 total) is rejected',
-    validateCopy(bandCopy(151), LINK_OPTS).valid === false);
-  check('A2: the length reason explains the 152 ceiling is prose plus the links',
+  // ---- F1 word band: 80 to 150 words of PROSE. The 152 ceiling is gone with
+  // the links: they are no longer part of the caption, so they no longer count.
+  // (Replaces the four A2 band checks, which asserted 152 and appended the two
+  // urls to the fixture caption.)
+  const nwords = (n) => Array.from({ length: n }, () => 'salamat').join(' ');
+  const bandCopy = (n) => w({ caption: nwords(4) + NL + NL + nwords(n - 4) });
+  check('F1: 150 words of prose passes', validateCopy(bandCopy(150), LINK_OPTS).valid === true);
+  check('F1: 151 words of prose is rejected', validateCopy(bandCopy(151), LINK_OPTS).valid === false);
+  check('F1: 80 words of prose passes (the floor is unchanged)',
+    validateCopy(bandCopy(80), LINK_OPTS).valid === true);
+  check('F1: 79 words of prose is rejected', validateCopy(bandCopy(79), LINK_OPTS).valid === false);
+  check('F1: the length reason states the 80 to 150 prose band',
     validateCopy(bandCopy(151), LINK_OPTS).reasons
-      .some(r => /must be 80 to 152/.test(r) && /150 of prose plus the two required links/.test(r)));
-  check('A2: a short caption is still rejected at the same 80-word floor',
-    validateCopy(w({ caption: 'Maikli lang po ito. ' + WEB + ' ' + PLAY }), LINK_OPTS).valid === false);
-  check('A2: the exported band constants match the rule (80 / 150 / 152)',
-    C.CAPTION_MIN_WORDS === 80 && C.CAPTION_PROSE_MAX_WORDS === 150 && C.CAPTION_MAX_WORDS === 152);
+      .some(r => /must be 80 to 150 words of prose/.test(r)));
+  check('F1: the length reason says the cta, links and hashtags do not count',
+    validateCopy(bandCopy(151), LINK_OPTS).reasons.some(r => /do not count/.test(r)));
+  check('F1: the band constants are 80 and 150, and the 152 ceiling is gone',
+    C.CAPTION_MIN_WORDS === 80 && C.CAPTION_MAX_WORDS === 150
+      && C.CAPTION_PROSE_MAX_WORDS === undefined);
 
   // ---- A4 (2026-09-11): an EXACT repeat of an already-published post is
   // rejected. Exact-match only, by design: no fuzzy similarity scoring, so a
   // near-duplicate is deliberately ALLOWED (the prompt's angle instruction and
   // the human approval gate are what keep those apart).
+  // F1: the old `linked` fixture (the caption with both links appended) is
+  // gone — a caption containing a link is now itself a rejection — so these
+  // checks run against the prose-only `good` fixture, which is exactly what
+  // the Queue tab's `caption` column stores for a published row.
   const priorOf = (c) => Object.assign({}, LINK_OPTS,
     { priorPosts: [{ topic: 'Offline maps', caption: c }] });
   check('A4: an exact caption repeat is rejected',
-    validateCopy(linked, priorOf(linked.caption)).valid === false);
+    validateCopy(good, priorOf(good.caption)).valid === false);
   check('A4: the reason tells the model to change the angle',
-    validateCopy(linked, priorOf(linked.caption)).reasons
+    validateCopy(good, priorOf(good.caption)).reasons
       .some(r => /already been published/i.test(r) && /change the angle/i.test(r)));
   check('A4: the repeat check normalises case and whitespace',
-    validateCopy(linked, priorOf(linked.caption.toUpperCase()
+    validateCopy(good, priorOf(good.caption.toUpperCase()
       .replace(/ /g, '  '))).valid === false);
   check('A4: leading and trailing whitespace does not hide a repeat',
-    validateCopy(linked, priorOf('   ' + linked.caption + '   ')).valid === false);
+    validateCopy(good, priorOf('   ' + good.caption + '   ')).valid === false);
   check('A4: a genuinely different caption on the same topic passes',
-    validateCopy(linked, priorOf('Ibang caption po ito tungkol sa parehong paksa.')).valid === true);
+    validateCopy(good, priorOf('Ibang caption po ito tungkol sa parehong paksa.')).valid === true);
   check('A4: a NEAR duplicate is deliberately allowed (exact-match only, no fuzzy scoring)',
-    validateCopy(linked, priorOf(linked.caption.replace('Normal po yan', 'Normal talaga yan'))).valid === true);
+    validateCopy(good, priorOf(good.caption.replace('Normal po yan', 'Normal talaga yan'))).valid === true);
   check('A4: an exact HEADLINE repeat is rejected when a prior headline is known',
-    validateCopy(linked, Object.assign({}, LINK_OPTS,
+    validateCopy(good, Object.assign({}, LINK_OPTS,
       { priorPosts: [{ topic: 'x', caption: 'iba', headline: good.headline }] })).valid === false);
   check('A4: the headline reason is distinct from the caption reason',
-    validateCopy(linked, Object.assign({}, LINK_OPTS,
+    validateCopy(good, Object.assign({}, LINK_OPTS,
       { priorPosts: [{ topic: 'x', caption: 'iba', headline: good.headline }] })).reasons
       .some(r => /exact headline has already been published/i.test(r)));
   check('A4: a prior row with no headline recorded never rejects on the headline',
-    validateCopy(linked, priorOf('iba')).valid === true);
+    validateCopy(good, priorOf('iba')).valid === true);
   check('A4: an empty caption is never treated as a repeat of an empty prior caption',
     validateCopy(w({ caption: '' }), Object.assign({}, LINK_OPTS,
       { priorPosts: [{ topic: 'x', caption: '' }] })).reasons
       .every(r => !/already been published/i.test(r)));
   check('A4: with no priorPosts supplied the repeat check does not run',
-    validateCopy(linked, LINK_OPTS).valid === true);
+    validateCopy(good, LINK_OPTS).valid === true);
   check('A4: it survives a malformed priorPosts entry rather than throwing',
-    validateCopy(linked, Object.assign({}, LINK_OPTS,
+    validateCopy(good, Object.assign({}, LINK_OPTS,
       { priorPosts: [null, undefined, {}, { caption: null }] })).valid === true);
   check('A4: normalizeForRepeat is exported and collapses whitespace and case',
     C.normalizeForRepeat('  Hello   WORLD ' + NL + ' again ') === 'hello world again');
@@ -1451,9 +1640,35 @@ section('workflow', 'Main workflow structure', () => {
   check('Post Preview no longer reads the fan-out node',
     !P('Post Preview').includes("$('Build Image Prompt')"));
   const pubParams = P('Publish Post');
-  check('Publish Post still sends caption, cta and hashtags from the routed copy',
-    /\$json\.copy\.caption/.test(pubParams) && /\$json\.copy\.cta/.test(pubParams)
-      && /\$json\.copy\.hashtags/.test(pubParams));
+  // F1 (2026-09-11): REPLACES 'Publish Post still sends caption, cta and
+  // hashtags from the routed copy'. That check encoded the defect: Publish
+  // Post assembled its own message (caption + cta + hashtags) while the copy
+  // prompt ALSO told the model to end the caption with the cta and both links,
+  // so the published post carried the call to action twice. The message is now
+  // composed once, in Collect Photos, by buildPostMessage.
+  check('F1: Publish Post sends the single pre-composed message',
+    /\$json\.message/.test(pubParams));
+  check('F1: Publish Post no longer assembles a message of its own',
+    !/copy\.caption/.test(pubParams) && !/copy\.cta/.test(pubParams)
+      && !/copy\.hashtags/.test(pubParams));
+  check('F1: the Slack preview shows that SAME composed message, so the reviewer approves '
+    + 'exactly what publishes',
+    P('Post Preview').includes("$('Collect Photos').first().json.message"));
+  check('F1: the preview no longer re-assembles caption + cta + hashtags itself',
+    !/copy\.caption/.test(P('Post Preview')) && !/copy\.cta/.test(P('Post Preview'))
+      && !/copy\.hashtags/.test(P('Post Preview')));
+  check('F1: the preview still shows headline and subhead separately (they are burned into image 1)',
+    /copy\.headline/.test(P('Post Preview')) && /copy\.subhead/.test(P('Post Preview')));
+  check('F1: the message is composed in exactly ONE place in the whole workflow',
+    (rawWf.match(/buildPostMessage\(copy, \{/g) || []).length === 1);
+  check('F1: that one place is Collect Photos, the single-item join both nodes read',
+    /buildPostMessage\(copy, \{/.test(P('Collect Photos')));
+  check('F1: Collect Photos takes the two links from Config, not from a lib constant',
+    /websiteUrl:\s*cfg\.websiteUrl/.test(P('Collect Photos'))
+      && /playStoreUrl:\s*cfg\.playStoreUrl/.test(P('Collect Photos')));
+  check('F1: Route Decision carries the composed message through to Publish Post',
+    /message:\s*p\.message/.test(P('Route Decision')));
+  check('F1: buildPostMessage is inlined into the workflow', /function buildPostMessage/.test(rawWf));
 
   // ---------------------------------------------------------------- I4: loop webhook auth
   check('Config defines loopSecret',
@@ -1635,10 +1850,14 @@ section('workflow', 'Main workflow structure', () => {
     valid: true, index: i, total: 3, bytes: 100000 + i, aspect: '4:5',
     aspectRequested: '4:5', aspectMatches: true,
   } }));
-  const runCollect = (photos, validated, bips) => {
+  const runCollect = (photos, validated, bips, cfgOverride) => {
     const store = {
       'Build Image Prompt': { items: bips },
       'Validate Image': { items: validated },
+      // F1: Collect Photos now composes the published message, so it reads the
+      // two link urls from Config exactly as every other node does. The
+      // override proves the urls still come from Config and nowhere else.
+      Config: { items: [{ json: cfgOverride || MAIN_CFG }] },
     };
     const fakeDollar = (name) => {
       const e = store[name];
@@ -1661,6 +1880,21 @@ section('workflow', 'Main workflow structure', () => {
     collected.image_url.includes('new1.jpg') && collected.image_url.includes('new3.jpg'));
   check('C2 step 4b: it carries the shared copy through for the preview and the publish',
     collected.copy.caption === APPROVED.caption);
+
+  // ---- F1: Collect Photos is where the published post is composed, ONCE.
+  const CR = L('copy-rules.js');
+  check('F1 step 4b: it composes the message with the shared buildPostMessage, not by hand',
+    collected.message === CR.buildPostMessage(APPROVED, MAIN_CFG));
+  check('F1 step 4b: the composed message is caption, cta, both links, hashtags, in order',
+    collected.message === APPROVED.caption + NLW + NLW + APPROVED.cta + NLW + NLW
+      + LINK_WEB + NLW + LINK_PLAY + NLW + NLW + APPROVED.hashtags.join(' '));
+  check('F1 step 4b: the call to action appears exactly ONCE in what will be published',
+    collected.message.split(APPROVED.cta).length - 1 === 1);
+  check('F1 step 4b: both links are in the message even though the caption has neither',
+    collected.message.includes(LINK_WEB) && collected.message.includes(LINK_PLAY)
+      && !APPROVED.caption.includes(LINK_WEB) && !APPROVED.caption.includes(LINK_PLAY));
+  check('F1 step 4b: the two urls sit on consecutive lines, no blank line between them',
+    collected.message.includes(LINK_WEB + NLW + LINK_PLAY));
   // a single-image post must still work: FB accepts attached_media with one entry
   const solo = runCollect([photoItems[0]], [validatedItems[0]], [bipItems[0]])[0].json;
   check('C2 step 4b: a ONE-image post still produces a valid attached_media array',
@@ -1742,6 +1976,8 @@ section('workflow', 'Main workflow structure', () => {
     rdOut.decision === 'approve' && rdOut.approved === true);
   check('C2 step 5: it carries the whole album forward to Publish Post',
     rdOut.attached_media === collected.attached_media && rdOut.image_count === 3);
+  check('F1 step 5: Publish Post receives the EXACT message the reviewer approved',
+    rdOut.message === collected.message);
   check('C3 step 5: it points at the NEW images, not the rejected ones',
     rdOut.image_url.includes('https://cdn/new1.jpg'));
 
@@ -1858,23 +2094,34 @@ section('workflow', 'Main workflow structure', () => {
   check('A4: the cap keeps the most RECENT rows',
     pickMany.prior_posts[14].id === 'FP-P29' && pickMany.prior_posts[0].id === 'FP-P15');
 
-  // Build Copy Prompt puts both Config urls and the prior posts in the prompt.
+  // Build Copy Prompt no longer carries any url (F1): the model writes prose
+  // only and buildPostMessage appends the links. The prior posts still reach it.
   const promptOut = runCode('Build Copy Prompt', {
     Config: one(MAIN_CFG), 'Pick Row': one(pickOut),
   }, {})[0].json;
   const sysText = promptOut.geminiBody.system_instruction.parts[0].text;
   const userText = promptOut.geminiBody.contents[0].parts[0].text;
-  check('A2: the system prompt carries the website url straight from Config',
-    sysText.includes(LINK_WEB));
-  check('A2: and the Play Store url straight from Config', sysText.includes(LINK_PLAY));
-  check('A2: the wrong package id never reaches the prompt',
+  // F1: REPLACES 'A2: the system prompt carries the website url straight from
+  // Config' / 'and the Play Store url straight from Config' / 'changing Config
+  // changes the prompt'. Those asserted that the model was handed both urls so
+  // it could write them into the caption; it no longer does either, and a url
+  // in the prompt is a url the model can copy into the prose, which the
+  // validator now rejects. The Config-is-the-one-source property they were
+  // really protecting is asserted below, on the node that now uses the urls.
+  check('F1: no url reaches the real copy prompt any more',
+    !sysText.includes(LINK_WEB) && !sysText.includes(LINK_PLAY)
+      && !/https?:\/\//.test(sysText) && !/www\./.test(sysText));
+  check('A2 (kept): the wrong package id never reaches the prompt',
     !sysText.includes('id=app.fishpin'));
-  check('A2: changing Config changes the prompt (the urls are not hardcoded in the lib)', (() => {
-    const other = runCode('Build Copy Prompt', {
-      Config: one(Object.assign({}, MAIN_CFG, { websiteUrl: 'www.other.test' })),
-      'Pick Row': one(pickOut),
-    }, {})[0].json;
-    return other.geminiBody.system_instruction.parts[0].text.includes('www.other.test');
+  check('F1: the real prompt tells the model the caption is body text only',
+    /THE CAPTION IS BODY TEXT ONLY/.test(sysText));
+  check('F1: the real prompt asks for 2 to 4 paragraphs with a blank line between them',
+    /2 to 4 short paragraphs/.test(sysText) && /BLANK LINE between paragraphs/.test(sysText)
+      && /2 to 4 paragraphs separated by a blank line/.test(userText));
+  check('F1: changing Config changes the composed MESSAGE (the urls are still not in any lib)', (() => {
+    const other = runCollect(photoItems, validatedItems, bipItems,
+      Object.assign({}, MAIN_CFG, { websiteUrl: 'www.other.test' }))[0].json;
+    return other.message.includes('www.other.test') && !other.message.includes(LINK_WEB);
   })());
   check('A4: the user prompt lists the already-published posts',
     /ALREADY PUBLISHED/.test(userText) && userText.includes('topic one')
@@ -1882,13 +2129,17 @@ section('workflow', 'Main workflow structure', () => {
   check('A4: and demands a different angle rather than a different subject',
     /DIFFERENT ANGLE/.test(userText));
 
-  // Validate Copy enforces the same two urls and the same prior posts.
+  // Validate Copy enforces the caption shape and the same prior posts.
   const geminiCopy = (obj) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] });
-  const filler = Array.from({ length: 100 }, () => 'salamat').join(' ');
+  const prose = (n) => Array.from({ length: n }, () => 'salamat').join(' ');
+  const filler = prose(100);
+  // F1: the fixture caption is PROSE ONLY, in two blank-line-separated
+  // paragraphs. It used to be `filler + newline + both links`, which is now
+  // itself a rejection.
   const CLEAN = {
     headline: 'Nawala ang signal? Gumagana pa rin',
     subhead: 'Offline maps para sa bawat biyahe sa laot',
-    caption: filler + NLW + LINK_WEB + NLW + LINK_PLAY,
+    caption: prose(6) + NLW + NLW + prose(94),
     cta: 'I-download sa Play Store',
     hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps'],
     image_prompts: ['A Filipino bangka with outriggers at dawn.'],
@@ -1897,19 +2148,29 @@ section('workflow', 'Main workflow structure', () => {
   const validateOut = (copyObj, pick) => runCode('Validate Copy', {
     Config: one(MAIN_CFG), 'Pick Row': one(pick || pickOut),
   }, geminiCopy(copyObj))[0].json;
-  check('A2: a caption carrying both links passes the real Validate Copy node',
+  check('F1: a prose-only, 2-paragraph caption passes the real Validate Copy node',
     validateOut(CLEAN).valid === true);
-  check('A2: dropping the website link fails the real node',
+  // F1: REPLACES 'A2: a caption carrying both links passes the real Validate
+  // Copy node' and the two dropped-link checks — the same rule, inverted,
+  // because the links moved out of the caption.
+  check('F1: a caption carrying both links now FAILS the real node',
     validateOut(Object.assign({}, CLEAN,
-      { caption: filler + NLW + LINK_PLAY })).valid === false);
-  check('A2: dropping the Play Store link fails the real node',
-    validateOut(Object.assign({}, CLEAN, { caption: filler + NLW + LINK_WEB })).valid === false);
-  check('A2: the rejection reason names the missing link so the retry can fix it',
-    validateOut(Object.assign({}, CLEAN, { caption: filler + NLW + LINK_WEB })).reasons
-      .some(r => r.includes(LINK_PLAY)));
-  check('A2: 150 words of prose plus both links still passes the real node (the band was raised for them)',
-    validateOut(Object.assign({}, CLEAN, { caption: Array.from({ length: 150 }, () => 'salamat').join(' ')
-      + NLW + LINK_WEB + NLW + LINK_PLAY })).valid === true);
+      { caption: CLEAN.caption + NLW + NLW + LINK_WEB + NLW + LINK_PLAY })).valid === false);
+  check('F1: a caption repeating the cta fails the real node',
+    validateOut(Object.assign({}, CLEAN,
+      { caption: CLEAN.caption + ' ' + CLEAN.cta })).valid === false);
+  check('F1: a one-paragraph wall fails the real node (the published defect)',
+    validateOut(Object.assign({}, CLEAN, { caption: filler })).valid === false);
+  // F1: REPLACES 'A2: 150 words of prose plus both links still passes the real
+  // node (the band was raised for them)'. The band is back to the prose band.
+  check('F1: 150 words of prose passes the real node',
+    validateOut(Object.assign({}, CLEAN,
+      { caption: prose(6) + NLW + NLW + prose(144) })).valid === true);
+  check('F1: 151 words of prose fails the real node',
+    validateOut(Object.assign({}, CLEAN,
+      { caption: prose(6) + NLW + NLW + prose(145) })).valid === false);
+  check('F1: the real node still checks the links, on the assembled message, and is satisfied',
+    validateOut(CLEAN).reasons.every(r => !/missing the required/i.test(r)));
 
   // A4: an exact repeat of an already-published caption is rejected.
   const repeatRows = [S.QUEUE_HEADERS, SHEET_ROWS[1].slice(), SHEET_ROWS[2].slice()];
@@ -1924,7 +2185,7 @@ section('workflow', 'Main workflow structure', () => {
     repeatOut.reasons.some(r => /already been published/i.test(r) && /change the angle/i.test(r)));
   check('A4: the same topic with different words still passes (near-duplicates are allowed by design)',
     validateOut(Object.assign({}, CLEAN,
-      { caption: 'Iba na po ito. ' + filler + NLW + LINK_WEB + NLW + LINK_PLAY }),
+      { caption: 'Iba na po ito. ' + prose(5) + NLW + NLW + prose(94) }),
     pickRepeat).valid === true);
 
   // A3: every image prompt carries the bottom-left lockup and the site url.
@@ -1955,9 +2216,18 @@ section('workflow', 'Main workflow structure', () => {
       && /playStoreUrl:\s*cfg\.playStoreUrl/.test(P('Validate Copy')));
   check('A4: Validate Copy hands the validator the already-published posts',
     /priorPosts:\s*q\.prior_posts/.test(P('Validate Copy')));
-  check('A2: Build Copy Prompt hands the prompt builder both Config urls',
-    /websiteUrl:\s*cfg\.websiteUrl/.test(P('Build Copy Prompt'))
-      && /playStoreUrl:\s*cfg\.playStoreUrl/.test(P('Build Copy Prompt')));
+  // F1: REPLACES 'A2: Build Copy Prompt hands the prompt builder both Config
+  // urls'. The copy prompt no longer receives them — the model writes prose
+  // only and buildPostMessage appends the links — and a url named in the
+  // prompt is a url the model can copy into the caption, which the validator
+  // now rejects. The urls did not become unmanaged: Collect Photos reads the
+  // same two Config values (asserted above), so there is still exactly one
+  // source of truth for them.
+  check('F1: Build Copy Prompt no longer passes any url into the copy prompt',
+    !/websiteUrl/.test(P('Build Copy Prompt')) && !/playStoreUrl/.test(P('Build Copy Prompt')));
+  check('F1: no url reaches the generated copy prompt at all',
+    !/fishpin\.app/.test(byName['Build Copy Prompt'].parameters.jsCode
+      .split('const body =')[1] || ''));
   check('A3: Build Image Prompt hands the image builder the Config website url',
     /websiteUrl:\s*cfg\.websiteUrl/.test(P('Build Image Prompt')));
   check('normalizeDecision is inlined', /function normalizeDecision/.test(codeBodies));
@@ -2277,13 +2547,14 @@ section('insights', 'Insights workflow structure', () => {
 // ---------------------------------------------------------------- live
 if (LIVE) {
   const B = L('brand.js');
-  const { validateCopy } = L('copy-rules.js');
+  const { validateCopy, buildPostMessage, captionParagraphs, sentenceCount } = L('copy-rules.js');
   const KEY = process.env.GEMINI_API_KEY || '';
   const MODEL = process.env.COPY_MODEL || 'gemini-2.5-flash';
   // The same two Config values the workflow passes in (build.js Config
-  // websiteUrl / playStoreUrl). The live test must build the prompt and run
-  // the validator exactly as production does, or it proves nothing about the
-  // copy the pipeline will actually generate.
+  // websiteUrl / playStoreUrl). The live test must run the validator and
+  // compose the message exactly as production does, or it proves nothing about
+  // the copy the pipeline will actually generate. F1: they are no longer given
+  // to the prompt — buildPostMessage appends them after the model is done.
   const LIVE_LINKS = {
     websiteUrl: 'www.fishpin.app',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
@@ -2310,7 +2581,7 @@ if (LIVE) {
         'https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent',
         { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: B.buildSystemPrompt(LIVE_LINKS) }] },
+            system_instruction: { parts: [{ text: B.buildSystemPrompt() }] },
             contents: [{ role: 'user', parts: [{ text: B.buildUserPrompt(row, '', '', row.prior_posts) }] }],
             generationConfig: { temperature: 0.8, responseMimeType: 'application/json', responseSchema: B.COPY_SCHEMA },
           }) }).then(r => r.json());
@@ -2324,9 +2595,27 @@ if (LIVE) {
         bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, priorPosts: row.prior_posts,
       }, LIVE_LINKS));
       check(row.pillar + ': passes the validator unmodified', v.valid);
-      check(row.pillar + ': the caption carries BOTH required links',
-        String(copy.caption || '').includes(LIVE_LINKS.websiteUrl)
-          && String(copy.caption || '').includes(LIVE_LINKS.playStoreUrl));
+      // F1: REPLACES ': the caption carries BOTH required links'. The caption
+      // is prose only now; the links belong to the assembled message.
+      const liveMsg = buildPostMessage(copy, LIVE_LINKS);
+      check(row.pillar + ': the caption is prose only (no link, no hashtag, no cta)',
+        !/https?:\/\/|www\./.test(String(copy.caption || ''))
+          && !/(^|\s)#[A-Za-z0-9_]/.test(String(copy.caption || ''))
+          && String(copy.caption || '').toLowerCase()
+            .indexOf(String(copy.cta || '').trim().toLowerCase()) === -1);
+      const liveParas = captionParagraphs(copy.caption);
+      check(row.pillar + ': the caption is 2 to 4 paragraphs of at most 3 sentences',
+        liveParas.length >= 2 && liveParas.length <= 4
+          && liveParas.every(pp => sentenceCount(pp) <= 3));
+      check(row.pillar + ': the hook is the shortest paragraph',
+        liveParas.length > 1 && liveParas.every((pp, i) => i === 0 || pp.length >= liveParas[0].length));
+      check(row.pillar + ': the ASSEMBLED message carries both links, exactly once each',
+        liveMsg.split(LIVE_LINKS.websiteUrl).length === 2
+          && liveMsg.split(LIVE_LINKS.playStoreUrl).length === 2);
+      check(row.pillar + ': the call to action appears exactly once in the assembled message',
+        liveMsg.split(String(copy.cta || '').trim()).length === 2);
+      if (copy.caption) console.log('     caption shape: ' + liveParas.length + ' paragraphs, '
+        + liveParas.map(pp => sentenceCount(pp)).join('/') + ' sentences');
       if (!v.valid) console.log('     reasons: ' + v.reasons.join(' | '));
       check(row.pillar + ': returns 1 to 5 image prompts',
         Array.isArray(copy.image_prompts) && copy.image_prompts.length >= 1 && copy.image_prompts.length <= 5);

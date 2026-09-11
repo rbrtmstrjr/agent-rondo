@@ -24,6 +24,20 @@ const expected = jobs.length;
 // no-.first()-on-a-fan-out-node rule holds without exception.
 const copy = (jobs[0] && jobs[0].json.copy) || {};
 
+// THE ONE PLACE the published post is composed. buildPostMessage (inlined from
+// lib/copy-rules.js) puts the prose caption, the call to action, both Config
+// links and the hashtags together in one fixed order, and the SAME string is
+// read by Publish Post (the Facebook /feed body) and by Post Preview (what the
+// reviewer sees in Slack) — so the reviewer approves character-for-character
+// what gets published. Those two nodes used to build their own message in
+// their own expressions, and the copy prompt asked the model for the CTA and
+// the links as well, which is why the first live post carried the CTA twice.
+const cfg = $('Config').first().json;
+const message = buildPostMessage(copy, {
+  websiteUrl: cfg.websiteUrl,
+  playStoreUrl: cfg.playStoreUrl,
+});
+
 const media = [];
 const urls = [];
 const problems = [];
@@ -65,6 +79,8 @@ return [{ json: {
   ok,
   reason: problems.join(' '),
   copy,
+  // The exact text that will be published. Never rebuild it downstream.
+  message,
   // A JSON array string, exactly what the /feed edge's attached_media expects.
   // One entry is a valid album body too, so a single-image post takes the same
   // path as a five-image one.

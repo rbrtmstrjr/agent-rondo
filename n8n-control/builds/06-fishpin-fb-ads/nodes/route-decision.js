@@ -23,6 +23,10 @@ return [{ json: {
   row_id: q.row.id, pillar: q.row.pillar,
   attempt: q.attempt, copy_retry: q.copy_retry,
   copy: p.copy,
+  // The exact composed message Collect Photos built and the reviewer just saw
+  // in the Slack preview. Publish Post sends THIS, verbatim: it is never
+  // rebuilt from copy.caption/cta/hashtags in a node expression again.
+  message: p.message,
   image_url: p.image_url,
   urls: p.urls,
   image_count: p.image_count,

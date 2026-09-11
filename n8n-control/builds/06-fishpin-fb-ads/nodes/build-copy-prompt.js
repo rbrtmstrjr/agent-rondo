@@ -2,15 +2,14 @@
 const cfg = $('Config').first().json;
 const q = $('Pick Row').first().json;
 
-// The two links every caption must carry come from Config, not from brand.js,
-// so changing a url is a Config edit. The SAME two values are handed to
-// Validate Copy, which rejects a caption missing either one: prompt and
-// validator read one source, so they cannot drift apart.
+// No urls are passed into the copy prompt any more. The model writes PROSE
+// ONLY; the call to action, both Config links and the hashtags are appended
+// deterministically by buildPostMessage in Collect Photos, which is what both
+// Publish Post and Post Preview read. Handing the urls to the model was how
+// the CTA came out twice on the first live post, and a url named in the prompt
+// is a url the model may copy into the caption, which Validate Copy rejects.
 const body = {
-  system_instruction: { parts: [{ text: buildSystemPrompt({
-    websiteUrl: cfg.websiteUrl,
-    playStoreUrl: cfg.playStoreUrl,
-  }) }] },
+  system_instruction: { parts: [{ text: buildSystemPrompt() }] },
   // prior_posts: every already-published topic and caption (Pick Row collects
   // them from the Queue tab), so the model can cover a subject again but is
   // told to take a different angle and never repeat a hook or a sentence.

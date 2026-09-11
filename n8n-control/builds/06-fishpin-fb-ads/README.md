@@ -44,7 +44,9 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |           
          Generate Copy        Gemini gemini-2.5-flash + responseSchema  [retry 3x]  |
                               |                                                     |
          Validate Copy        em dash / banned words / compliance / fields / length / price
-                              / BOTH links present / not an exact repeat of a published post
+                              / caption is PROSE ONLY (no cta, no link, no hashtag) / caption
+                              is 2 to 4 paragraphs of at most 3 sentences / both links present
+                              in the ASSEMBLED message / not an exact repeat of a published post
                               |                                                     |
          Copy OK? --no--> Loop Guard (machine retry, budget 1) --> re-invoke, else needs_manual
               | yes                                                                 |
@@ -75,7 +77,13 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |           
          Log Attempt  (Sheets -> Attempts tab; image_url holds every url joined
                        by ' | ', plus the observed aspect ratio)
               |
-         Post Preview (all N images + the count + the copy)
+         Compose Message      (in Collect Photos) buildPostMessage puts the post together
+                              ONCE: caption, blank line, cta, blank line, both links on
+                              consecutive lines, blank line, hashtags. Publish Post and
+                              Post Preview both send THAT string, so the reviewer approves
+                              character-for-character what goes on the Page.
+              |
+         Post Preview (all N images + the count + the composed message)
               |
          Slack Review   sendAndWait, approvalType: double, 6h timeout
                         TWO NATIVE BUTTONS, IN CHANNEL: Approve | Decline
@@ -83,7 +91,7 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |           
          Route Decision   (routeApproval)
               |-- approve  (approved:true)  --> Publish Post
               |                 POST /{pageId}/feed + attached_media (JSON array
-              |                 of every media_fbid) + message = ONE album post
+              |                 of every media_fbid) + the composed message = ONE album post
               |                   --> Write Back --> Write Back Row (Queue row)
               |                        --> Row Written? --yes--> Slack success
               |                                         \--no--> Slack "live but unrecorded"
@@ -147,6 +155,42 @@ remove; a cleaner future option is a second `sendAndWait` shown only after a dec
 
 ---
 
+## How a post is composed (added 2026-09-11)
+
+The model writes **prose only**. Everything else is added in code, by one pure function,
+`buildPostMessage(copy, cfg)` in `lib/copy-rules.js`, which `Collect Photos` calls once:
+
+```
+{caption}            <- 2 to 4 paragraphs, blank line between, 1 to 3 sentences each
+
+{cta}
+
+{websiteUrl}
+{playStoreUrl}       <- consecutive lines, no blank line between them
+
+{hashtags joined by a space}
+```
+
+`Publish Post` sends `$json.message` and `Post Preview` shows
+`$('Collect Photos').first().json.message` — the **same** string — so the reviewer approves
+character-for-character what lands on the Page.
+
+**Why.** The first real published post came out as one unbroken ~110-word block, then the
+CTA, then the links, then the CTA **again**, then hashtags. Two separate faults: the copy
+prompt told the model to end the caption with the CTA and both links, while `Publish Post`
+independently appended the CTA and the hashtags; and nothing asked for paragraphs. Both are
+now structural impossibilities rather than instructions — `validateCopy` rejects a caption
+containing a link, a hashtag or the CTA, rejects anything that is not 2 to 4 blank-line
+separated paragraphs of at most 3 sentences each, and the "both links must be present" rule
+moved onto the **assembled message** (it was not dropped: a post with no links gives the
+reader nothing to act on).
+
+The `caption` column on the `Queue` tab still stores what the model wrote — the prose. That
+is deliberate: it is what the no-exact-repeat check compares new drafts against, so both
+sides of that comparison must be the same kind of text.
+
+---
+
 ## Production-readiness (Definition of Done)
 
 Checked against the repo's Definition of Done in the root `CLAUDE.md`.
@@ -204,7 +248,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 - ✅ **Demo data** — `queue-seed.csv`, 10 rows covering all 7 content pillars for a real
   (if fictional-status) product, FishPin, including one row deliberately blocked because
   it would require a fabricated testimonial.
-- **Tested end-to-end** — automated: `node test.js` is 802/802 green (every Code-node
+- **Tested end-to-end** — automated: `node test.js` is 876/876 green (every Code-node
   glue file's logic, both workflow assemblies, and the validator's full rule set,
   exercised offline with no network), and `node test.js --live` proves real Gemini output
   passes the unmodified validator once a `GEMINI_API_KEY` is supplied. What is **not**
@@ -221,17 +265,17 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 |---|---|
 | `build.js` | Assembles `fishpin-fb-ads.workflow.json` (main pipeline). |
 | `build-insights.js` | Assembles `fishpin-insights.workflow.json` (24h scanner). |
-| `lib/brand.js` | Brand bible: product facts, banned words, competitors, the 7 pillars, the copy system/user prompt builders, `COPY_SCHEMA` (incl. the 1-to-5 `image_prompts` array and the rules for choosing the count). `buildSystemPrompt({websiteUrl, playStoreUrl})` takes the two required links from Config; `buildUserPrompt(row, note, rejectedHeadline, priorPosts)` lists the last `PRIOR_POSTS_LIMIT` (15) published posts back to the model and demands a different angle. |
-| `lib/copy-rules.js` | `validateCopy` — the deterministic trust gate on generated copy. |
+| `lib/brand.js` | Brand bible: product facts, banned words, competitors, the 7 pillars, the copy system/user prompt builders, `COPY_SCHEMA` (incl. the 1-to-5 `image_prompts` array and the rules for choosing the count). `buildSystemPrompt()` takes no urls: the caption is prose only and the links are appended in code (see `buildPostMessage`), so naming a url in the prompt would only invite the model to write one into the caption. It carries the CAPTION SHAPE rule (2 to 4 paragraphs, 1 to 3 sentences each, hook shortest) and a delimited `CAPTION_EXAMPLE` the model copies the shape of. `buildUserPrompt(row, note, rejectedHeadline, priorPosts)` lists the last `PRIOR_POSTS_LIMIT` (15) published posts back to the model and demands a different angle. |
+| `lib/copy-rules.js` | `validateCopy` — the deterministic trust gate on generated copy — and **`buildPostMessage(copy, cfg)`, the one place a published post is assembled** (caption / cta / both links / hashtags, in that order). Also `captionParagraphs` and `sentenceCount`, the shape helpers the paragraph rules use. |
 | `lib/image-rules.js` | `PALETTE` (the FishPin brand colours by name and hex), `STYLE_SUFFIX` (the colour grade), `logoInstruction(websiteUrl)` (the bottom-left brand lockup), `promptsOf`, per-image `buildImagePrompt`, `validateImage` (bytes/MIME/dimensions). |
 | `lib/flow-rules.js` | `normalizeDecision`, `routeApproval` (the Slack gate's approve/decline/timeout mapper), `DECLINE_NOTE`, `extractReason`, `loopGuard` — the approval routing and the two retry budgets. |
 | `lib/sheet-rules.js` | `QUEUE_HEADERS`, `ATTEMPT_HEADERS`, row selection, Attempts/Queue row shaping, Graph metric mapping. |
-| `nodes/*.js` | The 13 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). `collect-photos.js` is the join that turns the per-image fan-out back into one album. |
+| `nodes/*.js` | The 13 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). `collect-photos.js` is the join that turns the per-image fan-out back into one album, and — because it is the single-item node BOTH `Publish Post` and `Post Preview` read — it is also where `buildPostMessage` composes the published message, once. |
 | `fishpin-fb-ads.workflow.json` / `fishpin-insights.workflow.json` | The deployable, generated workflow JSON — do not hand-edit; edit the builder and rebuild. |
 | `queue-seed.csv` | 10 starter rows covering all 7 pillars, ready to import into the Queue tab. Unchanged by the album work: the `Queue` tab is still 16 columns and its one `image_url` column now holds every image url joined by ` \| `. |
 | `assets/BRAND.md` | The FishPin colour palette and personality, lifted from the app's own brand spec. The source of truth for `STYLE_SUFFIX`. |
 | `assets/logo.png` | The real FishPin logo (7.5 KB). `build.js` base64s it into the Build Image Prompt Code node at build time and it is sent to Gemini as an inline reference image. |
-| `test.js` | Offline unit tests (802 checks) + the `--live` Gemini copy-generation test. |
+| `test.js` | Offline unit tests (876 checks) + the `--live` Gemini copy-generation test. |
 
 ---
 
@@ -351,8 +395,8 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `reviewTimeoutHours` | How long `Slack Review`'s two-button `sendAndWait` waits before the row goes `expired`. A timeout consumes no human attempt. | `6` |
 | `reviewChannel` | Slack channel id the approval form is posted to. | `C0BDSV5RB5G` |
 | `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0BDSV5RB5G` |
-| `websiteUrl` | FishPin's website. Required in **every** caption, and set under the brand lockup in every image. | `www.fishpin.app` |
-| `playStoreUrl` | FishPin's Play Store listing. Required in **every** caption. (Corrected 2026-09-11: the package id was `app.fishpin`, which is not the app.) | `https://play.google.com/store/apps/details?id=com.fishpin.app` |
+| `websiteUrl` | FishPin's website. Appended to **every** post by `buildPostMessage` (never written by the model), and set under the brand lockup in every image. | `www.fishpin.app` |
+| `playStoreUrl` | FishPin's Play Store listing. Appended to **every** post, on the line under `websiteUrl`. (Corrected 2026-09-11: the package id was `app.fishpin`, which is not the app.) | `https://play.google.com/store/apps/details?id=com.fishpin.app` |
 | `selfWebhookUrl` | This workflow's own webhook, used by `Loop Guard`'s re-invocation. | `https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad` |
 | `loopSecret` | Shared secret for the loop webhook. `Loop Guard` sends it; `Pick Row` refuses any webhook call without it. **Must be replaced before the loop works at all** — every webhook call is refused while it reads `FILL_IN_*`. | `FILL_IN_LOOP_SECRET` |
 
@@ -375,7 +419,7 @@ string, which `Notify Queue Empty` prints to the ops channel.
 node build.js
 node build-insights.js
 
-# Offline suite — 802 checks, no network, no credentials needed
+# Offline suite — 876 checks, no network, no credentials needed
 node test.js
 
 # One section only, e.g. just the copy-rules checks
@@ -388,9 +432,9 @@ node test.js --only=copy
 GEMINI_API_KEY=... node test.js --live
 ```
 
-Latest offline run: **802/802 passed** (was 682/682 before the 2026-09-11 owner
-adjustments: the spoken-Filipino voice, the two required caption links, the bottom-left
-brand lockup and the no-exact-repeat rule). `node test.js --live` with no key: offline
+Latest offline run: **876/876 passed** (802/802 before the 2026-09-11 caption-format fix;
+682/682 before the owner adjustments that preceded it: the spoken-Filipino voice, the two
+required links, the bottom-left brand lockup and the no-exact-repeat rule). `node test.js --live` with no key: offline
 sections still all pass, then the live section prints the skip message and exits 0.
 
 ---
@@ -429,6 +473,16 @@ Being honest about what's not finished, rather than hiding it:
   the drawing entirely. If even the mark is redrawn, the remaining fallback is a deterministic
   compositing step this pipeline does not have today (spec section 1 explicitly ruled out a
   separate overlay step) — a real change of scope, not a toggle.
+- **The caption-shape rules are structural, not stylistic.** `validateCopy` counts
+  blank-line-separated paragraphs and counts sentences by splitting on `.`, `!`, `?` and
+  `…`. That is deliberately crude: it can be fooled by an abbreviation with a full stop
+  ("Dr. Cruz" reads as two sentences), and it cannot tell a well-written three-sentence
+  paragraph from a badly-written one. What it does guarantee is that a wall of text never
+  reaches the Page again, and that the hook stands alone above Facebook's "See more" fold.
+  Whether the paragraphs are any *good* is still the reviewer's call at the Slack gate.
+  The prompt additionally asks for the first paragraph to be the SHORTEST; that one is an
+  instruction with a worked example, not a validator rule, because rejecting a draft for a
+  hook two characters longer than paragraph two would burn regeneration attempts on nothing.
 - **The no-repeat rule is exact-match only, on purpose.** `Pick Row` collects the topic and
   the published caption of every `posted`/`measured` Queue row, the prompt lists the most
   recent 15 back to the model as "already published, take a different angle", and
@@ -552,12 +606,21 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
     limitations.
 11b. Read the caption out loud. It must sound like one fisherman talking to another (particles
     like `na`, `lang`, `kasi`, `yung`, short sentences, an opening question or fragment), not
-    like translated marketing — and it must end with **both** links, `www.fishpin.app` and the
-    `com.fishpin.app` Play Store url. A caption missing either link never reaches Slack:
-    `Validate Copy` rejects it and the machine retry regenerates.
+    like translated marketing.
+11c. **Check the shape of the Slack preview, because it is byte-for-byte what will be
+    posted.** It must read: 2 to 4 short paragraphs with a blank line between them and the
+    shortest one first, then a blank line, then the call to action ONCE, then a blank line,
+    then `www.fishpin.app` and the `com.fishpin.app` Play Store url on consecutive lines,
+    then a blank line, then the hashtags. If the call to action appears twice, or a link or a
+    hashtag shows up inside the prose, something has reintroduced message assembly outside
+    `buildPostMessage` — that combination is exactly the defect this build fixed on
+    2026-09-11. A caption that breaks any of those rules never reaches Slack in the first
+    place: `Validate Copy` rejects it and the machine retry regenerates.
 12. Run one end-to-end run that gets **approved** against the real FishPin Page, and check
     the post on the Page itself: it must be ONE post carrying all the images, headline
-    legible on the first, caption/CTA/hashtags present, no placeholder text. Then check the
+    legible on the first, and the post text must match the Slack preview character for
+    character — paragraphs intact, the CTA once, both links, hashtags last, no placeholder
+    text. Then check the
     `Attempts` tab's `aspect` column and note whether the model honoured the requested
     ratio (see Known limitations), and that `image_url` holds every url joined by ` | `.
 13. Run the Insights workflow (`fishpin-insights.workflow.json`) manually against that

@@ -75,27 +75,72 @@ const COPY_SCHEMA = {
   required: ['headline', 'subhead', 'caption', 'cta', 'hashtags', 'image_prompts', 'alt_text'],
 };
 
-// The two links every caption must carry. They are NOT hardcoded here: they
-// arrive from the workflow's Config node (Config.websiteUrl,
-// Config.playStoreUrl) through the glue, exactly as bannedWords/competitors
-// reach validateCopy through opts. A URL change is then a Config edit, not a
-// lib edit, and the validator and the prompt can never drift apart because
-// both read the same two Config values.
-function buildLinkRule(websiteUrl, playStoreUrl) {
-  const links = [String(websiteUrl || '').trim(), String(playStoreUrl || '').trim()].filter(Boolean);
-  if (!links.length) return '';
+// What the pipeline appends to the caption AFTER the model is done.
+//
+// The model used to be told to end the caption with the call to action and
+// both links, while `Publish Post` ALSO appended the call to action and the
+// hashtags — so the first real published post carried the CTA twice, then the
+// links, then the CTA again. The fix is that the model now writes PROSE ONLY
+// and `buildPostMessage` (lib/copy-rules.js) composes the rest in code, the
+// same way for every post.
+//
+// Deliberately no urls in this text. The two links are Config values and they
+// are added deterministically after the caption; printing them here, even
+// under a "do not write these" instruction, is an invitation for the model to
+// copy them into the prose, which `validateCopy` would then reject.
+function buildAssemblyRule() {
   return [
-    'LINKS, required in EVERY caption. The caption must contain both of these, copied exactly, '
-      + 'character for character:',
-  ].concat(links.map((l) => '- ' + l)).concat([
-    'Put them at the END of the caption, after the call to action, each on its own line, as plain '
-      + 'links with no label wrapped around them. Never in the middle of a sentence, never '
-      + 'shortened, never only one of the two. A caption missing either link is rejected.',
-  ]).join('\n');
+    'THE CAPTION IS BODY TEXT ONLY. After you are done, the pipeline appends, automatically '
+      + 'and in this exact order: the call to action on its own line, then the website link '
+      + 'and the Play Store link on their own lines, then the hashtags. You must therefore '
+      + 'NOT write any of them into the caption:',
+    '- No call to action in the caption. Write it in the cta field only. A caption that '
+      + 'repeats the cta is rejected.',
+    '- No link, no url, no "www", no "http" anywhere in the caption. The links are added for '
+      + 'you. A caption containing a link is rejected.',
+    '- No hashtags in the caption. Write them in the hashtags field only. A caption '
+      + 'containing a # tag is rejected.',
+    'The caption ends on its last sentence of prose. Nothing else.',
+  ].join('\n');
 }
 
-function buildSystemPrompt(opts) {
-  const o = opts || {};
+// The caption's SHAPE. The first real post went out as one unbroken block of
+// roughly 110 words, which on a phone is a wall nobody reads. The example is
+// carried in the prompt on purpose: a model copies a shape far more reliably
+// than it follows a description of one. It is delimited so the test suite can
+// extract it and check the example itself obeys every rule stated above it.
+const CAPTION_EXAMPLE = [
+  'Nakalimutan mo na ba kung saan yung magandang tagpuan mo noong isang linggo?',
+  '',
+  'Nangyayari po yan sa lahat. Kaya may pin sa app, isang pindot lang habang nasa laot ka pa, '
+    + 'naka-save na ang eksaktong puwesto.',
+  '',
+  'Pagbalik mo, diretso ka na. Hindi na kailangan ng hula, hindi ka na paikot-ikot sa dagat.',
+].join('\n');
+
+function buildCaptionShapeRule() {
+  return [
+    'CAPTION SHAPE, follow this exactly.',
+    '- Write the caption as 2 to 4 short paragraphs, with a BLANK LINE between paragraphs.',
+    '- Each paragraph is 1 to 3 sentences. Never more.',
+    '- The FIRST paragraph is the hook and must be the SHORTEST, ideally one or two lines. '
+      + 'Facebook hides everything after the first few lines behind "See more", so the hook '
+      + 'has to land on its own before anyone taps.',
+    '- Short sentences inside the paragraphs too. A paragraph that runs past three lines on a '
+      + 'phone is already too long.',
+    'EXAMPLE CAPTION, copy this shape (it is short only to show the shape, yours must be the '
+      + 'full length asked for):',
+    '<<<EXAMPLE',
+    CAPTION_EXAMPLE,
+    'EXAMPLE>>>',
+  ].join('\n');
+}
+
+// The two Config urls are no longer a parameter of this prompt: the links are
+// appended to the published message by buildPostMessage, not written by the
+// model. The signature still tolerates an argument so the glue (and the live
+// test) can keep passing Config through without breaking.
+function buildSystemPrompt() {
   return [
     'You are a direct-response social media marketer writing organic Facebook Page posts for ' + PRODUCT.name + '.',
     '',
@@ -170,7 +215,9 @@ function buildSystemPrompt(opts) {
     '- No comparative claim naming a competitor brand. Compare to "a GPS device" generically.',
     '- No misleading before-and-after and no fake urgency.',
     '',
-    buildLinkRule(o.websiteUrl, o.playStoreUrl),
+    buildAssemblyRule(),
+    '',
+    buildCaptionShapeRule(),
     '',
     'IMAGE PROMPT RULES. image_prompts is an ARRAY of English prompts for an image model. '
       + 'Each entry describes ONE image, and the whole array is published as a single Facebook post.',
@@ -249,10 +296,10 @@ function buildUserPrompt(row, revisionNote, rejectedHeadline, priorPosts) {
   parts.push(
     '',
     'Length rules: headline at most 7 words. subhead at most 12 words. caption 80 to 150 words '
-      + 'of prose, and its first line is the hook. The two required links go after that prose, on '
-      + 'their own lines at the end; each counts as one more word, so the whole caption, links '
-      + 'included, must never exceed 152 words. 3 to 5 hashtags mixing Tagalog and English, no '
-      + 'spam tags.'
+      + 'of prose, written as 2 to 4 paragraphs separated by a blank line, each paragraph 1 to 3 '
+      + 'sentences, the first paragraph the shortest because it is the hook. Nothing else goes in '
+      + 'the caption: no call to action, no link, no hashtags, those are added automatically '
+      + 'after it. 3 to 5 hashtags mixing Tagalog and English, no spam tags.'
   );
   if (revisionNote) {
     parts.push(
@@ -268,6 +315,7 @@ function buildUserPrompt(row, revisionNote, rejectedHeadline, priorPosts) {
 if (typeof module !== 'undefined') {
   module.exports = {
     PRODUCT, AUDIENCE, BANNED_WORDS, COMPETITORS, PILLARS, COPY_SCHEMA,
-    PRIOR_POSTS_LIMIT, buildLinkRule, buildPriorPostsRule, buildSystemPrompt, buildUserPrompt,
+    PRIOR_POSTS_LIMIT, CAPTION_EXAMPLE, buildAssemblyRule, buildCaptionShapeRule,
+    buildPriorPostsRule, buildSystemPrompt, buildUserPrompt,
   };
 }
