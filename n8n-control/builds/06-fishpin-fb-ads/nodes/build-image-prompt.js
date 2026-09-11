@@ -36,7 +36,10 @@ const copy = Object.assign({}, v.copy, { image_prompts: prompts });
 const aspectRequested = aspectFor(q.row.pillar);
 
 return prompts.map((_, i) => {
-  let prompt = buildImagePrompt(copy, q.row.pillar, i, prompts.length);
+  // websiteUrl from Config: it is set under the brand lockup in the bottom left
+  // corner of every image, and it is the same url the caption must carry.
+  let prompt = buildImagePrompt(copy, q.row.pillar, i, prompts.length,
+    { websiteUrl: cfg.websiteUrl });
   if (q.keep_copy && q.revision_note) prompt += '\nReviewer note on the previous image: ' + q.revision_note;
 
   return { json: {

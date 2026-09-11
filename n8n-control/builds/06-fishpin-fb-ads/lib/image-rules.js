@@ -36,12 +36,48 @@ const STYLE_SUFFIX = 'documentary photography of Filipino fishermen and their ba
 // builds/brand-photoshoot-variations). This instruction is what tells the model
 // what that attachment IS and what to do with it -- without it the model treats
 // a leading image as a style reference and repaints the whole scene from it.
-const LOGO_INSTRUCTION = 'The attached PNG is the FishPin logo, a blue rounded square with a white '
-  + 'fin-and-waves mark. Composite that exact logo image into the image, unaltered: small, about '
-  + '8 to 10 percent of the image width, in the bottom right corner, with a clear margin from both '
-  + 'edges and placed over a calm part of the picture so it stays legible. Reproduce it pixel for '
-  + 'pixel as supplied. Do not invent, redraw, recreate, redesign, recolour, rotate, crop or add '
-  + 'text to the logo, and do not use it as a style reference for the rest of the picture.';
+// REVISED 2026-09-11 (owner): the mark alone became a LOCKUP, and it moved to
+// the bottom LEFT. The lockup is the mark, then the wordmark "FishPin", with
+// the website set smaller directly beneath it -- the same composition as the
+// web app's own Logo component (fishpin-web/components/ui/Logo.tsx: the icon,
+// then "Fish" in medium and "Pin" in extra-bold, on one line).
+//
+// There is NO wordmark asset on disk: the web component composes icon + live
+// text in code, so the model has to draw the words itself. The mark is still
+// reproduced from the attached reference PNG (that part is proven to work);
+// only the wordmark and the url are newly drawn text. The model has already
+// rendered a flawless Tagalog headline into these images, so asking it for two
+// short Latin-script strings is the same job it is already doing -- but it is
+// still generation, not compositing, so a mangled wordmark is possible and the
+// human approval gate is what catches it (see README, Known limitations).
+//
+// The website url arrives as an argument, from Config.websiteUrl, so it is
+// never hardcoded here and never drifts from the url the caption must carry.
+function logoInstruction(websiteUrl) {
+  const site = String(websiteUrl || '').trim();
+  return [
+    'BRAND LOCKUP. The attached PNG is the FishPin logo mark, a blue rounded square with a white '
+      + 'fin-and-waves mark. Composite it into the BOTTOM LEFT corner of the picture, unaltered, '
+      + 'with a clear margin from both edges and over a calm part of the picture so it stays legible.',
+    'The lockup reads left to right on one line: first the attached mark, reproduced pixel for pixel '
+      + 'exactly as supplied, about 7 to 9 percent of the image width; then a small gap; then the '
+      + 'wordmark "FishPin" as newly drawn text in a clean bold sans-serif, optically the same height '
+      + 'as the mark and vertically centred against it. Spell it FishPin: one word, capital F, '
+      + 'capital P, no space, no other lettering.',
+    site
+      ? 'Directly beneath the lockup, left aligned with the mark, set the website "' + site + '" in '
+        + 'the same sans-serif at a noticeably smaller size, roughly half the height of the wordmark. '
+        + 'Spell it character for character, nothing added and nothing dropped.'
+      : '',
+    'Keep the whole lockup small and unobtrusive: a signature in the corner, never a banner. It must '
+      + 'not compete with the headline, must not sit on the main subject, and must not be enlarged to '
+      + 'fill the corner.',
+    'Only the wordmark and the website line are newly drawn text. The mark itself comes from the '
+      + 'attached image and stays unaltered in shape and colour: do not invent, redraw, recreate, '
+      + 'redesign, recolour, rotate or crop it, and do not use it as a style reference for the rest '
+      + 'of the picture.',
+  ].filter(Boolean).join(' ');
+}
 
 const NEGATIVES = [
   // 'no logo' used to be here. It is gone because the brand logo is now
@@ -76,8 +112,9 @@ function promptsOf(copy) {
 // a photo essay, and every extra rendered word is another chance for the model
 // to garble Tagalog. So image 1 is the cover and carries the headline exactly
 // as before; images 2..N are explicitly told to carry no text at all.
-function buildImagePrompt(copy, pillar, index, total) {
+function buildImagePrompt(copy, pillar, index, total, opts) {
   const c = copy || {};
+  const o = opts || {};
   const headline = String(c.headline || '').trim();
   const prompts = promptsOf(c);
   const n = Number(total || prompts.length || 1);
@@ -101,18 +138,20 @@ function buildImagePrompt(copy, pillar, index, total) {
       'Render this exact headline text into the reserved negative space, character for character, '
         + 'spelled exactly as written, on one or two lines, in a bold clean sans-serif with high contrast '
         + 'against the background: "' + headline + '"',
-      'Do not add, translate, correct, or invent any other text anywhere in the image.'
+      'Apart from that headline and the brand lockup described below, do not add, translate, '
+        + 'correct, or invent any other text anywhere in the image.'
     );
   } else {
     lines.push(
-      'Render NO text in this image. No headline, no caption, no lettering, no numbers, no signage. '
-        + 'The headline appears on the first image of the set only; this one is photograph only.'
+      'Render NO text in this image except the brand lockup described below. No headline, no '
+        + 'caption, no lettering, no numbers, no signage. The headline appears on the first image '
+        + 'of the set only; this one is photograph plus the corner lockup.'
     );
   }
 
   lines.push(
     '',
-    LOGO_INSTRUCTION,
+    logoInstruction(o.websiteUrl),
     '',
     'Style: ' + STYLE_SUFFIX + '.',
     'Composition: ' + (aspectFor(pillar) === '1:1' ? 'square framing' : 'vertical 4:5 framing') + '.',
@@ -226,6 +265,6 @@ function validateImage(input, opts) {
 if (typeof module !== 'undefined') {
   module.exports = {
     buildImagePrompt, aspectFor, promptsOf, readImageSize, validateImage, compareAspect,
-    STYLE_SUFFIX, NEGATIVES, PALETTE, LOGO_INSTRUCTION,
+    STYLE_SUFFIX, NEGATIVES, PALETTE, logoInstruction,
   };
 }

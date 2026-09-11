@@ -74,9 +74,37 @@ const keepCopy = String(wh.decision || '') === 'image'
   && String(priorCopy.headline || '').trim() !== ''
   && Array.isArray(priorCopy.image_prompts) && priorCopy.image_prompts.length > 0;
 
+// --- what has already been published ---------------------------------------
+// The owner's rule: a topic may come round again, but never with the same
+// wording or the same angle. So every row that actually made it to the Page
+// (posted, and measured once the insights workflow has scored it) hands its
+// topic and its published caption forward as `prior_posts`. Build Copy Prompt
+// lists them back to the model as "already published, take a different angle",
+// and Validate Copy rejects an exact repeat of any of them.
+//
+// Capped at the most recent PRIOR_POSTS_MAX rows: the Queue tab only grows, and
+// an uncapped list would put every caption ever written in front of every
+// generation. Sheet order is publication order (rows are appended as ideas are
+// queued and marked posted in place), so the tail of the filtered list is the
+// most recent. The current row is excluded so a re-entry can never be told it
+// is repeating itself.
+const PRIOR_POSTS_MAX = 15;
+const PUBLISHED_STATUSES = ['posted', 'measured'];
+const priorPosts = rows
+  .filter((r) => PUBLISHED_STATUSES.indexOf(String(r.status || '').trim().toLowerCase()) !== -1)
+  .filter((r) => String(r.id || '') !== String(row.id || ''))
+  .map((r) => ({
+    id: String(r.id || ''),
+    topic: String(r.topic || ''),
+    caption: String(r.caption || ''),
+  }))
+  .filter((r) => r.topic.trim() !== '' || r.caption.trim() !== '')
+  .slice(-PRIOR_POSTS_MAX);
+
 return [{ json: {
   found: true,
   row,
+  prior_posts: priorPosts,
   attempt: Number(wh.attempt || 1),
   copy_retry: Number(wh.copy_retry || 0),
   revision_note: String(wh.revision_note || ''),

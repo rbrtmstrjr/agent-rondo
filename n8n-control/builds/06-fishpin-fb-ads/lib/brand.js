@@ -75,7 +75,27 @@ const COPY_SCHEMA = {
   required: ['headline', 'subhead', 'caption', 'cta', 'hashtags', 'image_prompts', 'alt_text'],
 };
 
-function buildSystemPrompt() {
+// The two links every caption must carry. They are NOT hardcoded here: they
+// arrive from the workflow's Config node (Config.websiteUrl,
+// Config.playStoreUrl) through the glue, exactly as bannedWords/competitors
+// reach validateCopy through opts. A URL change is then a Config edit, not a
+// lib edit, and the validator and the prompt can never drift apart because
+// both read the same two Config values.
+function buildLinkRule(websiteUrl, playStoreUrl) {
+  const links = [String(websiteUrl || '').trim(), String(playStoreUrl || '').trim()].filter(Boolean);
+  if (!links.length) return '';
+  return [
+    'LINKS, required in EVERY caption. The caption must contain both of these, copied exactly, '
+      + 'character for character:',
+  ].concat(links.map((l) => '- ' + l)).concat([
+    'Put them at the END of the caption, after the call to action, each on its own line, as plain '
+      + 'links with no label wrapped around them. Never in the middle of a sentence, never '
+      + 'shortened, never only one of the two. A caption missing either link is rejected.',
+  ]).join('\n');
+}
+
+function buildSystemPrompt(opts) {
+  const o = opts || {};
   return [
     'You are a direct-response social media marketer writing organic Facebook Page posts for ' + PRODUCT.name + '.',
     '',
@@ -102,17 +122,41 @@ function buildSystemPrompt() {
     '',
     'AUDIENCE. ' + AUDIENCE,
     '',
-    'BRAND VOICE.',
+    'BRAND VOICE. You are ONE Filipino fisherman talking to ANOTHER Filipino fisherman. '
+      + 'Not a brand talking to a market. Write the way people actually speak in a coastal '
+      + 'barangay, not the way a brochure is written.',
     '- Speak like a fellow fisherman, not like a tech company. Practical, calm, respectful. Never talk down to them.',
     '- Safety first. Never make a joke out of danger at sea.',
+    '- Use the natural particles that carry real Filipino speech, and use them often: na, pa, '
+      + 'lang, po, kasi, talaga, yung, \'yan, ganun, ayan, oo nga. Contractions are good. '
+      + 'A line without any of these usually reads as translated.',
+    '- Always the everyday word, never the formal one. Say bangka, not sasakyang-dagat. Say laot, '
+      + 'not karagatan. Say huli, not nahuling isda. Say uwian, not destinasyon. Say spot or '
+      + 'tagpuan, not lokasyon. Say aberya, not emerhensiya.',
     '- Short sentences. Simple words. No jargon such as "offline-first", "sync", "geolocation".',
+    '- It is fine, and better, to open with a fragment or a direct question, the way a person opens '
+      + 'a conversation. Not every line needs a subject and a verb.',
     '- Taglish, Tagalog-leaning. Tagalog carries the sentence. English appears only where the English word is what '
       + 'fishermen actually say out loud: GPS, signal, download, app, Play Store, offline, battery, load, screenshot. '
       + 'Do not translate those into formal Tagalog, it will read as stiff and foreign.',
     '- Conversational Tagalog, not textbook Tagalog. "Nawala ang signal?" not "Nawala ba ang inyong senyas?". '
-      + 'Use po and kayo when addressing the reader directly, since the audience skews older and respect matters.',
+      + 'Keep po and kayo when you address the reader directly, since the audience skews older and '
+      + 'respect matters, but never let the politeness make the line stiff. Respectful and relaxed '
+      + 'at the same time, the way you would talk to an older kumpare on the shore.',
+    '- NOTHING may read as translated from English. If a line would never be said out loud on a '
+      + 'bangka, rewrite it until it would.',
     '- No hype, no fake countdowns, no wall of emojis. Maximum 3 emojis per post.',
     '- Never write in all caps except a single word for emphasis.',
+    '',
+    'HOW THAT SOUNDS. Stiff first, natural second. Write the second kind, every line:',
+    '- Stiff: "Ang aming aplikasyon ay gumagana kahit walang koneksyon sa internet."',
+    '  Natural: "Wala kang signal sa laot? Okay lang, gumagana pa rin yung mapa."',
+    '- Stiff: "Mahalagang matukoy ninyo ang inyong kinaroroonan sa karagatan."',
+    '  Natural: "Alam mo pa rin kung nasaan ka, kahit gabi na."',
+    '- Stiff: "Ang nasabing tampok ay makatutulong sa inyong kaligtasan."',
+    '  Natural: "Pag may aberya, mas mabilis po kayong mahanap ng pamilya ninyo."',
+    '- Stiff: "I-download ang aplikasyon upang masubaybayan ang inyong nahuling isda."',
+    '  Natural: "Yung huli mo kahapon, naitala mo ba? Sayang kasi \'yan."',
     '',
     'BANNED WORDS AND PHRASES, never use any of these: ' + BANNED_WORDS.join(', ') + '.',
     '',
@@ -125,6 +169,8 @@ function buildSystemPrompt() {
     '- No health, medical, or fish-safety absolutes. Write "generally considered safe to eat", never "safe to eat".',
     '- No comparative claim naming a competitor brand. Compare to "a GPS device" generically.',
     '- No misleading before-and-after and no fake urgency.',
+    '',
+    buildLinkRule(o.websiteUrl, o.playStoreUrl),
     '',
     'IMAGE PROMPT RULES. image_prompts is an ARRAY of English prompts for an image model. '
       + 'Each entry describes ONE image, and the whole array is published as a single Facebook post.',
@@ -155,7 +201,38 @@ function buildSystemPrompt() {
   ].join('\n');
 }
 
-function buildUserPrompt(row, revisionNote, rejectedHeadline) {
+// How many already-published posts are listed back to the model. The Queue tab
+// grows forever, so without a cap the prompt would grow with it: 200 posted
+// rows would mean ~200 captions (roughly 180 KB) in front of every generation,
+// for no benefit — what matters is not repeating the RECENT angles. 15 is
+// roughly a month of posting at 3 a week, which is as far back as a reader
+// would plausibly remember a hook.
+const PRIOR_POSTS_LIMIT = 15;
+
+// The already-published block. `priorPosts` is [{ topic, caption }, ...] in
+// sheet order (oldest first), collected by nodes/load-queue.js from every
+// Queue row whose status is `posted` or `measured`.
+function buildPriorPostsRule(priorPosts) {
+  const list = (Array.isArray(priorPosts) ? priorPosts : [])
+    .filter((p) => p && (String(p.topic || '').trim() || String(p.caption || '').trim()))
+    .slice(-PRIOR_POSTS_LIMIT);
+  if (!list.length) return '';
+  const lines = ['ALREADY PUBLISHED. These posts are already live on the Page, newest last:'];
+  list.forEach((p, i) => {
+    lines.push((i + 1) + '. Topic: ' + String(p.topic || '(none recorded)').trim());
+    const cap = String(p.caption || '').trim();
+    if (cap) lines.push('   Caption: ' + cap);
+  });
+  lines.push(
+    'You may write about a similar subject again, but this post must take a DIFFERENT ANGLE. '
+      + 'A different opening line, a different situation on the water, a different feature or '
+      + 'moment of the same feature. Never reuse a hook, a headline or a sentence from the list '
+      + 'above, and never write the same caption twice. An exact repeat is rejected automatically.'
+  );
+  return lines.join('\n');
+}
+
+function buildUserPrompt(row, revisionNote, rejectedHeadline, priorPosts) {
   const pillarRule = PILLARS[String(row.pillar || '').toLowerCase()] || '';
   const parts = [
     'Write one Facebook Page post.',
@@ -167,10 +244,15 @@ function buildUserPrompt(row, revisionNote, rejectedHeadline) {
     'Call to action to use: ' + row.cta,
   ];
   if (row.notes) parts.push('Constraints from the owner: ' + row.notes);
+  const priorRule = buildPriorPostsRule(priorPosts);
+  if (priorRule) parts.push('', priorRule);
   parts.push(
     '',
-    'Length rules: headline at most 7 words. subhead at most 12 words. caption 80 to 150 words, '
-      + 'and its first line is the hook. 3 to 5 hashtags mixing Tagalog and English, no spam tags.'
+    'Length rules: headline at most 7 words. subhead at most 12 words. caption 80 to 150 words '
+      + 'of prose, and its first line is the hook. The two required links go after that prose, on '
+      + 'their own lines at the end; each counts as one more word, so the whole caption, links '
+      + 'included, must never exceed 152 words. 3 to 5 hashtags mixing Tagalog and English, no '
+      + 'spam tags.'
   );
   if (revisionNote) {
     parts.push(
@@ -184,5 +266,8 @@ function buildUserPrompt(row, revisionNote, rejectedHeadline) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { PRODUCT, AUDIENCE, BANNED_WORDS, COMPETITORS, PILLARS, COPY_SCHEMA, buildSystemPrompt, buildUserPrompt };
+  module.exports = {
+    PRODUCT, AUDIENCE, BANNED_WORDS, COMPETITORS, PILLARS, COPY_SCHEMA,
+    PRIOR_POSTS_LIMIT, buildLinkRule, buildPriorPostsRule, buildSystemPrompt, buildUserPrompt,
+  };
 }

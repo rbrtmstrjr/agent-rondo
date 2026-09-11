@@ -117,7 +117,15 @@ const nodes = [
       { id: 'c11', name: 'reviewTimeoutHours', value: 6, type: 'number' },
       { id: 'c12', name: 'reviewChannel', value: 'C0BDSV5RB5G', type: 'string' },
       { id: 'c13', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
-      { id: 'c15', name: 'playStoreUrl', value: 'https://play.google.com/store/apps/details?id=app.fishpin', type: 'string' },
+      // Both links are required in EVERY generated caption (validateCopy rule
+      // 10), and websiteUrl is also set under the brand lockup in the bottom
+      // left of every image. They live here, not in lib/brand.js, so a url
+      // change is a Config edit and the prompt, the validator and the image
+      // lockup can never disagree about what the url is.
+      { id: 'c14', name: 'websiteUrl', value: 'www.fishpin.app', type: 'string' },
+      // CORRECTED 2026-09-11: the package id was 'app.fishpin', which is not
+      // the app. The real listing is id=com.fishpin.app; the old value 404s.
+      { id: 'c15', name: 'playStoreUrl', value: 'https://play.google.com/store/apps/details?id=com.fishpin.app', type: 'string' },
       { id: 'c16', name: 'selfWebhookUrl', value: 'https://n8n.srv1193790.hstgr.cloud/webhook/' + WEBHOOK_PATH, type: 'string' },
       // Shared secret for the loop webhook. POST /webhook/fishpin-ad is a
       // public, unauthenticated endpoint; Loop Guard puts this value in the

@@ -14,9 +14,19 @@ if (!copy) {
   return [{ json: { valid: false, reasons: [parseError], copy: null, attempt: q.attempt, copy_retry: q.copy_retry } }];
 }
 
+const cfg = $('Config').first().json;
+
 const r = validateCopy(copy, {
   bannedWords: BANNED_WORDS,
   competitors: COMPETITORS,
+  // The same two Config values Build Copy Prompt put in the prompt: a caption
+  // missing either link is rejected and regenerated.
+  websiteUrl: cfg.websiteUrl,
+  playStoreUrl: cfg.playStoreUrl,
+  // Already-published topics and captions, from Pick Row. An EXACT repeat
+  // (whitespace and case normalised) is rejected with a reason telling the
+  // model to change the angle.
+  priorPosts: q.prior_posts,
 });
 
 return [{ json: {

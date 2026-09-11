@@ -33,7 +33,7 @@
   fishpin-insights.workflow.json    generated, 11 nodes, do not hand-edit
   queue-seed.csv            10 starter rows covering all 7 pillars
   README.md
-  test.js                   682 offline checks + the --live Gemini copy test
+  test.js                   802 offline checks + the --live Gemini copy test
 ```
 Schedule Trigger (05:30 / 18:30, Mon Wed Fri, Asia/Manila)  |
 Manual Trigger                                              |--> Config --> Load Queue Row
@@ -51,7 +51,8 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry)         |                   
         Copy OK? --no--> Copy Retry Guard --> re-invoke once, else needs_manual + Slack
              | yes
         Build Image Prompt   FAN-OUT, one item per image_prompt (1 to 5)  [REVISED 2026-09-11]
-                             logo PNG inline + scene + brand colour grade +
+                             logo PNG inline + bottom-left brand lockup +
+                             scene + brand colour grade +
                              negatives; EXACT headline on image 1 only
                              |
         Generate Image       gemini-2.5-flash-image, one call per image  [retry 2, continue]
@@ -146,8 +147,36 @@ getting rejected, which is the fastest way to improve the copy system prompt.
 ### System prompt
 
 Sections 1 to 4 of the source prompt (product facts, audience, brand voice, content
-pillars) are embedded verbatim in `build-copy-prompt.js`. That file is the single source
+pillars) are embedded verbatim in `lib/brand.js`. That file is the single source
 of truth for brand voice; it is a real `.js` file so it is diffable and reviewable.
+
+**REVISED 2026-09-11 (owner) — the voice is one Filipino talking to a local Filipino.**
+The first live runs came back as correct but slightly translated-sounding Taglish. The
+BRAND VOICE section now asks for the way people actually speak in a coastal barangay: the
+natural particles (`na`, `pa`, `lang`, `po`, `kasi`, `talaga`, `yung`, `ganun`), the everyday
+word over the formal one (`bangka` not `sasakyang-dagat`, `laot` not `karagatan`, `huli` not
+`nahuling isda`), short sentences, an opening fragment or direct question, and `po`/`kayo`
+kept for respect without stiffness. It closes with four **stiff/natural rewrite pairs**,
+because a model follows examples far more reliably than adjectives. Every earlier rule
+(Taglish with Tagalog carrying the sentence, the English words fishermen say out loud, max
+3 emoji, no all-caps run, no em dash, no banned words, no price figure, problem-first hook)
+is unchanged.
+
+**REVISED 2026-09-11 (owner) — every caption carries both links.** The caption must end
+with `www.fishpin.app` and the Play Store listing, after the CTA, each on its own line.
+Both urls come from the Config node (`websiteUrl`, `playStoreUrl`) and are handed to
+`buildSystemPrompt` and to `validateCopy` by the glue, so the prompt and the validator
+read one source and cannot drift. The Play Store package id was also **corrected** here:
+Config carried `id=app.fishpin`, which is not the app; the real listing is
+`id=com.fishpin.app`.
+
+**REVISED 2026-09-11 (owner) — never repeat a topic exactly.** `Pick Row` collects the
+`topic` and published `caption` of every Queue row whose status is `posted` or `measured`
+and carries them forward as `prior_posts`. `buildUserPrompt` lists the most recent 15
+(`PRIOR_POSTS_LIMIT`, so the prompt cannot grow with the sheet) under "ALREADY PUBLISHED"
+and instructs the model that it may cover a similar subject but must take a different
+angle, must not reuse a hook, and must not repeat sentences. See §6 rule 10 for the
+matching validator rule.
 
 Temperature 0.8. On a regeneration, `revision_note` is injected:
 
@@ -159,7 +188,7 @@ Temperature 0.8. On a regeneration, `revision_note` is injected:
 ```
 headline      STRING  max 7 words, Taglish, rendered into the FIRST image
 subhead       STRING  max 12 words, optional
-caption       STRING  80 to 150 words, Taglish, first line is the hook
+caption       STRING  80 to 150 words of prose + the two required links (152 max)
 cta           STRING  one short line
 hashtags      ARRAY of STRING, 3 to 5
 image_prompts ARRAY of STRING, 1 to 5   <- REVISED 2026-09-11, was one image_prompt
@@ -203,13 +232,33 @@ Deterministic, no model in the loop. Rejects on any of:
 3. Any banned word: revolutionary, game-changer, seamless, cutting-edge, unlock, elevate,
    empower, "in today's fast-paced world", "we are excited to announce".
 4. `headline` longer than 7 words; `subhead` longer than 12 words.
-5. `caption` outside 80 to 150 words.
+5. `caption` outside 80 to **152** words. The prose band the prompt asks for is still
+   80 to 150; the two required links are added after it and a whitespace word count counts
+   each url as one word, so the ceiling is 150 + 2. Without that the model could be
+   rejected for obeying the links rule. (`CAPTION_MIN_WORDS` / `CAPTION_PROSE_MAX_WORDS` /
+   `CAPTION_MAX_WORDS` in `lib/copy-rules.js`.)
 6. More than 3 emoji in the caption.
 7. All-caps run longer than one word.
 8. Compliance breach: a rescue guarantee ("hindi ka mamamatay", "will save your life"),
    a fish-safety absolute (must read "generally considered safe to eat", not "safe to eat"),
    a named competitor brand, a fabricated review or user count, or any peso figure at all
    (never FishPin's own price, never a comparison figure — see §6a).
+
+9. **The caption is missing either required link** (revised 2026-09-11). Both
+   `Config.websiteUrl` and `Config.playStoreUrl` must appear verbatim in the caption; the
+   rejection names the missing one so the machine retry can fix it. The urls arrive through
+   `opts`, never hardcoded in the lib, exactly as `bannedWords` and `competitors` do — so a
+   caller that supplies neither simply does not get the check. Neither url trips any other
+   rule (no em dash, no caps run, no peso notation, no digits that read as a count).
+10. **The caption or headline is an EXACT repeat of an already-published post** (added
+   2026-09-11). Compared against `opts.priorPosts` (from `Pick Row`) after normalising:
+   trim, collapse whitespace, lowercase. **Exact match only** — deliberately no fuzzy
+   similarity scoring: it is deterministic, it is what the owner asked for, and it cannot
+   reject a legitimate second post about the same feature. Near-duplicates are therefore
+   allowed by design; the prompt's different-angle instruction and the human approval gate
+   are what separate those. The Queue tab has no `headline` column, so for published rows
+   the caption is what is actually compared; the headline check fires only when a prior
+   headline is supplied.
 
 ### 6a. Price rule (revised 2026-09-10)
 
@@ -269,12 +318,29 @@ but is not on the Gemini free tier.
   these four" instruction and the brand personality words (reliable, calm, resilient,
   observant, local, steady). The documentary photography of Filipino fishermen and bangkas
   is unchanged — this grades that photography, it does not replace it with an illustration.
-- **The real logo, composited (REVISED 2026-09-11).** `assets/logo.png` (7.5 KB) is
-  base64'd into the Build Image Prompt Code node by `build.js` at build time and sent to
-  Gemini as an `inline_data` part ahead of the text part — the request shape proven in
-  `builds/brand-photoshoot-variations`. `LOGO_INSTRUCTION` tells the model what the
-  attachment is and to composite it unaltered, small, bottom-right, and explicitly not to
-  invent, redraw or recolour it, nor to treat it as a style reference for the scene.
+- **The real logo, composited as a bottom-left LOCKUP (REVISED 2026-09-11, owner).**
+  `assets/logo.png` (7.5 KB) is base64'd into the Build Image Prompt Code node by
+  `build.js` at build time and sent to Gemini as an `inline_data` part ahead of the text
+  part — the request shape proven in `builds/brand-photoshoot-variations`. That mechanism is
+  unchanged; what is asked for changed. `logoInstruction(websiteUrl)` (was the constant
+  `LOGO_INSTRUCTION`) now asks for the mark in the **bottom LEFT** corner as part of a
+  lockup: the attached mark reproduced pixel for pixel and unaltered, then the wordmark
+  `FishPin` as newly drawn text in a clean bold sans-serif at the same optical height,
+  then `Config.websiteUrl` directly beneath it at roughly half the wordmark's height. The
+  whole lockup must stay small and unobtrusive, a signature and not a banner, and must not
+  compete with the headline. It is on **every** image of an album, not just the cover, so
+  the "images 2..N render no text" rule became "no text **except** the lockup".
+
+  This composition mirrors the web app's own `fishpin-web/components/ui/Logo.tsx` (icon,
+  then "Fish" medium + "Pin" extra-bold on one line). **There is no wordmark asset on
+  disk** — that component composes icon + live text in code — so the model must draw the
+  wordmark and the url itself. It has already rendered a flawless Tagalog headline into
+  these images, so this is the same job, and a one-word Latin-script wordmark is an easier
+  one; but it is generation, not compositing, and a misspelled wordmark or url is a
+  realistic outcome. The fallback, if live runs show it garbled, is to export a real lockup
+  PNG (mark + wordmark + url) from the web app and use THAT as the reference image, which
+  keeps this mechanism and removes the drawing entirely. The url is passed in from Config
+  so it can never drift from the url the caption must carry.
   `NEGATIVES` previously contained a flat `no logo`, which directly contradicted this; it
   was replaced by `no watermark and no logo other than the supplied FishPin logo`, which is
   what that rule was always for. **Unverified against a live image call** — image models are
@@ -462,7 +528,11 @@ channel exists and the bot is invited.
 
 `pageId`, `graphVersion`, `sheetId`, `queueTab`, `attemptsTab`, `copyModel`,
 `imageModel`, `copyTemperature`, `maxAttempts`, `reviewTimeoutHours`, `reviewChannel`,
-`opsChannel`, `playStoreUrl`, `selfWebhookUrl`, `insightsDelayHours`.
+`opsChannel`, `websiteUrl`, `playStoreUrl`, `selfWebhookUrl`, `insightsDelayHours`.
+(`websiteUrl` added 2026-09-11; `playStoreUrl` corrected the same day from the wrong
+package id `app.fishpin` to `com.fishpin.app`. Both are required in every caption and
+`websiteUrl` is also set under the image lockup, so they are read by three places — the
+copy prompt, the validator and the image prompt — and all three read Config.)
 (`appPrice` was removed 2026-09-10: the price rule no longer reads the app's price to
 decide validity — see §6a — so nothing consumed the tunable any more.)
 
@@ -487,6 +557,18 @@ Offline (pure Code-node assertions, no network):
   non-array.
 - The image prompt names every brand colour by name and hex, keeps the negatives, renders
   the headline into image 1 only, and attaches the logo as an inline reference image.
+- The image prompt asks for the lockup bottom LEFT (never bottom right), with the wordmark
+  and `Config.websiteUrl` beneath it, on every image of the set; and the url in it comes
+  from Config, proven by rebuilding the prompt with a different Config value.
+- The system prompt carries the spoken-Filipino voice rules and at least two stiff/natural
+  rewrite pairs, and still carries every earlier rule (Taglish, em dash, caps, emoji, banned
+  words, problem-first).
+- `validateCopy` rejects a caption missing either link, accepts 150 words of prose plus
+  both links (152), rejects 153, and rejects an exact repeat of a published caption or
+  headline while allowing a near-duplicate.
+- Behavioural: `Pick Row` collects `prior_posts` from posted AND measured rows, never from
+  ready/in_review/blocked rows, never lists the current row, and caps the list at 15 most
+  recent.
 - Behavioural, against the real assembled Code-node bodies: Build Image Prompt emits one
   DISTINCT item per image prompt; Validate Image sinks the whole set if any image fails;
   Collect Photos builds `attached_media` in order and refuses a partial album.
@@ -571,6 +653,10 @@ Deploy loop, per repo convention:
    `approved` key, i.e. that `routeApproval` reads it as `timeout` and not as a decline
    (§8 item 2). This is the highest-value unverified assumption in the build.
 5. Confirm `POST /{pageId}/feed` accepts a one-entry `attached_media` (§9).
-6. Confirm `gemini-2.5-flash-image` composites the supplied logo rather than redrawing it
-   (§7). If it redraws, decide between a deterministic compositing step (a scope change,
-   §1 ruled out an overlay step) and prompt-described branding only.
+6. Confirm `gemini-2.5-flash-image` composites the supplied logo rather than redrawing it,
+   **and** that it spells the drawn wordmark `FishPin` and the drawn url `www.fishpin.app`
+   correctly underneath it, bottom left, small (§7). If the mark is redrawn or either
+   string is garbled, the first fallback is a real lockup PNG as the reference image
+   (mark + wordmark + url exported from `fishpin-web`), which changes no mechanism; only if
+   even that is redrawn is a deterministic compositing step needed (a scope change, §1
+   ruled out an overlay step).

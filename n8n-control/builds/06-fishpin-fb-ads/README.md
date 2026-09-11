@@ -36,11 +36,15 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |           
          Keep Copy?  --yes (decision = "image")--> Reuse Copy ----------------------,
               | no            replays the APPROVED copy, skips copy generation      |
               |                                                                    |
-         Build Copy Prompt    brand bible + revision_note (on a retry)              |
+         Build Copy Prompt    brand bible (spoken-Filipino voice, both required     |
+                              links) + every already-published topic and caption    |
+                              (most recent 15, different-angle rule)                |
+                              + revision_note (on a retry)                          |
                               |                                                     |
          Generate Copy        Gemini gemini-2.5-flash + responseSchema  [retry 3x]  |
                               |                                                     |
          Validate Copy        em dash / banned words / compliance / fields / length / price
+                              / BOTH links present / not an exact repeat of a published post
                               |                                                     |
          Copy OK? --no--> Loop Guard (machine retry, budget 1) --> re-invoke, else needs_manual
               | yes                                                                 |
@@ -49,7 +53,9 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |           
          Build Image Prompt   FAN-OUT: one item per image_prompt (1 to 5).
                               Each carries the FishPin logo PNG as an inline
                               reference image + scene + brand colour grade +
-                              negatives; image 1 also renders the EXACT headline
+                              negatives + the bottom-LEFT brand lockup (mark,
+                              wordmark "FishPin", website underneath);
+                              image 1 also renders the EXACT headline
                               (+ the reviewer's note, on a keep-copy pass)
                               |
          Generate Image       Gemini gemini-2.5-flash-image, ONE CALL PER IMAGE  [retry 2, continue]
@@ -187,7 +193,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
   usable?" to one flag and `Image URL OK?` stops the run there instead. No images, no
   review, and never a partially-published album.
 - ✅ **Config node** — both workflows put every tunable (Sheet/Page/channel ids, model
-  names, temperature, retry budgets, timeout, Play Store URL, webhook URL) in one
+  names, temperature, retry budgets, timeout, website + Play Store URL, webhook URL) in one
   `Config` node at the top of the workflow. See the Config table below.
 - ✅ **Logging/notification** — success (`Notify Success`, `Notify Digest`) and every
   failure branch (`Notify Queue Empty`, `Notify Image Failed`, `Notify Publish Failed`,
@@ -198,7 +204,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 - ✅ **Demo data** — `queue-seed.csv`, 10 rows covering all 7 content pillars for a real
   (if fictional-status) product, FishPin, including one row deliberately blocked because
   it would require a fabricated testimonial.
-- **Tested end-to-end** — automated: `node test.js` is 682/682 green (every Code-node
+- **Tested end-to-end** — automated: `node test.js` is 802/802 green (every Code-node
   glue file's logic, both workflow assemblies, and the validator's full rule set,
   exercised offline with no network), and `node test.js --live` proves real Gemini output
   passes the unmodified validator once a `GEMINI_API_KEY` is supplied. What is **not**
@@ -215,9 +221,9 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 |---|---|
 | `build.js` | Assembles `fishpin-fb-ads.workflow.json` (main pipeline). |
 | `build-insights.js` | Assembles `fishpin-insights.workflow.json` (24h scanner). |
-| `lib/brand.js` | Brand bible: product facts, banned words, competitors, the 7 pillars, the copy system/user prompt builders, `COPY_SCHEMA` (incl. the 1-to-5 `image_prompts` array and the rules for choosing the count). |
+| `lib/brand.js` | Brand bible: product facts, banned words, competitors, the 7 pillars, the copy system/user prompt builders, `COPY_SCHEMA` (incl. the 1-to-5 `image_prompts` array and the rules for choosing the count). `buildSystemPrompt({websiteUrl, playStoreUrl})` takes the two required links from Config; `buildUserPrompt(row, note, rejectedHeadline, priorPosts)` lists the last `PRIOR_POSTS_LIMIT` (15) published posts back to the model and demands a different angle. |
 | `lib/copy-rules.js` | `validateCopy` — the deterministic trust gate on generated copy. |
-| `lib/image-rules.js` | `PALETTE` (the FishPin brand colours by name and hex), `STYLE_SUFFIX` (the colour grade), `LOGO_INSTRUCTION`, `promptsOf`, per-image `buildImagePrompt`, `validateImage` (bytes/MIME/dimensions). |
+| `lib/image-rules.js` | `PALETTE` (the FishPin brand colours by name and hex), `STYLE_SUFFIX` (the colour grade), `logoInstruction(websiteUrl)` (the bottom-left brand lockup), `promptsOf`, per-image `buildImagePrompt`, `validateImage` (bytes/MIME/dimensions). |
 | `lib/flow-rules.js` | `normalizeDecision`, `routeApproval` (the Slack gate's approve/decline/timeout mapper), `DECLINE_NOTE`, `extractReason`, `loopGuard` — the approval routing and the two retry budgets. |
 | `lib/sheet-rules.js` | `QUEUE_HEADERS`, `ATTEMPT_HEADERS`, row selection, Attempts/Queue row shaping, Graph metric mapping. |
 | `nodes/*.js` | The 13 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). `collect-photos.js` is the join that turns the per-image fan-out back into one album. |
@@ -225,7 +231,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 | `queue-seed.csv` | 10 starter rows covering all 7 pillars, ready to import into the Queue tab. Unchanged by the album work: the `Queue` tab is still 16 columns and its one `image_url` column now holds every image url joined by ` \| `. |
 | `assets/BRAND.md` | The FishPin colour palette and personality, lifted from the app's own brand spec. The source of truth for `STYLE_SUFFIX`. |
 | `assets/logo.png` | The real FishPin logo (7.5 KB). `build.js` base64s it into the Build Image Prompt Code node at build time and it is sent to Gemini as an inline reference image. |
-| `test.js` | Offline unit tests (682 checks) + the `--live` Gemini copy-generation test. |
+| `test.js` | Offline unit tests (802 checks) + the `--live` Gemini copy-generation test. |
 
 ---
 
@@ -345,7 +351,8 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `reviewTimeoutHours` | How long `Slack Review`'s two-button `sendAndWait` waits before the row goes `expired`. A timeout consumes no human attempt. | `6` |
 | `reviewChannel` | Slack channel id the approval form is posted to. | `C0BDSV5RB5G` |
 | `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0BDSV5RB5G` |
-| `playStoreUrl` | FishPin's Play Store listing, for reference in prompts. | `https://play.google.com/store/apps/details?id=app.fishpin` |
+| `websiteUrl` | FishPin's website. Required in **every** caption, and set under the brand lockup in every image. | `www.fishpin.app` |
+| `playStoreUrl` | FishPin's Play Store listing. Required in **every** caption. (Corrected 2026-09-11: the package id was `app.fishpin`, which is not the app.) | `https://play.google.com/store/apps/details?id=com.fishpin.app` |
 | `selfWebhookUrl` | This workflow's own webhook, used by `Loop Guard`'s re-invocation. | `https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad` |
 | `loopSecret` | Shared secret for the loop webhook. `Loop Guard` sends it; `Pick Row` refuses any webhook call without it. **Must be replaced before the loop works at all** — every webhook call is refused while it reads `FILL_IN_*`. | `FILL_IN_LOOP_SECRET` |
 
@@ -368,7 +375,7 @@ string, which `Notify Queue Empty` prints to the ops channel.
 node build.js
 node build-insights.js
 
-# Offline suite — 682 checks, no network, no credentials needed
+# Offline suite — 802 checks, no network, no credentials needed
 node test.js
 
 # One section only, e.g. just the copy-rules checks
@@ -381,8 +388,9 @@ node test.js --only=copy
 GEMINI_API_KEY=... node test.js --live
 ```
 
-Latest offline run: **682/682 passed** (was 554/554 before the two-button approval, the
-1-to-5 album and the brand colour grade went in). `node test.js --live` with no key: offline
+Latest offline run: **802/802 passed** (was 682/682 before the 2026-09-11 owner
+adjustments: the spoken-Filipino voice, the two required caption links, the bottom-left
+brand lockup and the no-exact-repeat rule). `node test.js --live` with no key: offline
 sections still all pass, then the live section prints the skip message and exits 0.
 
 ---
@@ -402,17 +410,35 @@ Being honest about what's not finished, rather than hiding it:
   spending one of the three human attempts, rather than as a rejection. It has **not** been
   confirmed against a real expiry on this instance. Step 8 of the checklist below is what
   confirms it; until then treat it as the most likely open question in this build.
-- **The logo composite is unverified.** The real `assets/logo.png` is sent to
-  `gemini-2.5-flash-image` as an inline reference image with an instruction to composite it
-  unaltered, small, in the bottom-right corner (the request shape proven in
-  `builds/brand-photoshoot-variations`). Image models are **not** reliable at reproducing a
-  specific mark pixel for pixel; a redrawn or mangled logo is a realistic outcome. No live
-  image call has been made since the change, so this is untested. The human approval gate is
-  what catches it. If the first live runs show the mark being redrawn, the fallback is to
-  drop the inline image, keep a prompt-described clean space reserved in the bottom right
-  corner, and composite the PNG deterministically afterwards, which needs an image
+- **The brand lockup is drawn, not composited, and only the mark comes from a file.**
+  `assets/logo.png` is still sent to the image model as an inline reference image, now with
+  an instruction to place it **bottom LEFT** as part of a lockup: the mark, then the wordmark
+  `FishPin` in a clean bold sans-serif, with the website `www.fishpin.app` in a noticeably
+  smaller size directly underneath, the whole thing small enough to read as a signature
+  rather than a banner. **There is no wordmark asset on disk** — `fishpin-web`'s own
+  `components/ui/Logo.tsx` composes the icon plus live text in code ("Fish" medium, "Pin"
+  extra-bold) — so the model has to *draw* those two strings. It already renders a Tagalog
+  headline into these images correctly, so this is the same job it is doing anyway, and a
+  one-word Latin-script wordmark is an easier one. But it is still generation: a misspelled
+  `FishPin`, a wrong weight, or a mangled url are realistic outcomes, as is the mark itself
+  being redrawn rather than reproduced. **Unverified — no live image call has been made since
+  the change.** The human approval gate is what catches it; checklist step 11 is what proves
+  it. If the wordmark or the url comes back garbled repeatedly, the honest fallback is to
+  stop asking for drawn text and ship a real lockup PNG (mark + wordmark + url, exported from
+  the web app) as the reference image instead, which keeps the current mechanism and removes
+  the drawing entirely. If even the mark is redrawn, the remaining fallback is a deterministic
   compositing step this pipeline does not have today (spec section 1 explicitly ruled out a
-  separate overlay step). That is a real change of scope, not a toggle.
+  separate overlay step) — a real change of scope, not a toggle.
+- **The no-repeat rule is exact-match only, on purpose.** `Pick Row` collects the topic and
+  the published caption of every `posted`/`measured` Queue row, the prompt lists the most
+  recent 15 back to the model as "already published, take a different angle", and
+  `validateCopy` rejects a caption or headline that matches a published one **exactly**
+  (whitespace collapsed, case folded). Near-duplicates are therefore **allowed by design**:
+  there is no similarity score to tune and no risk of a legitimate second post about the same
+  feature being rejected by a threshold. What stops a lazily-rewritten repeat is the prompt
+  instruction and the human at the approval gate, not the validator. Note also that the Queue
+  tab has no `headline` column, so for published rows the **caption** is what the repeat check
+  actually compares; the headline check only fires when a prior headline is supplied.
 - **Only the first image of an album carries the headline.** Repeating the same rendered
   headline across five album frames reads as five rejected drafts of one poster, and every
   extra rendered word is another chance for the model to garble Tagalog. So image 1 is the
@@ -518,8 +544,17 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
 10. Queue a how-to or fish-guide row and confirm the copy model asks for **more than one**
     image, that all of them generate, and that the Slack preview states the count.
 11. Check the images against the brand: the four palette colours dominate, the grade is
-    consistent, and the **logo is intact** in the bottom-right corner, not redrawn or
-    garbled. If it is mangled, stop and read the logo note in Known limitations.
+    consistent, and the **brand lockup is intact in the bottom-LEFT corner** — the mark
+    reproduced unaltered, the wordmark reading exactly `FishPin` (one word, capital F and
+    capital P), the website reading exactly `www.fishpin.app` underneath it in a smaller
+    size, and the whole lockup small enough not to compete with the headline. If the mark is
+    redrawn, or either string is misspelled, stop and read the lockup note in Known
+    limitations.
+11b. Read the caption out loud. It must sound like one fisherman talking to another (particles
+    like `na`, `lang`, `kasi`, `yung`, short sentences, an opening question or fragment), not
+    like translated marketing — and it must end with **both** links, `www.fishpin.app` and the
+    `com.fishpin.app` Play Store url. A caption missing either link never reaches Slack:
+    `Validate Copy` rejects it and the machine retry regenerates.
 12. Run one end-to-end run that gets **approved** against the real FishPin Page, and check
     the post on the Page itself: it must be ONE post carrying all the images, headline
     legible on the first, caption/CTA/hashtags present, no placeholder text. Then check the
@@ -538,7 +573,7 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
   enforces.
 - **Content pillars:** the 7-pillar rotation is a FishPin-specific structure; a different
   client may want 4 pillars or 10 — edit `PILLARS` and reseed the Queue tab.
-- **Look:** `PALETTE`, `STYLE_SUFFIX` and `LOGO_INSTRUCTION` in `lib/image-rules.js` are
+- **Look:** `PALETTE`, `STYLE_SUFFIX` and `logoInstruction` in `lib/image-rules.js` are
   the whole visual identity — swap the four hexes and the personality words for the
   client's brand, drop their logo in at `assets/logo.png`, and rebuild. `NEGATIVES` is
   the do-not-generate list and is worth rereading per client.

@@ -55,7 +55,14 @@ section('brand', 'Brand bible', () => {
     && /monthly/i.test(B.PILLARS['cost comparison'])
     && !/\d/.test(B.PILLARS['cost comparison']));
 
-  const sys = B.buildSystemPrompt();
+  // A2: the two required links are Config values, handed to the prompt builder
+  // by nodes/build-copy-prompt.js. The prompt is built WITH them here because
+  // that is exactly how it is built in production.
+  const LINKS = {
+    websiteUrl: 'www.fishpin.app',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
+  };
+  const sys = B.buildSystemPrompt(LINKS);
   check('system prompt never states the price figure',
     !/\b500\b/.test(sys) && !/\b499\b/.test(sys));
   check('system prompt forbids stating any price or peso amount',
@@ -125,12 +132,105 @@ section('brand', 'Brand bible', () => {
     /one story/i.test(sys) && /variations of the same/i.test(sys));
   check('system prompt tells the model each entry describes ONE image',
     /one image/i.test(sys));
+
+  // ---- A1 (2026-09-11): the caption must read like one Filipino fisherman
+  // talking to another, not like careful, translated marketing.
+  check('A1: the voice section frames it as one Filipino talking to another Filipino',
+    /one filipino fisherman talking to another/i.test(sys));
+  check('A1: it says write the way people speak in a coastal barangay, not like a brochure',
+    /coastal barangay/i.test(sys) && /brochure/i.test(sys));
+  check('A1: it names the natural particles that carry real Filipino speech',
+    /na, pa, lang, po, kasi, talaga, yung/i.test(sys) && /ganun/i.test(sys));
+  check('A1: it asks for contractions', /contraction/i.test(sys));
+  check('A1: it prefers the everyday word over the formal one (bangka, laot, huli)',
+    /bangka, not sasakyang-dagat/i.test(sys) && /laot, not karagatan/i.test(sys)
+      && /huli, not nahuling isda/i.test(sys));
+  check('A1: it allows opening with a fragment or a direct question',
+    /fragment/i.test(sys) && /direct question/i.test(sys));
+  check('A1: it keeps po and kayo for respect, the audience skews older',
+    /po and kayo/i.test(sys) && /respect matters/i.test(sys));
+  check('A1: but it forbids politeness that turns the line stiff',
+    /politeness make the line stiff/i.test(sys));
+  check('A1: it forbids any line that reads as translated from English',
+    /read as translated from English/i.test(sys) && /said out loud on a/i.test(sys));
+  const LINE = String.fromCharCode(10);
+  const stiffPairs = sys.split(LINE).filter(l => /^- Stiff: /.test(l));
+  const naturalPairs = sys.split(LINE).filter(l => /^  Natural: /.test(l));
+  check('A1: the prompt carries at least two stiff/natural rewrite examples (models follow examples far better than adjectives)',
+    stiffPairs.length >= 2 && naturalPairs.length === stiffPairs.length);
+  check('A1: the natural examples actually speak, particles and all',
+    naturalPairs.some(l => /yung|okay lang|kasi|talaga|po/i.test(l)));
+  check('A1: the stiff examples are the formal register being rejected',
+    stiffPairs.some(l => /aplikasyon|kinaroroonan|nasabing tampok/i.test(l)));
+  // Every rule that was already there must survive the rewrite.
+  check('A1 regression: Taglish rule and the English words fishermen actually say are kept',
+    /taglish/i.test(sys) && /Play Store, offline, battery, load, screenshot/.test(sys));
+  check('A1 regression: em dash, all-caps and the 3-emoji budget are kept',
+    /em dash/i.test(sys) && /all caps/i.test(sys) && /Maximum 3 emojis/i.test(sys));
+  check('A1 regression: problem-first and the banned-word list are kept',
+    /PROBLEM FIRST/.test(sys) && /BANNED WORDS/.test(sys));
+
+  // ---- A2 (2026-09-11): every caption carries BOTH links, and the urls come
+  // from Config, never from this lib.
+  check('A2: the system prompt carries the website link', sys.includes(LINKS.websiteUrl));
+  check('A2: the system prompt carries the Play Store link', sys.includes(LINKS.playStoreUrl));
+  check('A2: the link rule says both are required in every caption',
+    /LINKS, required in EVERY caption/.test(sys));
+  check('A2: the link rule places them at the end, after the CTA, never mid-sentence',
+    /at the END of the caption, after the call to action/i.test(sys)
+      && /Never in the middle of a sentence/i.test(sys));
+  check('A2: the urls are NOT hardcoded in brand.js',
+    !B.buildSystemPrompt().includes('fishpin.app'));
+  check('A2: with no Config urls there is no link section at all, rather than an empty one',
+    !/LINKS, required/.test(B.buildSystemPrompt()));
+  check('A2: buildLinkRule returns nothing when given nothing', B.buildLinkRule('', '') === '');
+  check('A2: buildLinkRule lists whichever url it is given',
+    B.buildLinkRule('www.a.test', '').includes('www.a.test'));
+  const lenRule = B.buildUserPrompt(row, '', '');
+  check('A2: the length rule still asks for 80 to 150 words of prose',
+    /80 to 150 words/.test(lenRule));
+  check('A2: and states the 152-word ceiling the two links push it to',
+    /152 words/.test(lenRule) && /links/i.test(lenRule));
+
+  // ---- A4 (2026-09-11): the same subject may come round again, the same
+  // wording and angle may not.
+  const priors = [
+    { topic: 'Offline maps offshore', caption: 'Unang caption tungkol sa offline maps.' },
+    { topic: 'SOS button', caption: 'Pangalawang caption tungkol sa SOS.' },
+  ];
+  const uPrior = B.buildUserPrompt(row, '', '', priors);
+  check('A4: the user prompt lists what has already been published',
+    /ALREADY PUBLISHED/.test(uPrior) && uPrior.includes('Offline maps offshore')
+      && uPrior.includes('Pangalawang caption tungkol sa SOS.'));
+  check('A4: it allows a similar subject but demands a different angle',
+    /similar subject/i.test(uPrior) && /DIFFERENT ANGLE/.test(uPrior));
+  check('A4: it forbids reusing a hook, a headline or a sentence',
+    /Never reuse a hook, a headline or a sentence/i.test(uPrior));
+  check('A4: it warns that an exact repeat is rejected automatically',
+    /exact repeat is rejected/i.test(uPrior));
+  check('A4: with nothing published yet there is no already-published block',
+    !/ALREADY PUBLISHED/.test(B.buildUserPrompt(row, '', '', []))
+      && !/ALREADY PUBLISHED/.test(B.buildUserPrompt(row, '', '')));
+  check('A4: the prompt cap is 15 prior posts', B.PRIOR_POSTS_LIMIT === 15);
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    topic: 'Topic number ' + i, caption: 'Caption number ' + i + ' na mahaba.' }));
+  const uMany = B.buildUserPrompt(row, '', '', many);
+  check('A4: only the most recent 15 prior posts reach the prompt, so it cannot grow forever',
+    (uMany.match(/Topic number /g) || []).length === 15);
+  check('A4: the 15 kept are the most RECENT, not the oldest',
+    uMany.includes('Topic number 39') && uMany.includes('Topic number 25')
+      && !uMany.includes('Topic number 24'));
+  check('A4: a prior row with no caption recorded still contributes its topic',
+    B.buildUserPrompt(row, '', '', [{ topic: 'Bagyo tips', caption: '' }]).includes('Bagyo tips'));
+  check('A4: a blank or null prior row is dropped, not listed as an empty entry',
+    !/ALREADY PUBLISHED/.test(B.buildUserPrompt(row, '', '', [{ topic: '', caption: '' }, null])));
 });
 
 // ---------------------------------------------------------------- copy rules
 section('copy', 'Copy validation', () => {
   const B = L('brand.js');
-  const { validateCopy } = L('copy-rules.js');
+  const C = L('copy-rules.js');
+  const { validateCopy } = C;
   const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS };
 
   const good = {
@@ -312,6 +412,115 @@ section('copy', 'Copy validation', () => {
     w({ caption: good.caption + " Mas mura kaysa Garmin's." }), /competitor/i);
   rejects('still rejects the bare competitor name (regression)',
     w({ caption: good.caption + ' Mas mura kaysa Garmin.' }), /competitor/i);
+
+  // ---- A2 (2026-09-11): every caption must carry BOTH links.
+  // The urls arrive through opts (Config.websiteUrl / Config.playStoreUrl),
+  // exactly as bannedWords and competitors do, so a caller that supplies
+  // neither gets no check at all — which is why every test above still passes
+  // against a link-free fixture.
+  const WEB = 'www.fishpin.app';
+  const PLAY = 'https://play.google.com/store/apps/details?id=com.fishpin.app';
+  const NL = String.fromCharCode(10);
+  const LINK_OPTS = Object.assign({}, OPTS, { websiteUrl: WEB, playStoreUrl: PLAY });
+  const withLinks = (text) => text + NL + NL + WEB + NL + PLAY;
+  const linked = w({ caption: withLinks(good.caption) });
+
+  check('A2: a caption carrying BOTH links passes', validateCopy(linked, LINK_OPTS).valid === true);
+  check('A2: and reports no reasons at all (no rule false-positives on a url)',
+    validateCopy(linked, LINK_OPTS).reasons.length === 0);
+  check('A2: a caption with NEITHER link is rejected',
+    validateCopy(good, LINK_OPTS).valid === false);
+  check('A2: the missing-website rejection names the website url',
+    validateCopy(w({ caption: good.caption + NL + PLAY }), LINK_OPTS).reasons
+      .some(r => r.includes(WEB) && /missing the required website link/i.test(r)));
+  check('A2: the missing-Play-Store rejection names the Play Store url',
+    validateCopy(w({ caption: good.caption + NL + WEB }), LINK_OPTS).reasons
+      .some(r => r.includes(PLAY) && /missing the required Play Store link/i.test(r)));
+  check('A2: the reason tells the model where the links belong',
+    validateCopy(good, LINK_OPTS).reasons
+      .some(r => /end of the caption, after the call to action/i.test(r)));
+  check('A2: a truncated url does not count as the link',
+    validateCopy(w({ caption: withLinks(good.caption).replace(PLAY, 'https://play.google.com/store') }),
+      LINK_OPTS).valid === false);
+  check('A2: the WRONG package id (the old app.fishpin) does not satisfy the Play Store link',
+    validateCopy(w({ caption: withLinks(good.caption)
+      .replace(PLAY, 'https://play.google.com/store/apps/details?id=app.fishpin') }),
+      LINK_OPTS).valid === false);
+  check('A2: with no urls supplied the link check does not run (opts contract, back-compat)',
+    validateCopy(good, OPTS).valid === true);
+
+  // The links must not trip any OTHER rule. Each is asserted on its own so a
+  // failure says which rule the url broke.
+  const linkOnlyReasons = (extra) => validateCopy(w({ caption: withLinks(good.caption) + ' ' + extra }),
+    LINK_OPTS).reasons;
+  check('A2: a url contains no em dash', !/—/.test(WEB + PLAY));
+  check('A2: the urls trip no rule at all (em dash, caps, price, counts, banned words)',
+    linkOnlyReasons('').length === 0);
+  check('A2: the all-caps rule does not fire on the urls',
+    !validateCopy(linked, LINK_OPTS).reasons.some(r => /caps/i.test(r)));
+  check('A2: the price rule does not fire on the urls (no peso notation in either)',
+    !validateCopy(linked, LINK_OPTS).reasons.some(r => /price|peso/i.test(r)));
+  check('A2: the fabricated-count rule does not fire on the urls',
+    !validateCopy(linked, LINK_OPTS).reasons.some(r => /fabricat|count|rating/i.test(r)));
+
+  // ---- A2 word band: 80 to 150 words of PROSE, plus the two links, so the
+  // hard ceiling is 152. A model that writes a perfect 150-word caption and
+  // then obeys the links rule must not be rejected for a length it was told
+  // to write.
+  const words = (n) => Array.from({ length: n }, () => 'salamat').join(' ');
+  const bandCopy = (n) => w({ caption: words(n) + NL + WEB + NL + PLAY });
+  check('A2: 150 words of prose PLUS both links (152 total) passes',
+    validateCopy(bandCopy(150), LINK_OPTS).valid === true);
+  check('A2: 151 words of prose plus both links (153 total) is rejected',
+    validateCopy(bandCopy(151), LINK_OPTS).valid === false);
+  check('A2: the length reason explains the 152 ceiling is prose plus the links',
+    validateCopy(bandCopy(151), LINK_OPTS).reasons
+      .some(r => /must be 80 to 152/.test(r) && /150 of prose plus the two required links/.test(r)));
+  check('A2: a short caption is still rejected at the same 80-word floor',
+    validateCopy(w({ caption: 'Maikli lang po ito. ' + WEB + ' ' + PLAY }), LINK_OPTS).valid === false);
+  check('A2: the exported band constants match the rule (80 / 150 / 152)',
+    C.CAPTION_MIN_WORDS === 80 && C.CAPTION_PROSE_MAX_WORDS === 150 && C.CAPTION_MAX_WORDS === 152);
+
+  // ---- A4 (2026-09-11): an EXACT repeat of an already-published post is
+  // rejected. Exact-match only, by design: no fuzzy similarity scoring, so a
+  // near-duplicate is deliberately ALLOWED (the prompt's angle instruction and
+  // the human approval gate are what keep those apart).
+  const priorOf = (c) => Object.assign({}, LINK_OPTS,
+    { priorPosts: [{ topic: 'Offline maps', caption: c }] });
+  check('A4: an exact caption repeat is rejected',
+    validateCopy(linked, priorOf(linked.caption)).valid === false);
+  check('A4: the reason tells the model to change the angle',
+    validateCopy(linked, priorOf(linked.caption)).reasons
+      .some(r => /already been published/i.test(r) && /change the angle/i.test(r)));
+  check('A4: the repeat check normalises case and whitespace',
+    validateCopy(linked, priorOf(linked.caption.toUpperCase()
+      .replace(/ /g, '  '))).valid === false);
+  check('A4: leading and trailing whitespace does not hide a repeat',
+    validateCopy(linked, priorOf('   ' + linked.caption + '   ')).valid === false);
+  check('A4: a genuinely different caption on the same topic passes',
+    validateCopy(linked, priorOf('Ibang caption po ito tungkol sa parehong paksa.')).valid === true);
+  check('A4: a NEAR duplicate is deliberately allowed (exact-match only, no fuzzy scoring)',
+    validateCopy(linked, priorOf(linked.caption.replace('Normal po yan', 'Normal talaga yan'))).valid === true);
+  check('A4: an exact HEADLINE repeat is rejected when a prior headline is known',
+    validateCopy(linked, Object.assign({}, LINK_OPTS,
+      { priorPosts: [{ topic: 'x', caption: 'iba', headline: good.headline }] })).valid === false);
+  check('A4: the headline reason is distinct from the caption reason',
+    validateCopy(linked, Object.assign({}, LINK_OPTS,
+      { priorPosts: [{ topic: 'x', caption: 'iba', headline: good.headline }] })).reasons
+      .some(r => /exact headline has already been published/i.test(r)));
+  check('A4: a prior row with no headline recorded never rejects on the headline',
+    validateCopy(linked, priorOf('iba')).valid === true);
+  check('A4: an empty caption is never treated as a repeat of an empty prior caption',
+    validateCopy(w({ caption: '' }), Object.assign({}, LINK_OPTS,
+      { priorPosts: [{ topic: 'x', caption: '' }] })).reasons
+      .every(r => !/already been published/i.test(r)));
+  check('A4: with no priorPosts supplied the repeat check does not run',
+    validateCopy(linked, LINK_OPTS).valid === true);
+  check('A4: it survives a malformed priorPosts entry rather than throwing',
+    validateCopy(linked, Object.assign({}, LINK_OPTS,
+      { priorPosts: [null, undefined, {}, { caption: null }] })).valid === true);
+  check('A4: normalizeForRepeat is exported and collapses whitespace and case',
+    C.normalizeForRepeat('  Hello   WORLD ' + NL + ' again ') === 'hello world again');
 });
 
 // ---------------------------------------------------------------- image rules
@@ -328,8 +537,12 @@ section('image', 'Image prompt and validation', () => {
       'The bangka heading home at dusk, the marked spot already behind it.',
     ],
   };
-  const p = I.buildImagePrompt(copy, 'feature spotlight', 0, 3);
-  const p2 = I.buildImagePrompt(copy, 'feature spotlight', 1, 3);
+  // A3 (2026-09-11): the website url under the lockup is a Config value
+  // (Config.websiteUrl), passed in by nodes/build-image-prompt.js. The prompts
+  // under test are built WITH it, because that is how they are built live.
+  const SITE = { websiteUrl: 'www.fishpin.app' };
+  const p = I.buildImagePrompt(copy, 'feature spotlight', 0, 3, SITE);
+  const p2 = I.buildImagePrompt(copy, 'feature spotlight', 1, 3, SITE);
 
   check('prompt carries the scene', p.includes('bangka with outriggers'));
   check('prompt carries the exact headline verbatim', p.includes(copy.headline));
@@ -364,8 +577,48 @@ section('image', 'Image prompt and validation', () => {
     /bottom/i.test(p) && /unaltered|do not redraw|do not alter/i.test(p));
   check('prompt forbids the model inventing its own logo',
     /do not (invent|redraw|recreate|redesign)/i.test(p));
-  check('LOGO_INSTRUCTION is exported for the glue to reuse',
-    typeof I.LOGO_INSTRUCTION === 'string' && /logo/i.test(I.LOGO_INSTRUCTION));
+  // A3 (2026-09-11): LOGO_INSTRUCTION (a constant string) became
+  // logoInstruction(websiteUrl) (a builder), because the website line under the
+  // lockup is a Config value and must not be hardcoded in the lib. The old
+  // check asserted the constant; it is corrected here, not deleted.
+  check('A3: logoInstruction is exported as a builder for the glue to reuse',
+    typeof I.logoInstruction === 'function' && /logo/i.test(I.logoInstruction('www.x.test')));
+  check('A3: the bare logo constant is gone, so nothing can quietly use a url-less version',
+    I.LOGO_INSTRUCTION === undefined);
+
+  // ---- A3: the mark became a LOCKUP, bottom LEFT, with the website under it.
+  check('A3: the lockup goes in the bottom LEFT corner', /BOTTOM LEFT/.test(p));
+  check('A3: it is no longer placed bottom right', !/bottom right/i.test(p));
+  check('A3: the lockup is the mark PLUS the FishPin wordmark',
+    /wordmark "FishPin"/.test(p) && /left to right on one line/i.test(p));
+  check('A3: the wordmark is asked for in a clean bold sans-serif',
+    /clean bold sans-serif/i.test(p));
+  check('A3: the wordmark spelling is pinned (one word, capital F, capital P)',
+    /one word, capital F, capital P/i.test(p));
+  check('A3: the website is set directly beneath the lockup', /beneath the lockup/i.test(p));
+  check('A3: the website url itself is rendered into the prompt', p.includes('www.fishpin.app'));
+  check('A3: the website is asked for in a noticeably smaller size',
+    /noticeably smaller size/i.test(p) && /half the height of the wordmark/i.test(p));
+  check('A3: the whole lockup must stay small and unobtrusive, a signature not a banner',
+    /small and unobtrusive/i.test(p) && /never a banner/i.test(p));
+  check('A3: and must not compete with the headline', /not compete with the headline/i.test(p));
+  check('A3: the MARK is still reproduced from the attached reference, unaltered',
+    /attached PNG/.test(p) && /unaltered/.test(p) && /pixel for pixel/i.test(p));
+  check('A3: the mark keeps its shape and colour',
+    /stays unaltered in shape and colour/i.test(p));
+  check('A3: only the wordmark and the url are newly drawn text',
+    /Only the wordmark and the website line are newly drawn text/i.test(p));
+  check('A3: the model is still forbidden from inventing its own mark',
+    /do not invent, redraw, recreate/i.test(p));
+  check('A3: the lockup is on EVERY image of the set, not just the cover',
+    /BOTTOM LEFT/.test(p2) && p2.includes('www.fishpin.app'));
+  const pNoSite = I.buildImagePrompt(copy, 'feature spotlight', 0, 1);
+  check('A3: with no Config url the lockup is still asked for, just with no website line',
+    /BOTTOM LEFT/.test(pNoSite) && !/beneath the lockup/i.test(pNoSite));
+  check('A3: the url is not hardcoded in image-rules.js',
+    !pNoSite.includes('fishpin.app'));
+  check('A3: the cover still renders the headline and no other free text',
+    p.includes(copy.headline) && /do not add, translate, correct, or invent any other text/i.test(p));
 
   // ---- CHANGE 2: per-image prompts, one story across the set
   check('each image of the set gets its OWN scene',
@@ -376,8 +629,13 @@ section('image', 'Image prompt and validation', () => {
   check('the prompt says the set must tell one story',
     /one story|same (set|shoot|post)/i.test(p2));
   check('only the first image renders the headline', !p2.includes(copy.headline));
-  check('the later images are told to render no text at all',
-    /no text|do not render any text|without any text/i.test(p2));
+  // A3: images 2..N used to be told to render NO text at all. They now carry
+  // the same corner lockup as the cover, so the rule is "no text EXCEPT the
+  // lockup". The check is corrected to that, not deleted: the point it defends
+  // (no headline, no captions burned into the later frames) still holds.
+  check('the later images are told to render no text except the brand lockup',
+    /Render NO text in this image except the brand lockup/.test(p2)
+      && /no lettering, no numbers, no signage/.test(p2));
   const solo = I.buildImagePrompt(copy, 'feature spotlight', 0, 1);
   check('a single-image post still renders the headline', solo.includes(copy.headline));
   check('a single-image post is not labelled as part of a set', !/image 1 of 1/i.test(solo));
@@ -841,6 +1099,17 @@ section('workflow', 'Main workflow structure', () => {
    'copyTemperature', 'maxAttempts', 'maxCopyRetries', 'reviewTimeoutHours', 'reviewChannel',
    'opsChannel', 'playStoreUrl', 'selfWebhookUrl']
     .forEach(k => check('Config defines ' + k, cfg.includes(k)));
+  // A2 (2026-09-11): both links are Config values, and the Play Store package
+  // id was WRONG (app.fishpin, which is not the app).
+  check('A2: Config defines websiteUrl', cfg.includes('websiteUrl'));
+  const cfgVals = {};
+  byName['Config'].parameters.assignments.assignments.forEach(a => { cfgVals[a.name] = a.value; });
+  check('A2: websiteUrl is the real site', cfgVals.websiteUrl === 'www.fishpin.app');
+  check('A2: playStoreUrl carries the CORRECT package id (com.fishpin.app)',
+    cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app');
+  check('A2: the wrong package id (app.fishpin) is gone from the whole workflow',
+    !JSON.stringify(wf).includes('id=app.fishpin'));
+
   // appPrice was removed: nothing reads it any more now that the validator
   // never uses the app's price to decide validity (see lib/copy-rules.js
   // rule 9). Config must not carry a dead tunable.
@@ -1243,9 +1512,13 @@ section('workflow', 'Main workflow structure', () => {
     alt_text: 'A fisherman on a bangka at dawn.',
   };
   const SECRET = 'a-real-loop-secret';
+  const LINK_WEB = 'www.fishpin.app';
+  const LINK_PLAY = 'https://play.google.com/store/apps/details?id=com.fishpin.app';
+  const NLW = String.fromCharCode(10);
   const MAIN_CFG = {
     sheetId: 'sheet-1', queueTab: 'Queue', attemptsTab: 'Attempts', maxAttempts: 3,
     maxCopyRetries: 1, copyTemperature: 0.8, loopSecret: SECRET,
+    websiteUrl: LINK_WEB, playStoreUrl: LINK_PLAY,
   };
   const SHEET_ROWS = [
     S.QUEUE_HEADERS,
@@ -1253,6 +1526,11 @@ section('workflow', 'Main workflow structure', () => {
     ['FP-002', 'feature spotlight', 'Offline maps offshore', 'Download once, use forever', 'I-download', '', 'in_review', '', '', '', '', '', '', '', '', ''],
     ['FP-003', 'fish fact', 'Species of the day', 'Alamin ang season', 'I-download', '', 'ready', '', '', '', '', '', '', '', '', ''],
     ['FP-004', 'social proof', 'testimonial', 'needs a real quote', 'I-download', '', 'blocked_needs_asset', '', '', '', '', '', '', '', '', ''],
+    // A4: a MEASURED row is also an already-published post — the insights
+    // workflow moves a row from posted to measured after 24h, and a measured
+    // topic is exactly the one most likely to be repeated.
+    ['FP-005', 'fish fact', 'Tamban season', 'Alamin ang season', 'I-download', '', 'measured', '',
+      'Naitala mo ba ang huli mo kahapon?', 'img', '1_5', '2026-09-02T00:00:00Z', '1', '2', '3', '500'],
   ];
   const sheetPayload = { values: SHEET_ROWS };
 
@@ -1556,6 +1834,114 @@ section('workflow', 'Main workflow structure', () => {
   check('C3: decision=image with no carried copy falls back to regenerating it',
     runCode('Pick Row', pickStore(noCopy), sheetPayload)[0].json.keep_copy === false);
 
+  // ---- A2/A4 behavioural: Config's two urls and the already-published list
+  // reach the real prompt, and the real validator enforces both.
+
+  // Pick Row collects what is already live on the Page.
+  check('A4: Pick Row carries prior_posts forward', Array.isArray(pickOut.prior_posts));
+  check('A4: it collects BOTH posted and measured rows',
+    pickOut.prior_posts.map(p => p.id).join(',') === 'FP-001,FP-005');
+  check('A4: each prior post carries its topic and its published caption',
+    pickOut.prior_posts[0].topic === 'topic one' && pickOut.prior_posts[0].caption === 'cap'
+      && pickOut.prior_posts[1].caption === 'Naitala mo ba ang huli mo kahapon?');
+  check('A4: it never lists ready, in_review or blocked rows as already published',
+    pickOut.prior_posts.every(p => ['FP-002', 'FP-003', 'FP-004'].indexOf(p.id) === -1));
+  check('A4: the row being worked on is never listed as its own prior post',
+    pickOut.prior_posts.every(p => p.id !== pickOut.row.id));
+  const manyPosted = [S.QUEUE_HEADERS].concat(
+    Array.from({ length: 30 }, (_, i) => ['FP-P' + i, 'safety', 'topic ' + i, 'm', 'c', '', 'posted',
+      '', 'caption ' + i, '', '', '2026-09-01T00:00:00Z', '', '', '', '1']),
+    [SHEET_ROWS[2]]);
+  const pickMany = runCode('Pick Row', pickStore(roundTripped), { values: manyPosted })[0].json;
+  check('A4: prior_posts is capped so the payload cannot grow without bound',
+    pickMany.prior_posts.length === 15);
+  check('A4: the cap keeps the most RECENT rows',
+    pickMany.prior_posts[14].id === 'FP-P29' && pickMany.prior_posts[0].id === 'FP-P15');
+
+  // Build Copy Prompt puts both Config urls and the prior posts in the prompt.
+  const promptOut = runCode('Build Copy Prompt', {
+    Config: one(MAIN_CFG), 'Pick Row': one(pickOut),
+  }, {})[0].json;
+  const sysText = promptOut.geminiBody.system_instruction.parts[0].text;
+  const userText = promptOut.geminiBody.contents[0].parts[0].text;
+  check('A2: the system prompt carries the website url straight from Config',
+    sysText.includes(LINK_WEB));
+  check('A2: and the Play Store url straight from Config', sysText.includes(LINK_PLAY));
+  check('A2: the wrong package id never reaches the prompt',
+    !sysText.includes('id=app.fishpin'));
+  check('A2: changing Config changes the prompt (the urls are not hardcoded in the lib)', (() => {
+    const other = runCode('Build Copy Prompt', {
+      Config: one(Object.assign({}, MAIN_CFG, { websiteUrl: 'www.other.test' })),
+      'Pick Row': one(pickOut),
+    }, {})[0].json;
+    return other.geminiBody.system_instruction.parts[0].text.includes('www.other.test');
+  })());
+  check('A4: the user prompt lists the already-published posts',
+    /ALREADY PUBLISHED/.test(userText) && userText.includes('topic one')
+      && userText.includes('Naitala mo ba ang huli mo kahapon?'));
+  check('A4: and demands a different angle rather than a different subject',
+    /DIFFERENT ANGLE/.test(userText));
+
+  // Validate Copy enforces the same two urls and the same prior posts.
+  const geminiCopy = (obj) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] });
+  const filler = Array.from({ length: 100 }, () => 'salamat').join(' ');
+  const CLEAN = {
+    headline: 'Nawala ang signal? Gumagana pa rin',
+    subhead: 'Offline maps para sa bawat biyahe sa laot',
+    caption: filler + NLW + LINK_WEB + NLW + LINK_PLAY,
+    cta: 'I-download sa Play Store',
+    hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps'],
+    image_prompts: ['A Filipino bangka with outriggers at dawn.'],
+    alt_text: 'A fisherman on a bangka at dawn.',
+  };
+  const validateOut = (copyObj, pick) => runCode('Validate Copy', {
+    Config: one(MAIN_CFG), 'Pick Row': one(pick || pickOut),
+  }, geminiCopy(copyObj))[0].json;
+  check('A2: a caption carrying both links passes the real Validate Copy node',
+    validateOut(CLEAN).valid === true);
+  check('A2: dropping the website link fails the real node',
+    validateOut(Object.assign({}, CLEAN,
+      { caption: filler + NLW + LINK_PLAY })).valid === false);
+  check('A2: dropping the Play Store link fails the real node',
+    validateOut(Object.assign({}, CLEAN, { caption: filler + NLW + LINK_WEB })).valid === false);
+  check('A2: the rejection reason names the missing link so the retry can fix it',
+    validateOut(Object.assign({}, CLEAN, { caption: filler + NLW + LINK_WEB })).reasons
+      .some(r => r.includes(LINK_PLAY)));
+  check('A2: 150 words of prose plus both links still passes the real node (the band was raised for them)',
+    validateOut(Object.assign({}, CLEAN, { caption: Array.from({ length: 150 }, () => 'salamat').join(' ')
+      + NLW + LINK_WEB + NLW + LINK_PLAY })).valid === true);
+
+  // A4: an exact repeat of an already-published caption is rejected.
+  const repeatRows = [S.QUEUE_HEADERS, SHEET_ROWS[1].slice(), SHEET_ROWS[2].slice()];
+  repeatRows[1][8] = CLEAN.caption;
+  const pickRepeat = runCode('Pick Row', pickStore(roundTripped), { values: repeatRows })[0].json;
+  check('A4: the exact-repeat fixture really does carry that caption forward',
+    pickRepeat.prior_posts.length === 1 && pickRepeat.prior_posts[0].caption === CLEAN.caption);
+  const repeatOut = validateOut(CLEAN, pickRepeat);
+  check('A4: the real Validate Copy node rejects a caption already published',
+    repeatOut.valid === false);
+  check('A4: the reason tells the model to change the angle, not the subject',
+    repeatOut.reasons.some(r => /already been published/i.test(r) && /change the angle/i.test(r)));
+  check('A4: the same topic with different words still passes (near-duplicates are allowed by design)',
+    validateOut(Object.assign({}, CLEAN,
+      { caption: 'Iba na po ito. ' + filler + NLW + LINK_WEB + NLW + LINK_PLAY }),
+    pickRepeat).valid === true);
+
+  // A3: every image prompt carries the bottom-left lockup and the site url.
+  check('A3: every image prompt in the set asks for the bottom-left lockup',
+    bipItems.every(it => /BOTTOM LEFT/.test(it.json.imagePrompt)));
+  check('A3: every image prompt carries the website url from Config',
+    bipItems.every(it => it.json.imagePrompt.includes(LINK_WEB)));
+  check('A3: no image prompt still asks for the old bottom-right placement',
+    bipItems.every(it => !/bottom right/i.test(it.json.imagePrompt)));
+  check('A3: the url in the image comes from Config, not from the lib', (() => {
+    const other = runCode('Build Image Prompt', {
+      Config: one(Object.assign({}, MAIN_CFG, { websiteUrl: 'www.other.test' })),
+      'Pick Row': one(pickOut),
+    }, reuseOut);
+    return other.every(it => it.json.imagePrompt.includes('www.other.test'));
+  })());
+
   } catch (e) {
     check('behavioural Code-node round-trip tests ran to completion: ' + e.message, false);
   }
@@ -1564,6 +1950,16 @@ section('workflow', 'Main workflow structure', () => {
   const codeBodies = wf.nodes.filter(n => n.type === 'n8n-nodes-base.code')
     .map(n => n.parameters.jsCode).join('\n');
   check('validateCopy is inlined', /function validateCopy/.test(codeBodies));
+  check('A2: Validate Copy hands the validator both Config urls',
+    /websiteUrl:\s*cfg\.websiteUrl/.test(P('Validate Copy'))
+      && /playStoreUrl:\s*cfg\.playStoreUrl/.test(P('Validate Copy')));
+  check('A4: Validate Copy hands the validator the already-published posts',
+    /priorPosts:\s*q\.prior_posts/.test(P('Validate Copy')));
+  check('A2: Build Copy Prompt hands the prompt builder both Config urls',
+    /websiteUrl:\s*cfg\.websiteUrl/.test(P('Build Copy Prompt'))
+      && /playStoreUrl:\s*cfg\.playStoreUrl/.test(P('Build Copy Prompt')));
+  check('A3: Build Image Prompt hands the image builder the Config website url',
+    /websiteUrl:\s*cfg\.websiteUrl/.test(P('Build Image Prompt')));
   check('normalizeDecision is inlined', /function normalizeDecision/.test(codeBodies));
   check('buildSystemPrompt is inlined', /function buildSystemPrompt/.test(codeBodies));
   check('inlined exports are guarded for the n8n sandbox',
@@ -1884,6 +2280,14 @@ if (LIVE) {
   const { validateCopy } = L('copy-rules.js');
   const KEY = process.env.GEMINI_API_KEY || '';
   const MODEL = process.env.COPY_MODEL || 'gemini-2.5-flash';
+  // The same two Config values the workflow passes in (build.js Config
+  // websiteUrl / playStoreUrl). The live test must build the prompt and run
+  // the validator exactly as production does, or it proves nothing about the
+  // copy the pipeline will actually generate.
+  const LIVE_LINKS = {
+    websiteUrl: 'www.fishpin.app',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
+  };
 
   const seedRows = [
     { id: 'FP-001', pillar: 'feature spotlight', topic: 'Offline maps work with zero signal offshore',
@@ -1906,8 +2310,8 @@ if (LIVE) {
         'https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent',
         { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: B.buildSystemPrompt() }] },
-            contents: [{ role: 'user', parts: [{ text: B.buildUserPrompt(row, '', '') }] }],
+            system_instruction: { parts: [{ text: B.buildSystemPrompt(LIVE_LINKS) }] },
+            contents: [{ role: 'user', parts: [{ text: B.buildUserPrompt(row, '', '', row.prior_posts) }] }],
             generationConfig: { temperature: 0.8, responseMimeType: 'application/json', responseSchema: B.COPY_SCHEMA },
           }) }).then(r => r.json());
 
@@ -1916,8 +2320,13 @@ if (LIVE) {
       check(row.pillar + ': returned parseable JSON', !!copy);
       if (!copy) { console.log('     raw: ' + JSON.stringify(res).slice(0, 400)); continue; }
 
-      const v = validateCopy(copy, { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS });
+      const v = validateCopy(copy, Object.assign({
+        bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS, priorPosts: row.prior_posts,
+      }, LIVE_LINKS));
       check(row.pillar + ': passes the validator unmodified', v.valid);
+      check(row.pillar + ': the caption carries BOTH required links',
+        String(copy.caption || '').includes(LIVE_LINKS.websiteUrl)
+          && String(copy.caption || '').includes(LIVE_LINKS.playStoreUrl));
       if (!v.valid) console.log('     reasons: ' + v.reasons.join(' | '));
       check(row.pillar + ': returns 1 to 5 image prompts',
         Array.isArray(copy.image_prompts) && copy.image_prompts.length >= 1 && copy.image_prompts.length <= 5);

@@ -10,6 +10,21 @@ const OK_ACRONYMS = ['GPS', 'SOS', 'SMS', 'ETA', 'AI', 'PH', 'PHP', 'WIFI', 'DIT
 
 const wordCount = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).length;
 
+// The caption band. 80 to 150 words is the PROSE band the prompt asks for; the
+// two required links (the website and the Play Store listing) are then added on
+// their own lines at the end, and a whitespace-split word count counts each URL
+// as one word. So the hard ceiling is 150 + 2. Without the +2 a model that
+// wrote a perfectly good 150-word caption and then obeyed the links rule would
+// be rejected for a length it was told to write.
+const CAPTION_MIN_WORDS = 80;
+const CAPTION_PROSE_MAX_WORDS = 150;
+const CAPTION_MAX_WORDS = CAPTION_PROSE_MAX_WORDS + 2;
+
+// Normalisation for the exact-repeat check: trim, collapse every whitespace run
+// to one space, lowercase. Deliberately nothing more — no stemming, no
+// similarity scoring. See rule 11.
+const normalizeForRepeat = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase();
+
 function validateCopy(copy, opts) {
   const o = opts || {};
   const banned = o.bannedWords || [];
@@ -60,7 +75,10 @@ function validateCopy(copy, opts) {
   if (wordCount(c.headline) > 7) reasons.push('headline is ' + wordCount(c.headline) + ' words, max is 7');
   if (wordCount(c.subhead) > 12) reasons.push('subhead is ' + wordCount(c.subhead) + ' words, max is 12');
   const capWords = wordCount(c.caption);
-  if (capWords < 80 || capWords > 150) reasons.push('caption is ' + capWords + ' words, must be 80 to 150');
+  if (capWords < CAPTION_MIN_WORDS || capWords > CAPTION_MAX_WORDS) {
+    reasons.push('caption is ' + capWords + ' words, must be ' + CAPTION_MIN_WORDS + ' to '
+      + CAPTION_MAX_WORDS + ' (' + CAPTION_PROSE_MAX_WORDS + ' of prose plus the two required links)');
+  }
 
   // 5. emoji budget
   const emoji = String(c.caption || '').match(/\p{Extended_Pictographic}/gu) || [];
@@ -152,9 +170,64 @@ function validateCopy(copy, opts) {
     reasons.push('Do not mention a price or any peso amount. Lead with the problem FishPin solves instead.');
   }
 
+  // 10. required links.
+  // Every caption must carry BOTH the website and the Play Store listing, or
+  // the ad is published with no way to act on it. The two URLs arrive through
+  // opts (Config.websiteUrl / Config.playStoreUrl), never hardcoded here, so
+  // this rule and the prompt rule that asks for them can never disagree: the
+  // glue hands both builders the same two Config values. A caller that
+  // supplies neither (an old unit test, a client with no links) simply does
+  // not get the check, exactly as an empty bannedWords list does not get the
+  // banned-word check.
+  const captionText = String(c.caption || '');
+  [
+    { url: o.websiteUrl, label: 'website' },
+    { url: o.playStoreUrl, label: 'Play Store' },
+  ].forEach((link) => {
+    const url = String(link.url || '').trim();
+    if (!url) return;
+    if (captionText.indexOf(url) === -1) {
+      reasons.push('The caption is missing the required ' + link.label + ' link: ' + url
+        + '. Both links must appear in full at the end of the caption, after the call to action, '
+        + 'each on its own line.');
+    }
+  });
+
+  // 11. never publish the same post twice.
+  // The owner's rule: the same SUBJECT may come around again, but the wording
+  // and the angle must differ from what is already live on the Page.
+  // Deliberately EXACT-match only, after normalising whitespace and case: a
+  // deterministic rule the model can actually satisfy, with no similarity
+  // threshold to tune and no risk of a legitimate second post about the same
+  // feature being rejected by a fuzzy score. Near-duplicates are therefore
+  // allowed by design; the angle instruction in the prompt (and the human
+  // approval gate) is what keeps them apart.
+  // priorPosts arrives from opts as [{ topic, caption, headline? }, ...],
+  // collected by nodes/load-queue.js from every posted/measured Queue row.
+  const priorPosts = Array.isArray(o.priorPosts) ? o.priorPosts : [];
+  if (priorPosts.length) {
+    const newCaption = normalizeForRepeat(c.caption);
+    const newHeadline = normalizeForRepeat(c.headline);
+    if (newCaption && priorPosts.some((p) => normalizeForRepeat(p && p.caption) === newCaption)) {
+      reasons.push('This exact caption has already been published. Keep the subject if you want, '
+        + 'but change the angle: a different hook, a different situation, different sentences.');
+    }
+    // The Queue tab has no headline column, so a prior headline is only
+    // compared when the caller actually has one (the loop payload, or a future
+    // feed from the Attempts tab). When it is absent the caption check above
+    // is what catches a repeat.
+    if (newHeadline && priorPosts.some((p) => normalizeForRepeat(p && p.headline) === newHeadline)) {
+      reasons.push('This exact headline has already been published. Write a different headline '
+        + 'and a different angle on the topic.');
+    }
+  }
+
   return { valid: reasons.length === 0, reasons };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { validateCopy, OK_ACRONYMS };
+  module.exports = {
+    validateCopy, OK_ACRONYMS, normalizeForRepeat,
+    CAPTION_MIN_WORDS, CAPTION_PROSE_MAX_WORDS, CAPTION_MAX_WORDS,
+  };
 }
