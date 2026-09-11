@@ -397,11 +397,15 @@ Being honest about what's not finished, rather than hiding it:
   `aspect` / `aspectRequested` / `aspectMatches` forward; `Log Attempt` writes the
   observed value into the `Attempts` tab's `aspect` column, flagged
   `4:5 (requested 1:1, MISMATCH)` when they disagree. Per spec §7 a mismatch is **not** a
-  rejection — the run continues and the post can still be approved and published. So this
-  question is now answerable from real runs, but it has not yet been answered: no live
-  image generation has been done against the FishPin credential. Check the `aspect` column
-  after the first few real runs; if mismatches are the norm, the documented fallback is to
-  request `1:1` for every pillar.
+  rejection — the run continues and the post can still be approved and published.
+
+  **Answered 2026-09-11 by the first two live runs** (executions 2965 and 2966, rows FP-001
+  and FP-002): `gemini-2.5-flash-image` returned **896 x 1152 (7:9)** on both, against a
+  requested `4:5`. The ratio is a hint, not a contract. The gap is small — 0.778 vs 0.800,
+  both portrait, and Facebook accepts it without re-cropping — so no change was made. The
+  `aspect` column will read `7:9 (requested 4:5, MISMATCH)` on standard posts; that is
+  expected, not a fault. Revisit only if a fish-fact post (requested `1:1`) also returns
+  portrait, which would crop badly in-feed.
 
 ---
 
