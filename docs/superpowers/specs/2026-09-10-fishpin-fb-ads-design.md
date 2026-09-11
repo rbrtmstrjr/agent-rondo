@@ -2,55 +2,38 @@
 
 **Date:** 2026-09-10
 **Owner:** Robert
-**Build slot:** `n8n-control/builds/06-fishpin-fb-ads/`
-**Status:** approved, ready for implementation plan
-
----
-
-## 1. Goal
-
-A scheduled n8n pipeline that generates organic Facebook Page creatives for **FishPin**
-(a paid, offline-first marine navigation Android app for Filipino fishermen), routes each
-one through a Slack approval loop, publishes approved posts to the FishPin Page, and
-backfills engagement metrics 24 hours later.
-
-Purpose: grow Page followers and drive Play Store installs.
-
-### Non-goals
-
-- No Marketing API, no paid ad campaigns. Organic Page posts only.
-- No video. Static image creatives only; a video-ad pipeline is a separate future workflow.
-- No separate text-overlay/compositing step. The headline is rendered by the image model
-  as part of the image (owner decision, 2026-09-10).
-
----
-
-## 2. Alignment decisions
-
-The source prompt (`fishpin-n8n-ad-workflow-prompt.md`) specified several tools that
-conflict with established conventions in this repo. Per the owner's instruction, repo
-convention wins. Resolutions:
-
-| Source prompt | Repo convention | Decision |
-|---|---|---|
-| LLM = OpenAI or Anthropic | Gemini everywhere, with `generationConfig.responseSchema` | **Gemini `gemini-2.5-flash` + responseSchema.** Structurally valid JSON is guaranteed, so the prompt's fence-stripping and JSON-repair retry are unnecessary. |
-| Imagen via `:predict`, `personGeneration` | `gemini-*-flash-image` via `generateContent` (proven in `sv91rOvu8Bec8sLc`) | **Gemini image model.** No `personGeneration` region gate, no retired-model-ID risk, already proven publishing to a Facebook Page. |
-| Supabase Storage archive | No Supabase anywhere in the repo | **Facebook unpublished-photo upload.** `POST /{page}/photos?published=false` returns a `media_fbid`; `GET /{id}?fields=images` returns a public CDN URL. One upload serves as archive, Slack preview, and publish token. |
-| Google Sheets queue | Both Sheets (build #2) and Airtable (#4, #5) exist | **Google Sheets.** The prompt's column list is Sheets-shaped, build #2's Sheets pattern is proven, the service account already has access, and no attachment storage is needed because the archive is a FB CDN URL. Airtable would require re-scoping its PAT to a new base for a different venture. |
-| Four approval buttons + free text | Slack `sendAndWait` `approvalType: double` gives two buttons only | **`sendAndWait` with `responseType: customForm`** — a decision dropdown (Approve / Regenerate copy / Regenerate image / Regenerate both) plus a reason textarea. One node, all four outcomes, plus the typed reason. |
-| Deterministic SVG/HTML text overlay | No precedent | **Dropped.** Headline text goes into the image prompt. Garbled Tagalog is caught by the human approval gate and fixed via "Regenerate image". |
-| `Continue on Fail = false` on FB/image nodes | `onError: continueRegularOutput` + explicit Code gate | **Continue on fail, then route to an explicit failure branch** that alerts Slack, marks the row `failed`, and terminates before publish. Same guarantee ("never a half-finished post"), repo mechanism. |
-| Insights via a 24h `Wait` node | — | **Separate hourly scanner workflow.** A 24h `Wait` does not reliably survive an n8n restart; a scanner does. |
-| Publish via `POST /{page}/photos` with the binary | sv91's two-step upload-then-publish | **Two-step.** Reuse the `media_fbid` already uploaded for the preview via `POST /{page}/feed` with `attached_media`. Avoids uploading the same image twice. |
-
----
-
-## 3. Architecture
-
-Two workflows, both with `settings.errorWorkflow = 660Xkpo164VSNTDZ`.
-
-### A. `FishPin Ad Creative -> FB (Approve)`
-
+**Build slot:** `n8n-control/builds/06-fishpin-fb-ads/
+  build.js                  assembles fishpin-fb-ads.workflow.json (+ base64s the logo in)
+  build-insights.js         assembles fishpin-insights.workflow.json
+  lib/                      pure, dependency-free, no n8n globals, guarded module.exports
+    brand.js                brand bible, prompt builders, COPY_SCHEMA (image_prompts 1..5)
+    copy-rules.js           validateCopy: every deterministic copy rule
+    image-rules.js          PALETTE / STYLE_SUFFIX / LOGO_INSTRUCTION / promptsOf /
+                            buildImagePrompt (per image) / validateImage
+    flow-rules.js           normalizeDecision, routeApproval, DECLINE_NOTE, loopGuard
+    sheet-rules.js          QUEUE_HEADERS, ATTEMPT_HEADERS, row selection + shaping
+  nodes/                    thin n8n glue; build.js inlines a lib ahead of each
+    load-queue.js           fetch next ready row, or a specific row on re-entry
+    build-copy-prompt.js    the Gemini copy request
+    validate-copy.js        parse + run every copy rule
+    reuse-copy.js           the dormant keep-the-copy branch
+    build-image-prompt.js   FAN-OUT: one Gemini image request per image_prompt
+    validate-image.js       bytes, MIME, dimensions; ALL-OR-NOTHING across the set
+    collect-photos.js       JOIN: N uploads -> one album (attached_media, urls, ok)
+    log-attempt.js          the Attempts row
+    route-decision.js       approve / decline / timeout via routeApproval
+    loop-guard.js           attempt + copy_retry budgets, re-invoke payload
+    map-writeback.js        Queue row shaping after publish
+    select-due.js           insights: which posted rows are due for metrics
+    map-metrics.js          insights: Graph responses -> row columns
+  assets/
+    BRAND.md                the FishPin palette + personality (source of STYLE_SUFFIX)
+    logo.png                the real logo, inlined into the image request at build time
+  fishpin-fb-ads.workflow.json      generated, 45 nodes, do not hand-edit
+  fishpin-insights.workflow.json    generated, 11 nodes, do not hand-edit
+  queue-seed.csv            10 starter rows covering all 7 pillars
+  README.md
+  test.js                   682 offline checks + the --live Gemini copy test
 ```
 Schedule Trigger (05:30 / 18:30, Mon Wed Fri, Asia/Manila)  |
 Manual Trigger                                              |--> Config --> Load Queue Row
@@ -67,24 +50,30 @@ Webhook  POST /webhook/fishpin-ad   (loop re-entry)         |                   
                              |
         Copy OK? --no--> Copy Retry Guard --> re-invoke once, else needs_manual + Slack
              | yes
-        Build Image Prompt   scene + EXACT headline + style suffix + negatives
+        Build Image Prompt   FAN-OUT, one item per image_prompt (1 to 5)  [REVISED 2026-09-11]
+                             logo PNG inline + scene + brand colour grade +
+                             negatives; EXACT headline on image 1 only
                              |
-        Generate Image       gemini-2.5-flash-image             [retry 2, continue]
+        Generate Image       gemini-2.5-flash-image, one call per image  [retry 2, continue]
                              |
-        Validate Image  --fail--> Slack fail + status=failed, STOP
+        Validate Image  --ANY image fails--> Slack fail + status=failed, STOP
+             |                               (all-or-nothing: never a partial album)
+        Upload Photo (published=false) x N  --> media_fbid each
+        Get Photo URL (?fields=images) x N  --> public CDN url each
              |
-        Upload Photo (published=false)  --> media_fbid
-        Get Photo URL (?fields=images)  --> public CDN url
+        Collect Photos       JOIN, N -> 1: attached_media, urls, all-or-nothing ok flag
              |
-        Log Attempt  (Sheets -> Attempts tab)
+        Log Attempt  (Sheets -> Attempts tab; urls joined into the one image_url cell)
              |
-        Slack Review  sendAndWait / customForm, 6h timeout
+        Slack Review  sendAndWait / approvalType double, 6h timeout   [REVISED 2026-09-11]
+                     two native buttons in-channel: Approve | Decline
              |
         Route Decision
-             |-- approve --> Publish Post (/feed + attached_media + message)
+             |-- approve --> Publish Post (/feed + attached_media[1..5] + message)
              |                   --> Write Back (Queue row) --> Slack success
-             |-- timeout --> status=expired + Slack, no post
-             \-- regen   --> Loop Guard --> re-invoke webhook (attempt+1) or needs_manual
+             |-- timeout --> status=expired + Slack, no post, NO attempt consumed
+             \-- decline --> 'both': new copy AND new images
+                             Loop Guard --> re-invoke webhook (attempt+1) or needs_manual
 ```
 
 ### B. `FishPin Ad Insights (24h)`
@@ -140,7 +129,12 @@ re-selected; only a human returning a row to `ready` puts it back in rotation.
 
 ### Tab `Attempts`
 
-`ts`, `row_id`, `attempt`, `pillar`, `headline`, `caption`, `image_url`, `decision`, `revision_note`
+`ts`, `row_id`, `attempt`, `pillar`, `headline`, `caption`, `image_url`, `decision`,
+`revision_note`, `aspect`
+
+**REVISED 2026-09-11:** still one `image_url` column after the 1-to-5 album change. A
+post's image urls share that cell, joined by ` | `, so the number of entries is also the
+image count and neither `ATTEMPT_HEADERS`, the sheet, nor `queue-seed.csv` had to change.
 
 Every attempt is logged, approved or not. Over a month this is the record of what keeps
 getting rejected, which is the fastest way to improve the copy system prompt.
@@ -163,14 +157,28 @@ Temperature 0.8. On a regeneration, `revision_note` is injected:
 ### Response schema (enforced by Gemini, not parsed hopefully)
 
 ```
-headline     STRING  max 7 words, Taglish, rendered into the image
-subhead      STRING  max 12 words, optional
-caption      STRING  80 to 150 words, Taglish, first line is the hook
-cta          STRING  one short line
-hashtags     ARRAY of STRING, 3 to 5
-image_prompt STRING  English, describes composition and where negative space sits
-alt_text     STRING
+headline      STRING  max 7 words, Taglish, rendered into the FIRST image
+subhead       STRING  max 12 words, optional
+caption       STRING  80 to 150 words, Taglish, first line is the hook
+cta           STRING  one short line
+hashtags      ARRAY of STRING, 3 to 5
+image_prompts ARRAY of STRING, 1 to 5   <- REVISED 2026-09-11, was one image_prompt
+alt_text      STRING
 ```
+
+**REVISED 2026-09-11 — the model chooses the image count.** `image_prompt` (one string)
+became `image_prompts` (an array of 1 to 5), because the right number of pictures is a
+property of the topic, not of the pipeline: a feature spotlight lands in one frame, while a
+tip/how-to wants one image per step and a fish-guide post wants the species from several
+angles. The system prompt states the budget and how to spend it (1 for a single idea, 2 for
+a before/after or the cost-comparison pillar, 3 to 5 for a how-to or fish guide), and
+requires the set to tell ONE story in order rather than being variations of one frame.
+
+The 1-to-5 bound is enforced deterministically in `validateCopy`, not in the responseSchema,
+for the same reason `hashtags`' 3-to-5 bound is: the schema is kept to types only so an
+unrecognised schema keyword can never 400 the whole generation. A count outside the range,
+or any blank entry, is a copy-validation rejection with its own reason string and goes down
+the existing machine-retry path.
 
 ### Hard product facts injected
 
@@ -243,18 +251,46 @@ but is not on the Gemini free tier.
 
 `build-image-prompt.js` composes:
 
-- The model's own `image_prompt` (scene, composition, negative space).
+- One of the model's own `image_prompts` entries (scene, composition, negative space) per
+  image — REVISED 2026-09-11, was a single `image_prompt`.
 - The exact headline text, with strict rendering instructions: reproduce this text
   character for character, correct spelling, one line, bold sans-serif, placed in the
   reserved negative space.
-- Style suffix, appended to every prompt: `photographic, natural Philippine coastal light,
-  documentary style, deep navy and warm gold palette, single clear subject, generous
-  negative space in the upper third`.
+- Style suffix, appended to every prompt. **REVISED 2026-09-11.** It used to read
+  `photographic, natural Philippine coastal light, documentary style, deep navy and warm
+  gold palette, single clear subject, generous negative space in the upper third`. The
+  owner's verdict on the first live images was "the generated image doesnt have a branded
+  feels in our venture": "deep navy and warm gold" is a mood, and the model was free to read
+  it as any blue and any yellow, so nothing tied the output to FishPin. It is now a
+  deliberate colour grade naming the real brand colours by name AND hex, from the app's own
+  brand spec (staged at `assets/BRAND.md`): Persian Blue `#0A2461` as the dominant dark,
+  Accent Blue `#147DFF` as the one saturated blue, Amber `#FFC857` as the single warm
+  accent, Off White `#EEF4FB` as the light end, plus an explicit "no other hue competes with
+  these four" instruction and the brand personality words (reliable, calm, resilient,
+  observant, local, steady). The documentary photography of Filipino fishermen and bangkas
+  is unchanged — this grades that photography, it does not replace it with an illustration.
+- **The real logo, composited (REVISED 2026-09-11).** `assets/logo.png` (7.5 KB) is
+  base64'd into the Build Image Prompt Code node by `build.js` at build time and sent to
+  Gemini as an `inline_data` part ahead of the text part — the request shape proven in
+  `builds/brand-photoshoot-variations`. `LOGO_INSTRUCTION` tells the model what the
+  attachment is and to composite it unaltered, small, bottom-right, and explicitly not to
+  invent, redraw or recolour it, nor to treat it as a style reference for the scene.
+  `NEGATIVES` previously contained a flat `no logo`, which directly contradicted this; it
+  was replaced by `no watermark and no logo other than the supplied FishPin logo`, which is
+  what that rule was always for. **Unverified against a live image call** — image models are
+  unreliable at reproducing a specific mark, and the human approval gate is the backstop.
+  See the README's Known limitations for the fallback.
+- **Only image 1 renders the headline (REVISED 2026-09-11).** Repeating one rendered
+  headline across five album frames reads as five drafts of one poster, and every extra
+  rendered word is another chance to garble Tagalog. Images 2 to N are told to render no
+  text at all.
 - Negatives: no watermarks, no app UI, no extra fingers, no western yacht, no western
   fishing rods on a bangka, no exaggerated poverty imagery, no comedic or pitiful framing,
   no imagery that reads as a real distress event.
 
-Aspect ratio is requested via `generationConfig.imageConfig.aspectRatio` — `4:5` for
+Each of the 1 to 5 images is its own `generateContent` call; `Build Image Prompt` is the
+fan-out node and `Collect Photos` is the join. Aspect ratio is requested via
+`generationConfig.imageConfig.aspectRatio` — `4:5` for
 standard posts, `1:1` for fish-fact posts. `validate-image.js` reads back the actual
 dimensions. If the model ignores the request, the build falls back to `1:1` for all posts
 and this is recorded in the README as a known limitation. This must be verified during
@@ -264,15 +300,60 @@ implementation, not assumed.
 20 KB, or a non-image MIME type. Any rejection alerts Slack, sets `status = failed`, and
 stops. A post is never published without a verified image.
 
+**REVISED 2026-09-11 — all-or-nothing across the set.** With 1 to 5 images, validation is
+per-image but the verdict is for the whole post: if ANY image fails, `validate-image.js`
+returns a single rejection item instead of the good ones, so the run takes the existing
+failure branch and nothing is uploaded. A partial album is worse than no post — a how-to
+missing step 3 is not the ad the reviewer was asked to approve. The same all-or-nothing rule
+covers the public-URL lookup: `Collect Photos` checks every photo has both a `media_fbid`
+and an `images[0].source` and reduces that to one flag, because the old per-item test of
+`images[0].source` would have sent the good photos down the true branch and published a
+partial album.
+
 ---
 
 ## 8. Approval loop
 
-Slack node, `operation: sendAndWait`, `responseType: customForm`, timeout 6 hours.
+**REVISED 2026-09-11.** Slack node, `operation: sendAndWait`,
+`approvalOptions.values.approvalType: 'double'`, timeout 6 hours. Two native buttons, in
+the channel, no browser tab:
 
-Form fields:
-- `decision` — dropdown: `Approve`, `Regenerate copy`, `Regenerate image`, `Regenerate both`
-- `reason` — textarea, optional on approve, required in spirit on regenerate
+- **Approve** — publish the album to the Page.
+- **Decline** — throw it away and regenerate BOTH the copy and the images for the same
+  queue row (internally the `both` decision).
+
+The original design was a `customForm` with a 4-option dropdown plus a free-text reason.
+The owner wanted the decision made in Slack itself, which `customForm` cannot do. The three
+consequences, each handled:
+
+1. **The payload shape is `{data: {approved: true|false}}`.** `approved: true` maps to
+   `approve`. `approved: false` is a DECLINE and maps to `both`. It previously mapped to
+   `timeout`, which would have expired the row on a decline instead of regenerating it.
+2. **Timeout must stay distinguishable from a decline**, because a timeout must consume no
+   human attempt and trigger no regeneration. A `limitWaitTime` expiry resumes the execution
+   without the node's webhook ever firing, so the node's output is still the input it passed
+   through when it went to wait — carrying no `approved` key at all. `routeApproval` encodes
+   exactly that: an `approved` boolean present means a human clicked and its value says
+   which button; none present means nobody did, which is a timeout. Anything else
+   unrecognisable is also read as a timeout rather than as a rejection, deliberately —
+   `expired` alerts Slack and stops without publishing and without burning an attempt, which
+   is the safe reading of "no decision was recorded". `normalizeDecision` still returns
+   `unknown` for that case so the distinction stays available. **This is reasoned from n8n's
+   resume semantics, not yet observed on a live expiry**; the README checklist has a
+   three-minute-timeout step that confirms it.
+3. **The free-text reason is gone**, so `extractReason` returns `''` on every decline. An
+   empty `revision_note` reaches `brand.js` as no revision block at all, i.e. the
+   regeneration would be given no steer and could hand back the same draft. `loopGuard` now
+   falls back to a fixed `DECLINE_NOTE` on a reasonless human rejection: the reviewer
+   rejected it, take a different angle, different hook, different problem to lead with,
+   different image concept, and do not reuse the previous headline or image concept. A typed
+   reason (still possible from the copy-validation retry path) always wins over it.
+
+`normalizeDecision`'s `copy` and `image` decisions are deliberately kept: `image` is what
+`Pick Row`'s `keep_copy` branch tests for, and `copy_invalid` shares `loopGuard`'s rejection
+path. The keep-the-copy branch (below) is therefore **dormant rather than deleted** — a
+reviewer can no longer select it, but it still works when the loop webhook is called by hand
+with `decision: "image"`, and it stays covered by tests.
 
 The image preview and the full caption, CTA, hashtags, headline, pillar, row id and
 `attempt N of 3` are posted to the review channel immediately before the form, using the
@@ -294,17 +375,21 @@ On re-entry the webhook payload carries the row id, so `load-queue.js` fetches t
 specific row rather than the next `ready` one. One idea therefore consumes exactly one
 queue entry regardless of attempt count.
 
-Branch targets:
-- `Regenerate copy` — re-enter at Build Copy Prompt with `revision_note` injected.
-- `Regenerate image` — re-enter keeping the approved caption, appending `revision_note`
-  to the image prompt, skipping copy generation.
-- `Regenerate both` — re-enter at Build Copy Prompt.
+Branch targets (the internal decision values; only `both` is reachable from the two-button
+gate as of 2026-09-11):
+- `copy` — re-enter at Build Copy Prompt with `revision_note` injected.
+- `image` — re-enter keeping the approved caption and the approved `image_prompts`,
+  appending `revision_note` to every image prompt, skipping copy generation. Dormant: only
+  reachable by calling the loop webhook by hand.
+- `both` — re-enter at Build Copy Prompt. **This is what Decline produces.**
 
 **Loop guard:** at `attempt` 3, stop (there is never an "attempt 4 of 3"). Set
 `status = needs_manual`, post to Slack "3 attempts rejected, needs a human. Row id {id}".
 No further re-invocation.
 
-**Timeout:** on a 6h no-response, set `status = expired`, alert Slack, do not post.
+**Timeout:** on a 6h no-response, set `status = expired`, alert Slack, do not post, and do
+not increment `attempt` — a timeout is not a rejection and must not spend the reviewer's
+budget.
 
 ---
 
@@ -314,7 +399,13 @@ No further re-invocation.
    during the preview step. Returns `media_fbid`.
 2. On approval, `POST /{graphVersion}/{pageId}/feed` with
    `message = caption + "\n\n" + cta + "\n\n" + hashtags.join(" ")` and
-   `attached_media = [{"media_fbid": "..."}]`.
+   `attached_media = [{"media_fbid": "..."}, ...]` — **REVISED 2026-09-11**, 1 to 5 entries,
+   built by `Collect Photos` and carried through `Route Decision`. One `/feed` call publishes
+   the whole album. A single-image post takes the same path with a one-entry array;
+   `sv91rOvu8Bec8sLc`'s "an album needs >= 2 photos" note is its own Code node refusing to
+   build one from fewer, not the Graph API refusing a one-entry `attached_media`. Unverified
+   against the live Page — if it is refused, the fallback is one extra branch on
+   `image_count === 1` posting to `/photos`.
 3. If the response contains an `error` object, alert Slack with the full error and do
    **not** mark the row as posted. Otherwise capture `id` as `fb_post_id`.
 
@@ -388,7 +479,18 @@ Offline (pure Code-node assertions, no network):
 - Copy validator accepts a known-good sample.
 - Loop guard increments correctly and hard-stops at attempt 3 (there is never an
   "attempt 4 of 3").
-- Route decision maps all four dropdown values plus timeout to the right branch.
+- Route decision maps approve / decline / timeout to the right branch, and the internal
+  copy / image / both values too. A decline is not a timeout and a timeout is not a
+  decline; a timeout consumes no attempt.
+- A reasonless decline still produces a non-empty `revision_note`.
+- `validateCopy` accepts 1, 3 and 5 image prompts and rejects 0, 6, a blank entry and a
+  non-array.
+- The image prompt names every brand colour by name and hex, keeps the negatives, renders
+  the headline into image 1 only, and attaches the logo as an inline reference image.
+- Behavioural, against the real assembled Code-node bodies: Build Image Prompt emits one
+  DISTINCT item per image prompt; Validate Image sinks the whole set if any image fails;
+  Collect Photos builds `attached_media` in order and refuses a partial album.
+- Structural: no `$('Node').first()` on any of the four fan-out nodes.
 - Image validator rejects an empty response, an undersized payload, and a wrong MIME type.
 - Image prompt builder includes the exact headline and every negative constraint.
 
@@ -456,7 +558,19 @@ Deploy loop, per repo convention:
 
 1. Verify `generationConfig.imageConfig.aspectRatio` is honoured by
    `gemini-2.5-flash-image`. If not, fall back to `1:1` and document it.
-2. Confirm the Slack `sendAndWait` `customForm` response shape (field naming) against the
-   installed n8n version before wiring `route-decision.js`.
+2. ~~Confirm the Slack `sendAndWait` `customForm` response shape (field naming) against the
+   installed n8n version before wiring `route-decision.js`.~~ Moot: the gate is
+   `approvalType: 'double'` as of 2026-09-11, whose shape is the documented
+   `{data:{approved:bool}}`. Superseded by item 4 below.
 3. Confirm which Meta permissions work in Development mode for a Page admin versus which
    need App Review, and record it in the README.
+
+**Added 2026-09-11, carried into the first live runs after the rework:**
+
+4. Confirm on a real (shortened) expiry that a `limitWaitTime` timeout really does emit no
+   `approved` key, i.e. that `routeApproval` reads it as `timeout` and not as a decline
+   (§8 item 2). This is the highest-value unverified assumption in the build.
+5. Confirm `POST /{pageId}/feed` accepts a one-entry `attached_media` (§9).
+6. Confirm `gemini-2.5-flash-image` composites the supplied logo rather than redrawing it
+   (§7). If it redraws, decide between a deterministic compositing step (a scope change,
+   §1 ruled out an overlay step) and prompt-described branding only.

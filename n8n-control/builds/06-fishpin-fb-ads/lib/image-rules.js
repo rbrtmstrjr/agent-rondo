@@ -6,12 +6,49 @@
 // Pure: no n8n globals, no requires.
 // ============================================================================
 
-const STYLE_SUFFIX = 'photographic, natural Philippine coastal light, documentary style, '
-  + 'deep navy and warm gold palette, weathered wood and white foam accents, single clear subject, '
-  + 'generous negative space in the upper third';
+// The owner's verdict on the first live images was "the generated image doesnt
+// have a branded feels in our venture". The direction chosen: keep the
+// documentary photography of Filipino fishermen and bangkas, but colour grade
+// it hard to the FishPin palette and composite the real logo in.
+//
+// So this is no longer a mood ("deep navy and warm gold"), which the model was
+// free to interpret as any blue and any yellow. It is a named, hex-specified
+// grade with a "nothing else competes" rule, lifted from the FishPin app's own
+// brand spec (see assets/BRAND.md).
+const PALETTE = [
+  { name: 'Persian Blue', hex: '#0A2461', use: 'the dominant dark: deep sea, hull shadow, and the shadow end of the whole grade' },
+  { name: 'Accent Blue', hex: '#147DFF', use: 'the one saturated blue: water highlights and sky reflection' },
+  { name: 'Amber', hex: '#FFC857', use: 'the single warm accent: sunrise or sunset light, lantern glow, skin highlight' },
+  { name: 'Off White', hex: '#EEF4FB', use: 'the light end of the grade: foam, cloud, and highlight detail' },
+];
+
+const STYLE_SUFFIX = 'documentary photography of Filipino fishermen and their bangkas, '
+  + 'real Philippine coastal light, photographic and not illustrated, not glossy stock photography. '
+  + 'Colour grade the photograph deliberately to the FishPin brand palette, exactly these four colours: '
+  + PALETTE.map((p) => p.name + ' ' + p.hex + ' as ' + p.use).join('; ') + '. '
+  + 'No other hue competes with these four: push every stray green, teal, magenta or red in the scene '
+  + 'towards the nearest of them, and keep the grade consistent across the whole image. '
+  + 'Feel: reliable, calm, resilient, observant, local and steady. Never dramatic, heroic, or pitying. '
+  + 'Single clear subject, generous negative space in the upper third';
+
+// The FishPin logo is supplied to the model as an attached reference image
+// (an inline_data part ahead of the text part, the same request shape proven in
+// builds/brand-photoshoot-variations). This instruction is what tells the model
+// what that attachment IS and what to do with it -- without it the model treats
+// a leading image as a style reference and repaints the whole scene from it.
+const LOGO_INSTRUCTION = 'The attached PNG is the FishPin logo, a blue rounded square with a white '
+  + 'fin-and-waves mark. Composite that exact logo image into the image, unaltered: small, about '
+  + '8 to 10 percent of the image width, in the bottom right corner, with a clear margin from both '
+  + 'edges and placed over a calm part of the picture so it stays legible. Reproduce it pixel for '
+  + 'pixel as supplied. Do not invent, redraw, recreate, redesign, recolour, rotate, crop or add '
+  + 'text to the logo, and do not use it as a style reference for the rest of the picture.';
 
 const NEGATIVES = [
-  'no watermark', 'no logo', 'no app screenshot', 'no user interface', 'no extra fingers',
+  // 'no logo' used to be here. It is gone because the brand logo is now
+  // deliberately composited in (see LOGO_INSTRUCTION); the replacement below
+  // still bans every OTHER logo and watermark, which is what that rule was for.
+  'no watermark and no logo other than the supplied FishPin logo',
+  'no app screenshot', 'no user interface', 'no extra fingers',
   'no deformed hands', 'no western yacht', 'no western fishing rods on a commercial bangka',
   'no impossible boat shapes', 'no exaggerated poverty imagery', 'no comedic or pitiful framing',
   'no imagery that reads as a real distress event or a real accident', 'no floating objects',
@@ -21,21 +58,67 @@ function aspectFor(pillar) {
   return String(pillar || '').toLowerCase() === 'fish fact' ? '1:1' : '4:5';
 }
 
-function buildImagePrompt(copy, pillar) {
+// The copy model returns 1 to 5 image prompts (copy-rules.js enforces that
+// range before anything gets here). This is the defensive read used by the
+// n8n glue: blanks dropped, hard-capped at 5 so a validator change can never
+// turn into 20 Gemini image calls and 20 Facebook uploads.
+function promptsOf(copy) {
+  const c = copy || {};
+  const list = Array.isArray(c.image_prompts) ? c.image_prompts : [];
+  return list.map((p) => String(p == null ? '' : p).trim()).filter(Boolean).slice(0, 5);
+}
+
+// Builds the prompt for ONE image of the set. `index` is 0-based, `total` is
+// how many images the post will carry.
+//
+// Only the FIRST image renders the headline. Repeating the same headline
+// across five album frames looks like five rejected drafts of one poster, not
+// a photo essay, and every extra rendered word is another chance for the model
+// to garble Tagalog. So image 1 is the cover and carries the headline exactly
+// as before; images 2..N are explicitly told to carry no text at all.
+function buildImagePrompt(copy, pillar, index, total) {
   const c = copy || {};
   const headline = String(c.headline || '').trim();
-  return [
-    String(c.image_prompt || '').trim(),
+  const prompts = promptsOf(c);
+  const n = Number(total || prompts.length || 1);
+  const i = Number(index || 0);
+  const scene = prompts[i] || prompts[0] || '';
+  const isCover = i === 0;
+
+  const lines = [scene, ''];
+
+  if (n > 1) {
+    lines.push(
+      'This is image ' + (i + 1) + ' of ' + n + ' in one Facebook post. The ' + n + ' images tell '
+        + 'one story in order, photographed on the same trip, with the same people, boat, clothing '
+        + 'and time of day. This frame must clearly move that story on from the previous one.',
+      ''
+    );
+  }
+
+  if (isCover) {
+    lines.push(
+      'Render this exact headline text into the reserved negative space, character for character, '
+        + 'spelled exactly as written, on one or two lines, in a bold clean sans-serif with high contrast '
+        + 'against the background: "' + headline + '"',
+      'Do not add, translate, correct, or invent any other text anywhere in the image.'
+    );
+  } else {
+    lines.push(
+      'Render NO text in this image. No headline, no caption, no lettering, no numbers, no signage. '
+        + 'The headline appears on the first image of the set only; this one is photograph only.'
+    );
+  }
+
+  lines.push(
     '',
-    'Render this exact headline text into the reserved negative space, character for character, '
-      + 'spelled exactly as written, on one or two lines, in a bold clean sans-serif with high contrast '
-      + 'against the background: "' + headline + '"',
-    'Do not add, translate, correct, or invent any other text anywhere in the image.',
+    LOGO_INSTRUCTION,
     '',
     'Style: ' + STYLE_SUFFIX + '.',
     'Composition: ' + (aspectFor(pillar) === '1:1' ? 'square framing' : 'vertical 4:5 framing') + '.',
-    'Avoid: ' + NEGATIVES.join(', ') + '.',
-  ].join('\n');
+    'Avoid: ' + NEGATIVES.join(', ') + '.'
+  );
+  return lines.join('\n');
 }
 
 function readImageSize(buf) {
@@ -142,6 +225,7 @@ function validateImage(input, opts) {
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    buildImagePrompt, aspectFor, readImageSize, validateImage, compareAspect, STYLE_SUFFIX, NEGATIVES,
+    buildImagePrompt, aspectFor, promptsOf, readImageSize, validateImage, compareAspect,
+    STYLE_SUFFIX, NEGATIVES, PALETTE, LOGO_INSTRUCTION,
   };
 }

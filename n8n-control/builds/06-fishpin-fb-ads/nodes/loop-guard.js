@@ -34,7 +34,7 @@ const priorCopy = {
   caption: String(c.caption || ''),
   cta: String(c.cta || ''),
   hashtags: Array.isArray(c.hashtags) ? c.hashtags : [],
-  image_prompt: String(c.image_prompt || ''),
+  image_prompts: Array.isArray(c.image_prompts) ? c.image_prompts : [],
   alt_text: String(c.alt_text || ''),
 };
 

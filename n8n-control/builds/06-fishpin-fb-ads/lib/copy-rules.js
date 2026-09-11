@@ -18,11 +18,27 @@ function validateCopy(copy, opts) {
   const c = copy || {};
 
   // 1. required fields
-  ['headline', 'subhead', 'caption', 'cta', 'image_prompt', 'alt_text'].forEach((f) => {
+  ['headline', 'subhead', 'caption', 'cta', 'alt_text'].forEach((f) => {
     if (!String(c[f] || '').trim()) reasons.push('Missing or empty field: ' + f);
   });
   if (!Array.isArray(c.hashtags) || c.hashtags.length < 3 || c.hashtags.length > 5) {
     reasons.push('hashtags must be an array of 3 to 5 tags');
+  }
+  // 1b. image_prompts: the model chooses how many images the topic needs, and
+  // every one of them becomes a real Gemini image call and a real Facebook
+  // photo upload. An out-of-range count or a blank entry is caught here, before
+  // any of that is spent: 0 entries would publish a post with no picture at
+  // all, more than 5 exceeds what the album step is built and budgeted for, and
+  // a blank entry would send the image model an empty scene and get back
+  // whatever it felt like.
+  if (!Array.isArray(c.image_prompts)) {
+    reasons.push('image_prompts must be an array of 1 to 5 image descriptions, one per image');
+  } else if (c.image_prompts.length < 1 || c.image_prompts.length > 5) {
+    reasons.push('image_prompts has ' + c.image_prompts.length
+      + ' entries, must be an array of 1 to 5 image descriptions');
+  } else if (c.image_prompts.some((p) => !String(p == null ? '' : p).trim())) {
+    reasons.push('image_prompts contains an empty entry. Every image in the set needs its own '
+      + 'non-empty description, or drop it from the array.');
   }
 
   const textFields = { headline: c.headline, subhead: c.subhead, caption: c.caption, cta: c.cta };

@@ -7,6 +7,13 @@ const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').split('=')[
 const LIVE = process.argv.includes('--live');
 
 let pass = 0, fail = 0; const fails = [];
+// Promises from behavioural tests that have to run an ASYNC node body (n8n
+// wraps every Code node in an async function, so a node may use `await`).
+// The results tally waits on these before printing, or their checks would
+// land after the summary line and never be counted.
+const PENDING = [];
+const defer = (label, p) => PENDING.push(
+  Promise.resolve(p).catch((e) => check(label + ' threw: ' + e.message, false)));
 const check = (name, cond) => {
   if (cond) { pass++; console.log('  ✓ ' + name); }
   else { fail++; fails.push(name); console.log('  ✗ ' + name); }
@@ -95,6 +102,29 @@ section('brand', 'Brand bible', () => {
 
   check('schema requires all 7 fields', B.COPY_SCHEMA.required.length === 7);
   check('schema types hashtags as an array', B.COPY_SCHEMA.properties.hashtags.type === 'ARRAY');
+
+  // ---- CHANGE 2: the copy model now decides how many images the topic needs.
+  // The single `image_prompt` string is replaced by an `image_prompts` ARRAY
+  // of 1 to 5 entries, one per image in a coherent set.
+  check('schema asks for image_prompts as an ARRAY',
+    B.COPY_SCHEMA.properties.image_prompts
+      && B.COPY_SCHEMA.properties.image_prompts.type === 'ARRAY'
+      && B.COPY_SCHEMA.properties.image_prompts.items.type === 'STRING');
+  check('schema no longer asks for a single image_prompt string',
+    !Object.prototype.hasOwnProperty.call(B.COPY_SCHEMA.properties, 'image_prompt'));
+  check('schema requires image_prompts', B.COPY_SCHEMA.required.includes('image_prompts'));
+  check('schema no longer requires image_prompt', !B.COPY_SCHEMA.required.includes('image_prompt'));
+
+  check('system prompt states the 1 to 5 image budget',
+    /\b1 to 5\b/.test(sys) && /image_prompts/.test(sys));
+  check('system prompt says a single feature spotlight may need only one image',
+    /spotlight/i.test(sys) && /only 1|only one/i.test(sys));
+  check('system prompt says a how-to or fish guide post benefits from 3 to 5',
+    /\b3 to 5\b/.test(sys) && /how-to/i.test(sys) && /fish guide|fish-guide/i.test(sys));
+  check('system prompt demands one story, not five variations of the same frame',
+    /one story/i.test(sys) && /variations of the same/i.test(sys));
+  check('system prompt tells the model each entry describes ONE image',
+    /one image/i.test(sys));
 });
 
 // ---------------------------------------------------------------- copy rules
@@ -115,7 +145,9 @@ section('copy', 'Copy validation', () => {
       + 'Subukan ninyo bago ang susunod ninyong biyahe.',
     cta: 'I-download sa Play Store',
     hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps', '#Bangka'],
-    image_prompt: 'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+    // CHANGE 2: `image_prompt` (one string) became `image_prompts` (1 to 5
+    // strings, one per image in a coherent set).
+    image_prompts: ['A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.'],
     alt_text: 'A fisherman on a bangka at dawn.',
   };
   const w = (o) => Object.assign({}, good, o);
@@ -134,6 +166,23 @@ section('copy', 'Copy validation', () => {
   check('clean sample reports no reasons', validateCopy(good, OPTS).reasons.length === 0);
 
   rejects('rejects a missing field', w({ cta: '' }), /cta/i);
+
+  // ---- CHANGE 2: image_prompts is an array of 1 to 5 non-empty entries.
+  const nPrompts = (n) => Array.from({ length: n }, (_, i) => 'Scene ' + (i + 1) + ': a Filipino bangka at dawn.');
+  check('accepts exactly 1 image prompt', validateCopy(w({ image_prompts: nPrompts(1) }), OPTS).valid === true);
+  check('accepts 3 image prompts', validateCopy(w({ image_prompts: nPrompts(3) }), OPTS).valid === true);
+  check('accepts exactly 5 image prompts', validateCopy(w({ image_prompts: nPrompts(5) }), OPTS).valid === true);
+  rejects('rejects 0 image prompts', w({ image_prompts: [] }), /image_prompts/i);
+  rejects('rejects 6 image prompts', w({ image_prompts: nPrompts(6) }), /image_prompts/i);
+  rejects('rejects an empty-string image prompt entry',
+    w({ image_prompts: ['A bangka at dawn.', '   '] }), /image_prompts/i);
+  rejects('rejects image_prompts that is not an array at all',
+    w({ image_prompts: 'A bangka at dawn.' }), /image_prompts/i);
+  rejects('rejects a missing image_prompts field', (() => { const o = w({}); delete o.image_prompts; return o; })(), /image_prompts/i);
+  check('the 1-to-5 rejection reason states the allowed range',
+    validateCopy(w({ image_prompts: nPrompts(6) }), OPTS).reasons.some(r => /1 to 5/.test(r)));
+  check('the empty-entry rejection is distinct from the count rejection',
+    validateCopy(w({ image_prompts: ['ok scene', ''] }), OPTS).reasons.some(r => /empty/i.test(r)));
   rejects('rejects an em dash in the caption',
     w({ caption: good.caption.replace('Normal po yan,', 'Normal po yan —') }), /em dash/i);
   rejects('rejects an em dash in the headline', w({ headline: 'Walang signal — walang problema' }), /em dash/i);
@@ -269,20 +318,77 @@ section('copy', 'Copy validation', () => {
 section('image', 'Image prompt and validation', () => {
   const I = L('image-rules.js');
 
+  // CHANGE 2: a copy object now carries image_prompts (1 to 5), and
+  // buildImagePrompt builds the prompt for ONE image of that set.
   const copy = {
     headline: 'Nawala ang signal? Gumagana pa rin',
-    image_prompt: 'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+    image_prompts: [
+      'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+      'The same fisherman marking a spot on his phone, hands in frame, sea behind him.',
+      'The bangka heading home at dusk, the marked spot already behind it.',
+    ],
   };
-  const p = I.buildImagePrompt(copy, 'feature spotlight');
+  const p = I.buildImagePrompt(copy, 'feature spotlight', 0, 3);
+  const p2 = I.buildImagePrompt(copy, 'feature spotlight', 1, 3);
 
   check('prompt carries the scene', p.includes('bangka with outriggers'));
   check('prompt carries the exact headline verbatim', p.includes(copy.headline));
   check('prompt demands exact spelling', /character for character|exactly as written/i.test(p));
   check('prompt sets the documentary style suffix', /documentary/i.test(p));
-  check('prompt sets the palette', /navy/i.test(p) && /gold/i.test(p));
+  // ---- CHANGE 3: the vague "deep navy and warm gold" mood is replaced by the
+  // real FishPin palette, named AND given by hex, as a deliberate colour grade.
+  check('prompt names every brand colour',
+    /Persian Blue/i.test(p) && /Accent Blue/i.test(p) && /Amber/i.test(p) && /Off White/i.test(p));
+  check('prompt gives every brand colour by hex',
+    /#0A2461/i.test(p) && /#147DFF/i.test(p) && /#FFC857/i.test(p) && /#EEF4FB/i.test(p));
+  check('prompt frames the palette as a deliberate colour grade, not a mood',
+    /colou?r[- ]grade/i.test(p));
+  check('prompt forbids hues outside the brand palette',
+    /no other hue|outside (this|the) palette/i.test(p));
+  check('prompt keeps documentary Filipino fishermen and bangkas',
+    /documentary/i.test(p) && /bangka/i.test(p) && /Filipino/i.test(p));
+  check('prompt carries the brand personality words',
+    /calm/i.test(p) && /resilient/i.test(p) && /steady/i.test(p));
   check('prompt reserves negative space', /negative space/i.test(p));
   ['watermark', 'user interface', 'extra fingers', 'yacht', 'poverty', 'distress']
     .forEach(n => check('prompt negates: ' + n, new RegExp(n, 'i').test(p)));
+  check('the negative list no longer bans the logo outright (the brand logo is composited in)',
+    !I.NEGATIVES.includes('no logo'));
+  check('the negative list still bans any OTHER logo or watermark',
+    I.NEGATIVES.some(n => /watermark/i.test(n) && /FishPin/i.test(n)));
+
+  // ---- CHANGE 3: the real logo is composited from an attached reference image.
+  check('prompt tells the model the attached image is the FishPin logo',
+    /attached/i.test(p) && /logo/i.test(p));
+  check('prompt places the logo small in a bottom corner, unaltered',
+    /bottom/i.test(p) && /unaltered|do not redraw|do not alter/i.test(p));
+  check('prompt forbids the model inventing its own logo',
+    /do not (invent|redraw|recreate|redesign)/i.test(p));
+  check('LOGO_INSTRUCTION is exported for the glue to reuse',
+    typeof I.LOGO_INSTRUCTION === 'string' && /logo/i.test(I.LOGO_INSTRUCTION));
+
+  // ---- CHANGE 2: per-image prompts, one story across the set
+  check('each image of the set gets its OWN scene',
+    p.includes(copy.image_prompts[0]) && p2.includes(copy.image_prompts[1])
+      && !p.includes(copy.image_prompts[1]));
+  check('the prompt states which image of how many this is',
+    /image 1 of 3/i.test(p) && /image 2 of 3/i.test(p2));
+  check('the prompt says the set must tell one story',
+    /one story|same (set|shoot|post)/i.test(p2));
+  check('only the first image renders the headline', !p2.includes(copy.headline));
+  check('the later images are told to render no text at all',
+    /no text|do not render any text|without any text/i.test(p2));
+  const solo = I.buildImagePrompt(copy, 'feature spotlight', 0, 1);
+  check('a single-image post still renders the headline', solo.includes(copy.headline));
+  check('a single-image post is not labelled as part of a set', !/image 1 of 1/i.test(solo));
+
+  check('promptsOf returns the array as given when it is 1 to 5 long',
+    I.promptsOf(copy).length === 3);
+  check('promptsOf clamps a 7-entry array to 5',
+    I.promptsOf({ image_prompts: Array.from({ length: 7 }, (_, i) => 's' + i) }).length === 5);
+  check('promptsOf drops empty entries', I.promptsOf({ image_prompts: ['a', '  ', 'b'] }).length === 2);
+  check('promptsOf returns an empty array when there is nothing usable',
+    I.promptsOf({}).length === 0 && I.promptsOf(null).length === 0);
 
   check('fish fact posts are square', I.aspectFor('fish fact') === '1:1');
   check('other pillars are 4:5', I.aspectFor('feature spotlight') === '4:5');
@@ -432,6 +538,42 @@ section('flow', 'Decision routing and loop counters', () => {
   check('empty payload is unknown', F.normalizeDecision({}) === 'unknown');
   check('null payload is unknown', F.normalizeDecision(null) === 'unknown');
 
+  // ======================================================================
+  // CHANGE 1 — the Slack gate is now two NATIVE buttons, in-channel:
+  //   Approve  -> approve and publish
+  //   Decline  -> regenerate copy AND images for the same queue row
+  // n8n's `approvalType: 'double'` emits {data:{approved:true|false}}.
+  // `approved:false` used to be read as a TIMEOUT, which would have expired
+  // the row on a decline instead of regenerating it.
+  // ======================================================================
+  check('C1: approved:true maps to approve', F.normalizeDecision({ data: { approved: true } }) === 'approve');
+  check('C1: approved:false is a DECLINE (regenerate both), not a timeout',
+    F.normalizeDecision({ data: { approved: false } }) === 'both');
+  check('C1: a decline never reads as approve', F.normalizeDecision({ data: { approved: false } }) !== 'approve');
+  check('C1: a decline never reads as timeout', F.normalizeDecision({ data: { approved: false } }) !== 'timeout');
+  check('C1: a top-level approved:false is also a decline', F.normalizeDecision({ approved: false }) === 'both');
+  check('C1: the internal copy/image decisions still exist for loopGuard and keep_copy',
+    F.normalizeDecision({ Decision: 'Regenerate copy' }) === 'copy'
+      && F.normalizeDecision({ Decision: 'Regenerate image' }) === 'image');
+  check('C1: the two-button payload carries no free-text reason',
+    F.extractReason({ data: { approved: false } }) === '');
+
+  // ---- timeout vs decline. A limitWaitTime expiry resumes the execution
+  // with the node's INPUT passed through, so there is no `approved` key at
+  // all; a Disapprove click always carries approved:false. routeApproval is
+  // the gate-specific wrapper that encodes that distinction, so a timeout
+  // never consumes a human attempt and never regenerates.
+  check('C1: routeApproval approves an approve click', F.routeApproval({ data: { approved: true } }) === 'approve');
+  check('C1: routeApproval declines a decline click', F.routeApproval({ data: { approved: false } }) === 'both');
+  check('C1: routeApproval reads a passthrough payload (no approved key) as a timeout',
+    F.routeApproval({ ok: true, channel: 'C0BDSV5RB5G', ts: '1757000000.000100' }) === 'timeout');
+  check('C1: routeApproval reads an empty payload as a timeout, never as a rejection',
+    F.routeApproval({}) === 'timeout' && F.routeApproval(null) === 'timeout');
+  check('C1: routeApproval reads an empty data object as a timeout',
+    F.routeApproval({ data: {} }) === 'timeout');
+  check('C1: normalizeDecision itself still reports unknown for an unrecognisable payload',
+    F.normalizeDecision({}) === 'unknown');
+
   // a reviewer's free-text reason must never hijack routing away from an explicit decision
   check('approve survives a reason mentioning rewrite',
     F.normalizeDecision({ Decision: 'Approve', Reason: 'please rewrite the CTA next time' }) === 'approve');
@@ -503,6 +645,40 @@ section('flow', 'Decision routing and loop counters', () => {
     CFG2
   );
   check('stop message derives the failure count from maxCopyRetries', /3 times/.test(v2.message));
+
+  // ---- CHANGE 1: consequences of the decision reaching loopGuard
+  const tOut = F.loopGuard({ decision: F.routeApproval({}), attempt: 1, copy_retry: 0, reason: '', row_id: 'FP-001' }, CFG);
+  check('C1: a timeout expires the row', tOut.action === 'expired' && tOut.status === 'expired');
+  check('C1: a timeout does NOT consume a human attempt', tOut.attempt === 1);
+  check('C1: a timeout does NOT regenerate anything', tOut.action !== 'reinvoke');
+  const dOut = F.loopGuard({ decision: F.routeApproval({ data: { approved: false } }), attempt: 1, copy_retry: 0, reason: '', row_id: 'FP-001' }, CFG);
+  check('C1: a decline regenerates', dOut.action === 'reinvoke');
+  check('C1: a decline DOES consume a human attempt', dOut.attempt === 2);
+  const aOut = F.loopGuard({ decision: F.routeApproval({ data: { approved: true } }), attempt: 1, copy_retry: 0, reason: '', row_id: 'FP-001' }, CFG);
+  check('C1: an approve publishes', aOut.action === 'publish');
+
+  // ---- CHANGE 1: the free-text reason is gone, so a reasonless decline must
+  // still steer the regeneration. An empty revision_note would leave the model
+  // with no idea why it was rejected.
+  check('C1: DECLINE_NOTE is exported and is a real instruction',
+    typeof F.DECLINE_NOTE === 'string' && F.DECLINE_NOTE.length > 40);
+  check('C1: DECLINE_NOTE says the reviewer rejected the draft',
+    /reject|declin/i.test(F.DECLINE_NOTE));
+  check('C1: DECLINE_NOTE asks for a different angle', /different angle/i.test(F.DECLINE_NOTE));
+  check('C1: a reasonless decline falls back to the fixed instruction, never an empty note',
+    dOut.revision_note === F.DECLINE_NOTE && dOut.revision_note !== '');
+  check('C1: the escalation after the last decline also carries the fallback note',
+    F.loopGuard({ decision: 'both', attempt: 3, copy_retry: 0, reason: '', row_id: 'FP-001' }, CFG)
+      .revision_note === F.DECLINE_NOTE);
+  check('C1: a typed reason still wins over the fallback note',
+    F.loopGuard({ decision: 'both', attempt: 1, copy_retry: 0, reason: 'too salesy', row_id: 'x' }, CFG)
+      .revision_note === 'too salesy');
+  check('C1: the machine copy-retry keeps the validator reason, not the decline note',
+    F.loopGuard({ decision: 'copy_invalid', attempt: 1, copy_retry: 0, reason: 'em dash', row_id: 'x' }, CFG)
+      .revision_note === 'em dash');
+  check('C1: an approve carries no revision note at all',
+    F.loopGuard({ decision: 'approve', attempt: 1, copy_retry: 0, reason: '', row_id: 'x' }, CFG).revision_note === '');
+  check('C1: a timeout carries no revision note at all', tOut.revision_note === '');
 });
 
 // ---------------------------------------------------------------- sheet rules
@@ -680,15 +856,28 @@ section('workflow', 'Main workflow structure', () => {
   check('Loop Webhook responseMode is onReceived',
     byName['Loop Webhook'].parameters.responseMode === 'onReceived');
 
-  // the review gate really is a custom form with four decisions
+  // ---- CHANGE 1: the review gate is two NATIVE Slack buttons, in-channel.
+  // It used to be responseType:'customForm', which made the reviewer open a
+  // form in a separate browser tab to pick from a 4-option dropdown. The
+  // checks below previously asserted that dropdown (`review uses a custom
+  // form`, `review offers: Regenerate copy/image/both`, `review has a reason
+  // field`); they encoded the replaced behaviour and are corrected here, not
+  // deleted. The proven pattern is sv91rOvu8Bec8sLc's Approval (Send & Wait).
   const rev = byName['Slack Review'].parameters;
   check('review uses sendAndWait', rev.operation === 'sendAndWait');
-  check('review uses a custom form', rev.responseType === 'customForm');
-  const fields = JSON.stringify(rev.formFields);
-  ['Approve', 'Regenerate copy', 'Regenerate image', 'Regenerate both']
-    .forEach(o => check('review offers: ' + o, fields.includes(o)));
-  check('review has a reason field', /reason/i.test(fields));
+  check('C1: review uses the NATIVE two-button approval, not a browser form',
+    rev.approvalOptions && rev.approvalOptions.values
+      && rev.approvalOptions.values.approvalType === 'double');
+  check('C1: review no longer opens a custom form in a separate tab',
+    rev.responseType === undefined);
+  check('C1: review no longer defines any form fields', rev.formFields === undefined);
+  check('C1: the review message tells the reviewer what each button does',
+    /approve/i.test(String(rev.message)) && /declin/i.test(String(rev.message)));
+  check('C1: the review message says Decline regenerates copy AND images',
+    /copy and (the )?image|copy AND image/i.test(String(rev.message)));
   check('review limits the wait time', rev.options && rev.options.limitWaitTime === true);
+  check('C1: Route Decision uses the approval-gate mapper, not the raw normaliser',
+    /routeApproval\s*\(/.test(byName['Route Decision'].parameters.jsCode));
 
   // Queue writes must target THIS row, never append. An append would leave the
   // original row still 'ready' and the next scheduled run would repost the idea.
@@ -830,9 +1019,20 @@ section('workflow', 'Main workflow structure', () => {
     JSON.stringify(branchesInto('Image URL OK?', 'Notify Image Failed')) === '[1]');
   check('Get Photo URL no longer feeds Log Attempt directly',
     branchesInto('Get Photo URL', 'Log Attempt').length === 0);
-  check('Image URL OK? tests for an actual usable url, not merely the absence of an error',
-    /images/.test(P('Image URL OK?'))
-      && /source/.test(P('Image URL OK?')));
+  // CHANGE 2: with 1 to 5 photos the gate can no longer be a per-item test of
+  // images[0].source — a per-item IF would let a PARTIAL album through (some
+  // items true, some false). Collect Photos aggregates all N uploads into one
+  // item and does the images[0].source check for every one of them; the gate
+  // then tests that aggregate. Same fail-closed guarantee, now all-or-nothing.
+  // The check below previously asserted /images/ && /source/ on
+  // Image URL OK? itself; it is corrected, not deleted.
+  check('C2: Collect Photos does the per-photo images[0].source check',
+    /images/.test(byName['Collect Photos'].parameters.jsCode)
+      && /source/.test(byName['Collect Photos'].parameters.jsCode));
+  check('C2: Image URL OK? gates on the all-or-nothing aggregate, not one item',
+    /\$json\.ok/.test(P('Image URL OK?')));
+  check('C2: only Collect Photos feeds Image URL OK?',
+    JSON.stringify(inbound('Image URL OK?')) === '["Collect Photos"]');
   // the gate must be un-routable-around, not merely present
   const pastUrlGate = reachableAvoiding('Get Photo URL', 'Image URL OK?');
   check('no path from Get Photo URL reaches Slack Review without passing Image URL OK?',
@@ -846,6 +1046,57 @@ section('workflow', 'Main workflow structure', () => {
     /image URL lookup/i.test(imgFail) && /image generation/i.test(imgFail));
   check('Notify Image Failed picks the stage from isExecuted, not by reading an un-run node',
     /Get Photo URL'\)\.isExecuted/.test(imgFail));
+
+  // ================================================================ CHANGE 2
+  // One to five images per post, count chosen by the copy model, published as
+  // a single Facebook album via POST /{page}/feed + attached_media — the
+  // two-step pattern proven in sv91rOvu8Bec8sLc.
+  const rawWf = JSON.stringify(wf);
+  check('C2: has node: Collect Photos', has('Collect Photos'));
+  check('C2: Build Image Prompt fans out one item per image prompt',
+    /promptsOf\s*\(/.test(byName['Build Image Prompt'].parameters.jsCode));
+  check('C2: Generate Image is fed only by the fan-out node',
+    JSON.stringify(inbound('Generate Image')) === '["Build Image Prompt"]');
+  check('C2: Get Photo URL feeds Collect Photos',
+    branchesInto('Get Photo URL', 'Collect Photos').length === 1);
+  check('C2: Get Photo URL no longer feeds Image URL OK? directly',
+    branchesInto('Get Photo URL', 'Image URL OK?').length === 0);
+  check('C2: Validate Image is all-or-nothing across the whole set',
+    /every image|any image|all-or-nothing|partial album/i.test(byName['Validate Image'].parameters.jsCode));
+  check('C2: Collect Photos builds attached_media as a JSON array of media_fbid',
+    /attached_media/.test(byName['Collect Photos'].parameters.jsCode)
+      && /media_fbid/.test(byName['Collect Photos'].parameters.jsCode));
+  const pubParamsForAlbum = P('Publish Post');
+  check('C2: Publish Post sends the aggregated attached_media, not a single media_fbid',
+    /attached_media/.test(pubParamsForAlbum)
+      && !/\[\{\s*media_fbid:\s*\$json\.media_fbid\s*\}\]/.test(pubParamsForAlbum));
+  check('C2: Publish Post still posts to the /feed edge (album pattern, not /photos)',
+    /\/feed/.test(pubParamsForAlbum) && !/\/photos/.test(pubParamsForAlbum));
+  check('C2: the Slack preview states how many images there are',
+    /image_count|photo_count/.test(P('Post Preview')));
+  check('C2: the Slack preview shows every image url, not just the first',
+    /urls/.test(P('Post Preview')));
+
+  // ---- per-item fan-out hazard. $('Node').first() always returns index 0 of
+  // that node's output regardless of the item being processed, which is what
+  // silently collapsed three insight rows onto the first row's data. Four
+  // nodes are now fan-outs (one item per image) and must never be read that
+  // way. ('Validate Image' is deliberately NOT in this list: on the FAILURE
+  // path it returns exactly one aggregated item by design, and that is the
+  // only place it is read with .first().)
+  ['Build Image Prompt', 'Generate Image', 'Upload Photo (unpublished)', 'Get Photo URL']
+    .forEach(n => check("C2: no $('" + n + "').first() anywhere in the built workflow",
+      !rawWf.includes("$('" + n + "').first()")));
+  check('C2: Validate Image index-aligns against Build Image Prompt with .all()',
+    /\$\('Build Image Prompt'\)\.all\(\)/.test(byName['Validate Image'].parameters.jsCode));
+  check('C2: Collect Photos maps over items rather than reading index 0',
+    /items/.test(byName['Collect Photos'].parameters.jsCode));
+
+  // ---- ATTEMPT_HEADERS must not grow: the album's urls share the one
+  // image_url column.
+  check('C2: the Attempts tab still has exactly 10 columns', S.ATTEMPT_HEADERS.length === 10);
+  check('C2: Write Attempt still writes exactly the 10 header columns (A:J)',
+    /A:J:append/.test(P('Write Attempt')));
 
   // ---------------------------------------------------------------- I2: writeback gate
   // Write Back Row also continues on error, and nothing gated Notify Success
@@ -920,8 +1171,16 @@ section('workflow', 'Main workflow structure', () => {
       !byName[n].parameters.jsCode.includes("$('Validate Copy')")));
   check("Post Preview no longer reads $('Validate Copy')",
     !P('Post Preview').includes("$('Validate Copy')"));
-  check('Post Preview reads the effective copy from Build Image Prompt',
-    P('Post Preview').includes("$('Build Image Prompt').first().json.copy"));
+  // CHANGE 2: Build Image Prompt is a fan-out node now (one item per image),
+  // so reading it with .first() is the index-0 collapse hazard. The effective
+  // copy moved to Collect Photos, the single-item join that every downstream
+  // node reads. This check previously asserted the Build Image Prompt read;
+  // it is corrected, not deleted, and the no-.first()-on-a-fan-out guard in
+  // the CHANGE 2 block above is what now enforces the underlying rule.
+  check('Post Preview reads the effective copy from the Collect Photos join',
+    P('Post Preview').includes("$('Collect Photos').first().json.copy"));
+  check('Post Preview no longer reads the fan-out node',
+    !P('Post Preview').includes("$('Build Image Prompt')"));
   const pubParams = P('Publish Post');
   check('Publish Post still sends caption, cta and hashtags from the routed copy',
     /\$json\.copy\.caption/.test(pubParams) && /\$json\.copy\.cta/.test(pubParams)
@@ -975,7 +1234,12 @@ section('workflow', 'Main workflow structure', () => {
       + 'lumabas sa susunod na preview kahit bago ang larawan.',
     cta: 'I-download sa Play Store',
     hashtags: ['#FishPin', '#Mangingisda', '#OfflineMaps'],
-    image_prompt: 'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+    // CHANGE 2: a set of 3 images, one story, not one image.
+    image_prompts: [
+      'A Filipino bangka with outriggers at dawn, wide empty sky on the upper third.',
+      'The same fisherman marking the spot on his phone, hands in frame, open sea behind him.',
+      'The bangka heading home at dusk, the marked spot already behind it.',
+    ],
     alt_text: 'A fisherman on a bangka at dawn.',
   };
   const SECRET = 'a-real-loop-secret';
@@ -1007,8 +1271,10 @@ section('workflow', 'Main workflow structure', () => {
   check('C3 step 1: it carries every field the image prompt and publish body need',
     payload.prior_copy.headline === APPROVED.headline
       && payload.prior_copy.cta === APPROVED.cta
-      && payload.prior_copy.image_prompt === APPROVED.image_prompt
+      && JSON.stringify(payload.prior_copy.image_prompts) === JSON.stringify(APPROVED.image_prompts)
       && JSON.stringify(payload.prior_copy.hashtags) === JSON.stringify(APPROVED.hashtags));
+  check('C2: the whole image_prompts SET survives the re-invoke payload, not just the first',
+    Array.isArray(payload.prior_copy.image_prompts) && payload.prior_copy.image_prompts.length === 3);
   check('C3 step 1: the payload keeps decision=image so the branch can be taken',
     payload.decision === 'image');
   check('I4 step 1: the payload carries the loop secret', payload.loop_secret === SECRET);
@@ -1042,34 +1308,186 @@ section('workflow', 'Main workflow structure', () => {
     Array.isArray(reuseOut.copy.hashtags)
       && JSON.stringify(reuseOut.copy.hashtags) === JSON.stringify(APPROVED.hashtags));
 
-  // --- step 4: Build Image Prompt uses it, and only the IMAGE prompt changes
-  const bipOut = runCode('Build Image Prompt', {
+  // --- step 4: Build Image Prompt uses it, and only the IMAGE prompt changes.
+  // CHANGE 2: this node is now the fan-out — one output item per image prompt.
+  const bipItems = runCode('Build Image Prompt', {
     Config: one(MAIN_CFG), 'Pick Row': one(pickOut),
-  }, reuseOut)[0].json;
+  }, reuseOut);
+  const bipOut = bipItems[0].json;
+  check('C2 step 4: Build Image Prompt emits ONE ITEM PER IMAGE (3, not 1)', bipItems.length === 3);
+  check('C2 step 4: each item carries its own index and the set total',
+    JSON.stringify(bipItems.map(i => i.json.index)) === '[0,1,2]'
+      && bipItems.every(i => i.json.total === 3));
+  check('C2 step 4: the three image prompts are mutually DISTINCT (no index-0 collapse)',
+    new Set(bipItems.map(i => i.json.imagePrompt)).size === 3);
+  check('C2 step 4: each item embeds its own scene from image_prompts',
+    bipItems.every((it, i) => it.json.imagePrompt.includes(APPROVED.image_prompts[i])));
+  check('C2 step 4: every item carries the shared copy so the preview and publish agree',
+    bipItems.every(it => it.json.copy.caption === APPROVED.caption));
   check('C3 step 4: the effective copy carried to the preview is the approved one',
     bipOut.copy.caption === APPROVED.caption && bipOut.copy.headline === APPROVED.headline);
-  check('C3 step 4: the reviewer note steers the IMAGE prompt',
-    /Reviewer note on the previous image: the headline text in the photo is garbled/
-      .test(bipOut.imagePrompt));
+  check('C3 step 4: the reviewer note steers EVERY image prompt in the set',
+    bipItems.every(it => /Reviewer note on the previous image: the headline text in the photo is garbled/
+      .test(it.json.imagePrompt)));
   check('C3 step 4: the image prompt still renders the approved headline',
     bipOut.imagePrompt.includes(APPROVED.headline));
   check('C3 step 4: the image prompt reuses the approved scene',
-    bipOut.imagePrompt.includes(APPROVED.image_prompt));
+    bipOut.imagePrompt.includes(APPROVED.image_prompts[0]));
   check('C3 step 4: the branch is flagged as reused copy', bipOut.reused_copy === true);
+  // CHANGE 3: the real logo rides along as an inline reference image.
+  check('C3/C4 step 4: every request attaches the logo PNG as an inline reference image',
+    bipItems.every(it => {
+      const parts = it.json.geminiBody.contents[0].parts;
+      const img = parts.find(pp => pp.inline_data);
+      return !!img && img.inline_data.mime_type === 'image/png' && img.inline_data.data.length > 1000;
+    }));
+  check('C3/C4 step 4: the text part follows the logo part, as in brand-photoshoot-variations',
+    bipItems.every(it => {
+      const parts = it.json.geminiBody.contents[0].parts;
+      return parts.length === 2 && parts[0].inline_data && typeof parts[1].text === 'string';
+    }));
+
+  // --- step 4b: Collect Photos aggregates the uploads into ONE album item
+  const photoItems = [
+    { json: { id: '90_1', images: [{ source: 'https://cdn/new1.jpg' }] } },
+    { json: { id: '90_2', images: [{ source: 'https://cdn/new2.jpg' }] } },
+    { json: { id: '90_3', images: [{ source: 'https://cdn/new3.jpg' }] } },
+  ];
+  const validatedItems = bipItems.map((it, i) => ({ json: {
+    valid: true, index: i, total: 3, bytes: 100000 + i, aspect: '4:5',
+    aspectRequested: '4:5', aspectMatches: true,
+  } }));
+  const runCollect = (photos, validated, bips) => {
+    const store = {
+      'Build Image Prompt': { items: bips },
+      'Validate Image': { items: validated },
+    };
+    const fakeDollar = (name) => {
+      const e = store[name];
+      if (!e) return { isExecuted: false, first: () => { throw new Error('no data'); }, all: () => { throw new Error('no data'); } };
+      return { isExecuted: true, first: () => e.items[0], all: () => e.items };
+    };
+    const fn = new Function('$', '$json', 'items', byName['Collect Photos'].parameters.jsCode);
+    return fn(fakeDollar, photos[0] ? photos[0].json : {}, photos);
+  };
+  const collected = runCollect(photoItems, validatedItems, bipItems)[0].json;
+  check('C2 step 4b: Collect Photos returns exactly one aggregated item',
+    runCollect(photoItems, validatedItems, bipItems).length === 1);
+  check('C2 step 4b: it reports the album as usable', collected.ok === true);
+  check('C2 step 4b: it counts all three photos', collected.image_count === 3);
+  check('C2 step 4b: attached_media is a JSON ARRAY of all three media_fbid, in order',
+    collected.attached_media === JSON.stringify([{ media_fbid: '90_1' }, { media_fbid: '90_2' }, { media_fbid: '90_3' }]));
+  check('C2 step 4b: it collects every public url, in order (no index-0 collapse)',
+    JSON.stringify(collected.urls) === JSON.stringify(['https://cdn/new1.jpg', 'https://cdn/new2.jpg', 'https://cdn/new3.jpg']));
+  check('C2 step 4b: the Attempts image_url cell carries every url, not just the first',
+    collected.image_url.includes('new1.jpg') && collected.image_url.includes('new3.jpg'));
+  check('C2 step 4b: it carries the shared copy through for the preview and the publish',
+    collected.copy.caption === APPROVED.caption);
+  // a single-image post must still work: FB accepts attached_media with one entry
+  const solo = runCollect([photoItems[0]], [validatedItems[0]], [bipItems[0]])[0].json;
+  check('C2 step 4b: a ONE-image post still produces a valid attached_media array',
+    solo.ok === true && solo.image_count === 1
+      && solo.attached_media === JSON.stringify([{ media_fbid: '90_1' }]));
+  // fail-closed: one photo with no public url must sink the WHOLE album
+  const brokenPhotos = [photoItems[0], { json: { id: '90_2', images: [] } }, photoItems[2]];
+  const broken = runCollect(brokenPhotos, validatedItems, bipItems)[0].json;
+  check('C2 step 4b: one photo with no public url fails the WHOLE album, never a partial post',
+    broken.ok === false);
+  check('C2 step 4b: the failure names which photo had no url', /2/.test(String(broken.reason)));
+  const noId = [photoItems[0], { json: { images: [{ source: 'https://cdn/x.jpg' }] } }];
+  check('C2 step 4b: a photo with no media_fbid also fails the whole album',
+    runCollect(noId, validatedItems.slice(0, 2), bipItems.slice(0, 2))[0].json.ok === false);
+  const shortPhotos = photoItems.slice(0, 2);
+  check('C2 step 4b: fewer photos back than images requested fails the album',
+    runCollect(shortPhotos, validatedItems, bipItems)[0].json.ok === false);
+
+  // --- step 4c: Validate Image is ALL-OR-NOTHING across the set.
+  // This is the check that a structural "does the file mention all-or-nothing"
+  // assertion cannot make: it runs the real assembled node body (lib inlined,
+  // straight from the built workflow JSON) against three fake Gemini
+  // responses. Validate Image awaits this.helpers.prepareBinaryData, so it
+  // needs AsyncFunction and a fake `this`, exactly as n8n provides.
+  const AsyncFn = Object.getPrototypeOf(async function () {}).constructor;
+  const bigPng = Buffer.concat([
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'),
+    Buffer.alloc(30000),
+  ]).toString('base64');
+  const geminiImage = (b64) => ({ candidates: [{ content: { parts: [{ inlineData: { data: b64, mimeType: 'image/png' } }] } }] });
+  const runValidateImage = async (responses, bips) => {
+    const store = { 'Build Image Prompt': { items: bips } };
+    const fakeDollar = (name) => ({ all: () => store[name].items, first: () => store[name].items[0] });
+    const fakeThis = { helpers: { prepareBinaryData: async (buf, fileName, mimeType) => ({ fileName, mimeType, size: buf.length }) } };
+    const fn = new AsyncFn('$', '$json', 'items', byName['Validate Image'].parameters.jsCode);
+    return await fn.call(fakeThis, fakeDollar, responses[0] ? responses[0].json : {}, responses);
+  };
+  defer('C2 step 4c', runValidateImage([
+    { json: geminiImage(bigPng) }, { json: geminiImage(bigPng) }, { json: geminiImage(bigPng) },
+  ], bipItems).then((out) => {
+    check('C2 step 4c: all three images valid -> three items with binaries',
+      Array.isArray(out) && out.length === 3 && out.every(it => it.binary && it.binary.data));
+    check('C2 step 4c: each valid item keeps its own index, not index 0',
+      Array.isArray(out) && JSON.stringify(out.map(it => it.json.index)) === '[0,1,2]');
+    check('C2 step 4c: each binary is named per image so uploads cannot collide',
+      Array.isArray(out) && new Set(out.map(it => it.binary.data.fileName)).size === 3);
+  }));
+  defer('C2 step 4c', runValidateImage([
+    { json: geminiImage(bigPng) }, { json: geminiImage(bigPng) }, { json: { error: { message: 'model overloaded' } } },
+  ], bipItems).then((out) => {
+    check('C2 step 4c: ONE bad image sinks the WHOLE set (1 rejection item, not 2 good ones)',
+      Array.isArray(out) && out.length === 1 && out[0].json.valid === false);
+    check('C2 step 4c: the rejection names which image of how many failed',
+      Array.isArray(out) && /Image 3 of 3/.test(String((out[0].json.reasons || []).join(' '))));
+    check('C2 step 4c: no binary is emitted on the rejection path, so nothing can be uploaded',
+      Array.isArray(out) && !out[0].binary);
+  }));
+  defer('C2 step 4c', runValidateImage([{ json: geminiImage(bigPng) }], [bipItems[0]]).then((out) => {
+    check('C2 step 4c: a single-image post validates and emits exactly one item',
+      Array.isArray(out) && out.length === 1 && out[0].json.valid === true && !!out[0].binary);
+  }));
+  defer('C2 step 4c', runValidateImage([{ json: geminiImage(bigPng) }, { json: geminiImage(bigPng) }], bipItems).then((out) => {
+    check('C2 step 4c: fewer responses than images requested rejects the whole set',
+      Array.isArray(out) && out.length === 1 && out[0].json.valid === false
+        && /Expected 3 images/.test(String((out[0].json.reasons || []).join(' '))));
+  }));
 
   // --- step 5: Route Decision and the publish body still carry the approved copy
-  const rdOut = runCode('Route Decision', {
-    'Pick Row': one(pickOut), 'Build Image Prompt': one(bipOut),
-    'Get Photo URL': one({ images: [{ source: 'https://cdn/new.jpg' }] }),
-    'Upload Photo (unpublished)': one({ id: '55_66' }),
-  }, { data: { Decision: 'Approve' } })[0].json;
+  const rdStore = {
+    'Pick Row': one(pickOut), 'Collect Photos': one(collected),
+  };
+  const rdOut = runCode('Route Decision', rdStore, { data: { approved: true } })[0].json;
   check('C3 step 5: an approval on the regenerated image publishes the APPROVED caption',
     rdOut.copy.caption === APPROVED.caption);
   check('C3 step 5: cta and hashtags are the approved ones',
     rdOut.copy.cta === APPROVED.cta
       && JSON.stringify(rdOut.copy.hashtags) === JSON.stringify(APPROVED.hashtags));
-  check('C3 step 5: it points at the NEW image, not the rejected one',
-    rdOut.image_url === 'https://cdn/new.jpg' && rdOut.media_fbid === '55_66');
+  check('C1 step 5: the native Approve click routes to approve',
+    rdOut.decision === 'approve' && rdOut.approved === true);
+  check('C2 step 5: it carries the whole album forward to Publish Post',
+    rdOut.attached_media === collected.attached_media && rdOut.image_count === 3);
+  check('C3 step 5: it points at the NEW images, not the rejected ones',
+    rdOut.image_url.includes('https://cdn/new1.jpg'));
+
+  // --- CHANGE 1 behavioural: the three real Slack Review outcomes
+  const declineOut = runCode('Route Decision', rdStore, { data: { approved: false } })[0].json;
+  check('C1: a Decline click routes to "both" (new copy AND new images)',
+    declineOut.decision === 'both' && declineOut.approved === false);
+  const timeoutOut = runCode('Route Decision', rdStore,
+    { ok: true, channel: 'C0BDSV5RB5G', ts: '1757000000.000100' })[0].json;
+  check('C1: a 6h timeout passthrough routes to timeout, NOT to a rejection',
+    timeoutOut.decision === 'timeout' && timeoutOut.approved === false);
+  const declineGuard = runCode('Loop Guard', {
+    Config: one(MAIN_CFG), 'Route Decision': one(declineOut),
+  }, declineOut)[0].json;
+  check('C1: a decline re-invokes and consumes exactly one human attempt',
+    declineGuard.action === 'reinvoke' && declineGuard.attempt === pickOut.attempt + 1);
+  check('C1: a reasonless decline still hands the model a real revision note',
+    String(declineGuard.revision_note).length > 40 && /different angle/i.test(declineGuard.revision_note));
+  const timeoutGuard = runCode('Loop Guard', {
+    Config: one(MAIN_CFG), 'Route Decision': one(timeoutOut),
+  }, timeoutOut)[0].json;
+  check('C1: a timeout expires the row without consuming an attempt or regenerating',
+    timeoutGuard.action === 'expired' && timeoutGuard.attempt === pickOut.attempt
+      && timeoutGuard.reinvoke === false);
 
   // --- step 6: the harm the old code did, made explicit. Running the copy
   // path against this very same re-entry rebuilds the prompt with "Write a
@@ -1479,6 +1897,7 @@ if (LIVE) {
   ];
 
   (async () => {
+    await Promise.all(PENDING);
     console.log('\n■ Live copy generation (' + MODEL + ')');
     if (!KEY) { console.log('  ! set GEMINI_API_KEY to run the live test'); process.exit(fail ? 1 : 0); }
 
@@ -1500,7 +1919,9 @@ if (LIVE) {
       const v = validateCopy(copy, { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS });
       check(row.pillar + ': passes the validator unmodified', v.valid);
       if (!v.valid) console.log('     reasons: ' + v.reasons.join(' | '));
-      check(row.pillar + ': image_prompt requests no text of its own', !!copy.image_prompt);
+      check(row.pillar + ': returns 1 to 5 image prompts',
+        Array.isArray(copy.image_prompts) && copy.image_prompts.length >= 1 && copy.image_prompts.length <= 5);
+      if (Array.isArray(copy.image_prompts)) console.log('     images: ' + copy.image_prompts.length);
       console.log('     headline: ' + copy.headline);
     }
 
@@ -1511,8 +1932,10 @@ if (LIVE) {
   })();
 } else {
   // ---------------------------------------------------------------- results
-  console.log('\n' + '─'.repeat(40));
-  console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
-  if (fails.length) console.log('Failed: ' + fails.join('; '));
-  process.exit(fail ? 1 : 0);
+  Promise.all(PENDING).then(() => {
+    console.log('\n' + '─'.repeat(40));
+    console.log('RESULTS: ' + pass + ' passed, ' + fail + ' failed');
+    if (fails.length) console.log('Failed: ' + fails.join('; '));
+    process.exit(fail ? 1 : 0);
+  });
 }

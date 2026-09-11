@@ -1,24 +1,18 @@
 // Glue: shape the Attempts row. Runs before the review so a timed-out or
 // abandoned attempt is still on the record.
 //
-// The copy comes from Build Image Prompt, not Validate Copy: on the
-// "Regenerate image" branch Validate Copy never executes (see reuse-copy.js).
+// Everything is read from Collect Photos, the single-item join that aggregates
+// the whole album: the copy (which on the "Regenerate image" branch came from
+// Reuse Copy, not Validate Copy, so naming Validate Copy here would throw), the
+// joined image urls, and the observed aspect ratio.
 const q = $('Pick Row').first().json;
-const v = $('Build Image Prompt').first().json;
-const vi = $('Validate Image').first().json;
-const img = $('Get Photo URL').first().json;
-const url = (img && img.images && img.images.length) ? img.images[0].source : '';
-
-// Spec §16 item 1 / §7: record the aspect ratio the model actually produced,
-// and flag it when it does not match what was requested. Never a failure —
-// this column exists so the mismatch is visible in the Attempts tab.
-const aspect = vi.aspectMatches === false
-  ? String(vi.aspect) + ' (requested ' + String(vi.aspectRequested) + ', MISMATCH)'
-  : String(vi.aspect || '');
+const p = $('Collect Photos').first().json;
 
 return [{ json: buildAttemptRow({
   row_id: q.row.id, attempt: q.attempt, pillar: q.row.pillar,
-  headline: v.copy.headline, caption: v.copy.caption,
-  image_url: url, decision: 'pending', revision_note: q.revision_note,
-  aspect,
+  headline: p.copy.headline, caption: p.copy.caption,
+  // One column, 1 to 5 urls, joined by ' | '. ATTEMPT_HEADERS is unchanged.
+  image_url: p.image_url,
+  decision: 'pending', revision_note: q.revision_note,
+  aspect: p.aspect,
 }) }];

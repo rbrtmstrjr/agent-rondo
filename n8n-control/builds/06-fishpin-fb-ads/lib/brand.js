@@ -63,10 +63,16 @@ const COPY_SCHEMA = {
     caption: { type: 'STRING' },
     cta: { type: 'STRING' },
     hashtags: { type: 'ARRAY', items: { type: 'STRING' } },
-    image_prompt: { type: 'STRING' },
+    // 1 to 5 entries, one per image in a coherent set. The model chooses the
+    // count from the topic (see buildSystemPrompt's IMAGE PROMPT RULES); the
+    // 1-to-5 bound is enforced deterministically in copy-rules.js, not by the
+    // schema, for the same reason hashtags' 3-to-5 bound is: the responseSchema
+    // subset Gemini accepts is kept to types only, so a schema field the API
+    // does not recognise can never 400 the whole generation.
+    image_prompts: { type: 'ARRAY', items: { type: 'STRING' } },
     alt_text: { type: 'STRING' },
   },
-  required: ['headline', 'subhead', 'caption', 'cta', 'hashtags', 'image_prompt', 'alt_text'],
+  required: ['headline', 'subhead', 'caption', 'cta', 'hashtags', 'image_prompts', 'alt_text'],
 };
 
 function buildSystemPrompt() {
@@ -120,11 +126,30 @@ function buildSystemPrompt() {
     '- No comparative claim naming a competitor brand. Compare to "a GPS device" generically.',
     '- No misleading before-and-after and no fake urgency.',
     '',
-    'IMAGE PROMPT RULES. The image_prompt field is an English prompt for an image model.',
+    'IMAGE PROMPT RULES. image_prompts is an ARRAY of English prompts for an image model. '
+      + 'Each entry describes ONE image, and the whole array is published as a single Facebook post.',
+    '',
+    'HOW MANY IMAGES. You decide, and the array must hold between 1 to 5 entries.',
+    '- 1 image when the post lands in a single picture: a feature spotlight, a behind the scenes '
+      + 'note, a short safety reminder. Do not pad a simple idea out to 3 pictures; only 1 is needed.',
+    '- 3 to 5 images when the topic genuinely has parts to show: a tip or how-to post (one image '
+      + 'per step, in order) or a fish guide / fish fact post (the species from several angles, in '
+      + 'its habitat, and at the size a fisherman would actually land it).',
+    '- 2 images for a straight before-and-after or a two-sided comparison such as the cost '
+      + 'comparison pillar.',
+    'The set must tell ONE story, read in order, like a short photo essay. Never five variations of '
+      + 'the same frame, and never five unrelated pictures. Each entry must clearly move the story '
+      + 'on from the one before it: a different moment, step, angle or distance.',
+    '',
+    'EACH IMAGE PROMPT:',
     '- Describe a real, grounded scene: a Filipino bangka with outriggers, not a western yacht. Coastal Philippine light. Slightly documentary, not glossy stock photography.',
     '- People are Filipino fishermen in real working clothes. Respectful and dignified, never comedic or pitiful. No exaggerated poverty imagery.',
     '- Single clear subject, with generous empty sky or water on one side reserved for the headline text.',
+    '- Keep the same people, boat, clothing and time of day across the whole set, so it reads as one '
+      + 'trip photographed once, not as separate stock photos.',
     '- Never describe a scene that could read as a real distress event or a real accident.',
+    '- Do not ask for any text, caption or lettering inside the picture. The headline is added '
+      + 'separately, and only to the first image.',
     '',
     'Return only the JSON object. Every field is required.',
   ].join('\n');

@@ -19,7 +19,7 @@ const copy = {
   caption: String(prior.caption || ''),
   cta: String(prior.cta || ''),
   hashtags: Array.isArray(prior.hashtags) ? prior.hashtags : [],
-  image_prompt: String(prior.image_prompt || ''),
+  image_prompts: Array.isArray(prior.image_prompts) ? prior.image_prompts : [],
   alt_text: String(prior.alt_text || ''),
 };
 

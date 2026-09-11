@@ -16,7 +16,18 @@ const path = require('path');
 const read = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
 const lib = (n) => read(path.join('lib', n)).replace(/module\.exports\s*=/g, 'void ');
 const glue = (n) => read(path.join('nodes', n));
-const code = (libs, g) => libs.map(lib).join('\n\n') + '\n\n' + glue(g);
+const code = (libs, g, prelude) => (prelude ? prelude + '\n\n' : '')
+  + libs.map(lib).join('\n\n') + '\n\n' + glue(g);
+
+// CHANGE 3: the real FishPin logo, base64'd into the Build Image Prompt Code
+// node at build time so it can be sent to Gemini as an inline reference image
+// alongside the text prompt (the request shape proven in
+// builds/brand-photoshoot-variations). ~7.5 KB of PNG, ~10 KB of base64 —
+// small enough to inline, and inlining keeps the workflow JSON self-contained
+// with no runtime fetch and no extra credential.
+const LOGO_B64 = fs.readFileSync(path.join(__dirname, 'assets', 'logo.png')).toString('base64');
+const LOGO_PRELUDE = '// The FishPin logo (assets/logo.png), base64, injected by build.js.\n'
+  + 'const FISHPIN_LOGO_B64 = ' + JSON.stringify(LOGO_B64) + ';';
 
 const GEMINI = { id: 'S0qfsjLzQfKC04iG', name: 'Gemini - Brand Variations' };
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
@@ -160,7 +171,11 @@ const nodes = [
   codeNode('n-vcopy', 'Validate Copy', code(['brand.js', 'copy-rules.js'], 'validate-copy.js'), 1140, 420),
   ifNode('n-ifcopy', 'Copy Valid?', '={{ $json.valid }}', 1360, 420),
 
-  codeNode('n-iprompt', 'Build Image Prompt', code(['image-rules.js'], 'build-image-prompt.js'), 1580, 340),
+  // FAN-OUT. Emits one item per image_prompt (1 to 5), so Generate Image,
+  // Validate Image, Upload Photo and Get Photo URL all run per image. Nothing
+  // downstream may read this node with .first().
+  codeNode('n-iprompt', 'Build Image Prompt',
+    code(['image-rules.js'], 'build-image-prompt.js', LOGO_PRELUDE), 1580, 340),
   http('n-img', 'Generate Image', {
     method: 'POST',
     url: "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Config').first().json.imageModel + ':generateContent' }}",
@@ -178,10 +193,14 @@ const nodes = [
   // $('Get Photo URL').isExecuted is what distinguishes them, and it is used
   // instead of reading that node unconditionally — naming an un-executed node
   // in an expression throws, and a throw here would blank this very alert.
+  // The reasons for the URL stage come from Collect Photos, the single-item
+  // join — Get Photo URL is a fan-out node now and must never be read with
+  // .first(). Validate Image is still read that way deliberately: on the
+  // FAILURE path it returns exactly one aggregated item by design.
   slackMsg('n-imgfail', 'Notify Image Failed', cfgVal('opsChannel'),
     "=:warning: FishPin ad FAILED for row {{ $('Pick Row').first().json.row.id }}. Nothing was posted; the row has been marked terminal."
-    + "\nStage: {{ $('Get Photo URL').isExecuted ? 'image URL lookup — the image generated and uploaded fine, but no usable public image URL came back, so the reviewer could not have seen it. The review gate was NOT opened.' : 'image generation — the model returned no usable image.' }}"
-    + "\nReasons: {{ $('Get Photo URL').isExecuted ? 'Get Photo URL returned no images[0].source. Error: ' + JSON.stringify(($('Get Photo URL').first().json || {}).error || 'none') : $('Validate Image').first().json.reasons.join('; ') }}",
+    + "\nStage: {{ $('Get Photo URL').isExecuted ? 'image URL lookup — the images generated and uploaded fine, but at least one did not come back with a usable public image URL, so the reviewer could not have seen the whole set. The review gate was NOT opened and no partial album was published.' : 'image generation — the model returned no usable image for at least one of the images this post needs.' }}"
+    + "\nReasons: {{ $('Get Photo URL').isExecuted ? ($('Collect Photos').isExecuted ? $('Collect Photos').first().json.reason : 'Get Photo URL returned nothing usable.') : $('Validate Image').first().json.reasons.join(' | ') }}",
     2460, 480),
 
   http('n-up', 'Upload Photo (unpublished)', {
@@ -199,19 +218,30 @@ const nodes = [
     nodeCredentialType: 'facebookGraphApi', options: {},
   }, 2680, 260, { facebookGraphApi: FB }),
 
-  // FAIL-CLOSED GATE. Get Photo URL carries onError continueRegularOutput, so
-  // a failure here does not abort the run. The Post Preview message ends with
-  // the image URL expression; if that expression throws, Slack's API call
-  // fails and the ENTIRE preview message is lost — no image, no headline, no
-  // caption. The reviewer then sees only the bare "Review the FishPin ad
-  // above" form. media_fbid from the successful upload is still valid, so
-  // clicking Approve there publishes an ad to the public Page that no human
-  // ever saw. The human gate has to be closed, not blind: no usable image URL
-  // means no review at all.
-  ifNode('n-ifurl', 'Image URL OK?',
-    '={{ !!($json.images && $json.images.length && $json.images[0] && $json.images[0].source) }}', 2900, 260),
+  // THE JOIN. Turns the per-image fan-out back into one album: attached_media
+  // for the /feed publish, the urls for the Slack preview and the Attempts log,
+  // and the shared copy. It also does the per-photo images[0].source check for
+  // every photo and reduces it to one all-or-nothing `ok` flag, which is what
+  // makes the gate below possible at all with more than one image.
+  codeNode('n-collect', 'Collect Photos', code([], 'collect-photos.js'), 2900, 260),
 
-  codeNode('n-att', 'Log Attempt', code(['sheet-rules.js'], 'log-attempt.js'), 3120, 200),
+  // FAIL-CLOSED GATE. Get Photo URL carries onError continueRegularOutput, so
+  // a failure there does not abort the run. The Post Preview message ends with
+  // the image URLs; if that expression throws, Slack's API call fails and the
+  // ENTIRE preview message is lost — no images, no headline, no caption. The
+  // reviewer then sees only the bare "Review the FishPin ad above" prompt. The
+  // media_fbids from the successful uploads are still valid, so clicking
+  // Approve there publishes an ad to the public Page that no human ever saw.
+  // The human gate has to be closed, not blind: no usable image URL means no
+  // review at all.
+  //
+  // With 1 to 5 photos this gate must also be ALL-OR-NOTHING. A per-item test
+  // of images[0].source would put the good photos on the true branch and the
+  // bad ones on the false branch — and publish a partial album. Collect Photos
+  // collapses the set to one item first, so one bad photo sinks the whole post.
+  ifNode('n-ifurl', 'Image URL OK?', '={{ $json.ok }}', 3120, 260),
+
+  codeNode('n-att', 'Log Attempt', code(['sheet-rules.js'], 'log-attempt.js'), 3340, 200),
   http('n-attw', 'Write Attempt', {
     method: 'POST', url: sheetUrl("/values/' + $('Config').first().json.attemptsTab + '!A:J:append"),
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
@@ -220,54 +250,59 @@ const nodes = [
       { name: 'valueInputOption', value: 'RAW' },
       { name: 'insertDataOption', value: 'INSERT_ROWS' },
     ] }, options: {},
-  }, 3340, 200, { googleApi: SHEETS }),
+  }, 3560, 200, { googleApi: SHEETS }),
 
   slack('n-prev', 'Post Preview', {
     channelId: { __rl: true, value: cfgVal('reviewChannel'), mode: 'id' },
-    // Reads the copy from Build Image Prompt, not Validate Copy: on the
-    // "Regenerate image" branch Validate Copy never executes (see
-    // reuse-copy.js) and naming it here would throw, blanking the preview.
-    // The image URL is safe to read unconditionally now — Image URL OK?
-    // upstream guarantees images[0].source exists on this branch.
-    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Build Image Prompt').first().json.copy.headline }}\n*Subhead:* {{ $('Build Image Prompt').first().json.copy.subhead }}\n\n{{ $('Build Image Prompt').first().json.copy.caption }}\n\n{{ $('Build Image Prompt').first().json.copy.cta }}\n{{ $('Build Image Prompt').first().json.copy.hashtags.join(' ') }}\n\n{{ $('Get Photo URL').first().json.images[0].source }}",
+    // Everything is read from Collect Photos, the single-item join: the copy
+    // (on the "Regenerate image" branch Validate Copy never executes, see
+    // reuse-copy.js, so naming it here would throw and blank the preview) and
+    // every photo url. The urls are safe to read unconditionally — Image URL
+    // OK? upstream guarantees all image_count of them exist on this branch.
+    // Each url goes on its own line so Slack unfurls it into a visible image.
+    text: "=*FishPin ad ready for review* — `{{ $('Pick Row').first().json.row.id }}` · _{{ $('Pick Row').first().json.row.pillar }}_ · attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}\n\n*Headline:* {{ $('Collect Photos').first().json.copy.headline }}\n*Subhead:* {{ $('Collect Photos').first().json.copy.subhead }}\n\n{{ $('Collect Photos').first().json.copy.caption }}\n\n{{ $('Collect Photos').first().json.copy.cta }}\n{{ $('Collect Photos').first().json.copy.hashtags.join(' ') }}\n\n*Images:* {{ $('Collect Photos').first().json.image_count }} in this post\n{{ $('Collect Photos').first().json.urls.join('\\n') }}",
     otherOptions: {},
-  }, 3560, 200),
+  }, 3780, 200),
 
+  // CHANGE 1: the decision is made in Slack, with two native buttons, exactly
+  // as sv91rOvu8Bec8sLc does it — `approvalType: 'double'`. It used to be
+  // responseType 'customForm', which sent the reviewer to a 4-option dropdown
+  // in a separate browser tab. Approve publishes; Decline regenerates the copy
+  // AND the images for the same queue row (routeApproval maps approved:false
+  // to 'both'). There is no free-text field any more, so a decline's
+  // revision_note falls back to flow-rules.js's DECLINE_NOTE.
   slack('n-rev', 'Slack Review', {
     operation: 'sendAndWait',
     channelId: { __rl: true, value: cfgVal('reviewChannel'), mode: 'id' },
-    message: "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}).",
-    responseType: 'customForm',
-    formFields: { values: [
-      { fieldLabel: 'Decision', fieldType: 'dropdown', requiredField: true,
-        fieldOptions: { values: [
-          { option: 'Approve' }, { option: 'Regenerate copy' },
-          { option: 'Regenerate image' }, { option: 'Regenerate both' },
-        ] } },
-      { fieldLabel: 'Reason', fieldType: 'textarea', requiredField: false },
-    ] },
+    message: "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}, {{ $('Collect Photos').first().json.image_count }} image(s)).\n\n*Approve* publishes it to the FishPin Page as one post.\n*Decline* throws it away and regenerates the copy and images for the same idea.",
+    approvalOptions: { values: { approvalType: 'double' } },
     options: { limitWaitTime: true, resumeAmount: '={{ $(\'Config\').first().json.reviewTimeoutHours }}', resumeUnit: 'hours' },
-  }, 3560, 320),
+  }, 3780, 320),
 
-  codeNode('n-route', 'Route Decision', code(['flow-rules.js'], 'route-decision.js'), 3780, 260),
-  ifNode('n-ifapp', 'Approved?', '={{ $json.approved }}', 4000, 260),
+  codeNode('n-route', 'Route Decision', code(['flow-rules.js'], 'route-decision.js'), 4000, 260),
+  ifNode('n-ifapp', 'Approved?', '={{ $json.approved }}', 4220, 260),
 
   http('n-pub', 'Publish Post', {
     method: 'POST',
     url: "={{ 'https://graph.facebook.com/' + $('Config').first().json.graphVersion + '/' + $('Config').first().json.pageId + '/feed' }}",
     nodeCredentialType: 'facebookGraphApi', sendBody: true, contentType: 'form-urlencoded',
+    // ONE post carrying every uploaded photo — the two-step
+    // upload-unpublished-then-attach pattern from sv91rOvu8Bec8sLc.
+    // attached_media is already a JSON array string built by Collect Photos
+    // and carried through Route Decision; a single-image post is the same
+    // body with one entry, which /feed accepts.
     bodyParameters: { parameters: [
       { name: 'message', value: "={{ $json.copy.caption + '\\n\\n' + $json.copy.cta + '\\n\\n' + $json.copy.hashtags.join(' ') }}" },
-      { name: 'attached_media', value: "={{ JSON.stringify([{ media_fbid: $json.media_fbid }]) }}" },
+      { name: 'attached_media', value: '={{ $json.attached_media }}' },
     ] }, options: {},
-  }, 4220, 180, { facebookGraphApi: FB }),
-  codeNode('n-wb', 'Write Back', code(['sheet-rules.js'], 'map-writeback.js'), 4440, 180),
+  }, 4440, 180, { facebookGraphApi: FB }),
+  codeNode('n-wb', 'Write Back', code(['sheet-rules.js'], 'map-writeback.js'), 4660, 180),
   // A failed Publish Post has onError continueRegularOutput, so the run does
   // not abort — it falls through to Write Back with pub.error set. Without
   // this gate the failure would flow straight into Write Back Row's
   // targeted-range write with an undefined _rowNumber (a swallowed 400) and
   // Notify Success would report a post id that was never created.
-  ifNode('n-ifpub', 'Published?', '={{ $json.ok }}', 4660, 180),
+  ifNode('n-ifpub', 'Published?', '={{ $json.ok }}', 4880, 180),
   // Two targeted ranges in one call: G = status, I:L = caption, image_url,
   // fb_post_id, posted_at. Column H (scheduled_for) is deliberately skipped so
   // the human's value is not blanked.
@@ -276,17 +311,17 @@ const nodes = [
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [ { range: $('Config').first().json.queueTab + '!G' + $json._rowNumber, values: [[ $json.status ]] }, { range: $('Config').first().json.queueTab + '!I' + $json._rowNumber + ':L' + $json._rowNumber, values: [[ $json.caption, $json.image_url, $json.fb_post_id, $json.posted_at ]] } ] }) }}",
     options: {},
-  }, 4880, 100, { googleApi: SHEETS }),
+  }, 5100, 100, { googleApi: SHEETS }),
   // Write Back Row carries onError continueRegularOutput too, so a failed
   // Sheets write fell straight through to "✅ Posted" while the row still read
   // status=in_review with empty caption/fb_post_id/posted_at — which also
   // means the insights scanner (it selects on status=posted + a posted_at)
   // would never measure that post. Same class as Published? and Image URL OK?:
   // never report success on the strength of a call that may have failed.
-  ifNode('n-ifwb', 'Row Written?', '={{ !$json.error && !!$json.spreadsheetId }}', 5100, 100),
+  ifNode('n-ifwb', 'Row Written?', '={{ !$json.error && !!$json.spreadsheetId }}', 5320, 100),
   slackMsg('n-ok', 'Notify Success', cfgVal('opsChannel'),
     "=:white_check_mark: Posted to the FishPin Page — row `{{ $('Route Decision').first().json.row_id }}` ({{ $('Route Decision').first().json.pillar }})\nPost id: {{ $('Publish Post').first().json.id }}\n{{ $('Route Decision').first().json.image_url }}",
-    5320, 40),
+    5540, 40),
   // The post IS live — only the bookkeeping failed — so this message has to
   // hand over everything a human needs to repair the row by hand.
   slackMsg('n-wbfail', 'Notify Writeback Failed', cfgVal('opsChannel'),
@@ -296,33 +331,33 @@ const nodes = [
     + "\nThe row is marked needs_manual. Paste the post id, caption, image url and posted_at into the Queue row by hand, then set status=posted so the 24h insights scan picks it up."
     + "\nCaption: {{ $('Route Decision').first().json.copy.caption }}"
     + "\nImage: {{ $('Route Decision').first().json.image_url }}",
-    5320, 160),
+    5540, 160),
 
   // The captured error/row id come straight off Write Back's failure output,
   // which is still $json here (Published? just routes, it doesn't reshape).
   slackMsg('n-pubfail', 'Notify Publish Failed', cfgVal('opsChannel'),
     "=:x: FishPin ad FAILED to publish to the FB Page — row `{{ $json.id }}`.\nError: {{ $json.error }}\nThe row has been marked failed; it will not be retried automatically.",
-    4880, 260),
+    5100, 260),
 
-  codeNode('n-guard', 'Loop Guard', code(['flow-rules.js'], 'loop-guard.js'), 4220, 400),
-  ifNode('n-ifloop', 'Re-invoke?', '={{ $json.reinvoke }}', 4440, 400),
+  codeNode('n-guard', 'Loop Guard', code(['flow-rules.js'], 'loop-guard.js'), 4440, 400),
+  ifNode('n-ifloop', 'Re-invoke?', '={{ $json.reinvoke }}', 4660, 400),
   http('n-re', 'Re-invoke', {
     method: 'POST', url: cfgVal('selfWebhookUrl'),
     authentication: 'none', sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify($json.payload) }}',
     options: {},
-  }, 4660, 340, {}),
+  }, 4880, 340, {}),
   // Re-invoke used to have no outgoing connection at all: its output was
   // consumed by nothing, and it carries onError continueRegularOutput, so if
   // all 3 POSTs failed the regeneration simply never happened — no Slack
   // message, no terminal status, the row stranded at in_review forever.
   // The webhook responds onReceived with a body and no error key; a failure
   // leaves { error: ... } instead.
-  ifNode('n-ifre', 'Re-invoked?', '={{ !$json.error }}', 4880, 340),
+  ifNode('n-ifre', 'Re-invoked?', '={{ !$json.error }}', 5100, 340),
   slackMsg('n-refail', 'Notify Re-invoke Failed', cfgVal('opsChannel'),
     "=:x: FishPin ad regeneration could NOT be started for row `{{ $('Loop Guard').first().json.row_id }}` — every attempt to call the loop webhook failed."
     + "\nError: {{ JSON.stringify(($json || {}).error || 'unknown') }}"
     + "\nNothing was posted and no new draft exists. The row is marked terminal; set its status back to ready to try again.",
-    5100, 340),
+    5320, 340),
   // Fed from five predecessors. Only one of them — Re-invoke? false — arrives
   // with Loop Guard's own json, which already carries .status ('expired' or
   // 'needs_manual'). The other four are Slack nodes, so by the time execution
@@ -340,9 +375,9 @@ const nodes = [
     nodeCredentialType: 'googleApi', sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ valueInputOption: 'RAW', data: [{ range: $('Config').first().json.queueTab + '!G' + $('Pick Row').first().json.row._rowNumber, values: [[ $json.status || ($('Write Back').isExecuted && $('Write Back').first().json.ok ? 'needs_manual' : 'failed') ]] }] }) }}",
     options: {},
-  }, 4660, 460, { googleApi: SHEETS }),
+  }, 4880, 460, { googleApi: SHEETS }),
   slackMsg('n-stop', 'Notify Stopped', cfgVal('opsChannel'),
-    '=:octagonal_sign: {{ $json.message }}', 4880, 460),
+    '=:octagonal_sign: {{ $json.message }}', 5100, 460),
 ];
 
 const c = (from, to) => ({ [from]: { main: [[{ node: to, type: 'main', index: 0 }]] } });
@@ -379,11 +414,14 @@ const connections = Object.assign({},
   // would never reach a terminal status on an image-generation failure.
   c('Notify Image Failed', 'Mark Terminal'),
   c('Upload Photo (unpublished)', 'Get Photo URL'),
-  // FAIL-CLOSED: without a usable image URL the Post Preview message throws
-  // and is never delivered, leaving the reviewer approving an ad they cannot
-  // see while a perfectly valid media_fbid stands ready to publish it. No
-  // image URL means no review — the row goes terminal and the team is told.
-  c('Get Photo URL', 'Image URL OK?'),
+  // FAIL-CLOSED: without a usable image URL for EVERY photo, the Post Preview
+  // message throws and is never delivered, leaving the reviewer approving an ad
+  // they cannot see while perfectly valid media_fbids stand ready to publish
+  // it. Collect Photos joins the per-image fan-out back into one item and
+  // reduces "are all N photos usable?" to a single flag, so the gate is
+  // all-or-nothing and a partial album can never be published.
+  c('Get Photo URL', 'Collect Photos'),
+  c('Collect Photos', 'Image URL OK?'),
   cIf('Image URL OK?', 'Log Attempt', 'Notify Image Failed'),
   c('Log Attempt', 'Write Attempt'),
   c('Write Attempt', 'Post Preview'),

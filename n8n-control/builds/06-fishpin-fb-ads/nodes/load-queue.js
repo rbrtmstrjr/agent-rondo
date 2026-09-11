@@ -65,10 +65,14 @@ if (rowId) {
 const priorCopy = (wh.prior_copy && typeof wh.prior_copy === 'object') ? wh.prior_copy : {};
 // keep_copy requires the copy to have actually survived the round trip.
 // Without a caption and a headline there is nothing to reuse, so fall back to
-// regenerating rather than publishing an empty ad.
+// regenerating rather than publishing an empty ad. The image_prompts array is
+// checked for the same reason: it is what decides how many images the post has
+// and what each one shows, so an empty one would leave Build Image Prompt with
+// nothing to fan out over.
 const keepCopy = String(wh.decision || '') === 'image'
   && String(priorCopy.caption || '').trim() !== ''
-  && String(priorCopy.headline || '').trim() !== '';
+  && String(priorCopy.headline || '').trim() !== ''
+  && Array.isArray(priorCopy.image_prompts) && priorCopy.image_prompts.length > 0;
 
 return [{ json: {
   found: true,
