@@ -49,7 +49,7 @@ const nodes = [
   { parameters: { rule: { interval: [{ field: 'hours', hoursInterval: 1 }] }, timezone: TZ },
     id: 'i-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-400, 300) },
   { parameters: { assignments: { assignments: [
-      { id: 'i1', name: 'sheetId', value: 'FILL_IN_SHEET_ID', type: 'string' },
+      { id: 'i1', name: 'sheetId', value: '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E', type: 'string' },
       { id: 'i2', name: 'queueTab', value: 'Queue', type: 'string' },
       { id: 'i3', name: 'graphVersion', value: 'v21.0', type: 'string' },
       { id: 'i4', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
