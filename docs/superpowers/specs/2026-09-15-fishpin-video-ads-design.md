@@ -228,7 +228,8 @@ bytes; errors as JSON `{error}` with status 4xx/5xx.
 3. Scene durations: scale planned `seconds` so video length = voiceover length + 0.4s tail, with
    the end card occupying the final `end_card.seconds`.
 4. Motion: still hook → hard zoom-punch; images → slow push-in; screens → gentle zoom that keeps
-   UI legible; fast transitions reused from v4.
+   UI legible. Scenes change on hard cuts (the norm for short ads), so each scene is encoded once
+   as its own segment and the segments are joined by a stream-copy concat.
 5. Captions: faster-whisper **multilingual `small`** (int8), `language="tl"`,
    `initial_prompt=script`, word timestamps. Displayed words are the **script's** words, aligned to
    recognised timings by sequence alignment; unmatched words get interpolated times. If
@@ -340,9 +341,12 @@ Wall time per attempt: ~3–8 min (Veo 11s–6min, caption timing 30–60s, enco
    build-06 rule reuse, scene-duration scaling maths, `limitWaitTime` fixedCollection shape, Reels
    three-call sequence and status polling wiring, no `.first()` on fan-out nodes, every Code node
    parses under `AsyncFunction`, no secrets in committed JSON.
-3. **Render tests** locally with ffmpeg: Filipino caption alignment against a known script,
-   `ffprobe` checks for 1080×1920, 30fps, H.264, GOP 60, AAC 48kHz stereo, end-card timing, token
-   rejection, non-allowlisted screen rejection, `/render` unchanged.
+3. **Render tests**: ffmpeg and faster-whisper are not installed locally, so the pure helpers
+   (token check, payload validation, Filipino script-to-timing alignment, duration scaling, ASS
+   captions, encode arguments) are Python `unittest`s run locally, and a smoke script on the VPS
+   checks the real encode with `ffprobe` (1080×1920, 30fps, H.264 yuv420p, keyframes every 2s,
+   AAC 48kHz stereo, total duration), token rejection, non-allowlisted screen rejection and that
+   `/health` still answers.
 4. **Live:** one run declined (regeneration path), then one approved and verified on the Page.
 
 ---
