@@ -113,5 +113,12 @@ class RenderAdHelpers(unittest.TestCase):
         self.assertTrue(callable(render.render))
         self.assertIn('"base.en"', inspect.getsource(render.transcribe_words))
 
+    def test_clip_words_drops_words_after_content_end(self):
+        ws = [("a", 0.0, 1.0), ("b", 1.0, 2.5), ("c", 3.0, 3.5)]
+        self.assertEqual(render.clip_words_to(ws, 3.0), [("a", 0.0, 1.0), ("b", 1.0, 2.5)])
+
+    def test_clip_words_clamps_a_word_straddling_the_end(self):
+        self.assertEqual(render.clip_words_to([("a", 2.0, 4.0)], 3.0), [("a", 2.0, 3.0)])
+
 if __name__ == "__main__":
     unittest.main()

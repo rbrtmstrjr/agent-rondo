@@ -415,6 +415,200 @@ def ad_encode_args():
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart"]
 
+def clip_words_to(ws, end_seconds):
+    out = []
+    for w, s, e in ws:
+        if s >= end_seconds:
+            continue
+        out.append((w, s, min(e, end_seconds)))
+    return out
+
+AD_ASSETS = {
+    "Poppins-Bold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf",
+    "Poppins-SemiBold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf",
+    "logo.png": "https://www.fishpin.app/favicon/apple-icon.png",
+}
+
+def _download(url, dest, min_bytes=1024):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+        shutil.copyfileobj(r, f)
+    if os.path.getsize(dest) < min_bytes:
+        os.remove(dest)
+        raise RuntimeError("download too small: " + url)
+
+def ensure_ad_assets():
+    paths = {}
+    for name, url in AD_ASSETS.items():
+        dest = os.path.join(ASSETS_DIR, name)
+        if not os.path.exists(dest):
+            try:
+                _download(url, dest)
+            except Exception as e:
+                raise AdRequestError(502, "could not fetch asset %s: %s" % (name, e))
+        paths[name] = dest
+    return paths
+
+_WHISPER_ML = None
+def transcribe_words_multilingual(audio_path, script):
+    global _WHISPER_ML
+    from faster_whisper import WhisperModel
+    if _WHISPER_ML is None:
+        _WHISPER_ML = WhisperModel("small", device="cpu", compute_type="int8")
+    segments, _ = _WHISPER_ML.transcribe(audio_path, language="tl", initial_prompt=(script or "")[:800],
+                                         word_timestamps=True, vad_filter=True)
+    out = []
+    for seg in segments:
+        for w in (seg.words or []):
+            t = (w.word or "").strip()
+            if t:
+                out.append((t, float(w.start), float(w.end)))
+    return out
+
+def _write_text(workdir, name, text):
+    p = os.path.join(workdir, name)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(text)
+    return p
+
+def _ffpath(p):
+    # ffmpeg filter arguments: escape backslash and colon (paths only)
+    return p.replace("\\", "/").replace(":", "\\:")
+
+def render_ad(payload, workdir):
+    p = validate_ad_payload(payload)
+    assets = ensure_ad_assets()
+    W, H, F = AD_W, AD_H, AD_FPS
+    ec = p["end_card"]
+
+    audio = os.path.join(workdir, "vo.wav")
+    with open(audio, "wb") as f:
+        f.write(base64.b64decode(p["audio_b64"]))
+    audio_s = probe_duration(audio)
+    if audio_s <= 0:
+        raise AdRequestError(400, "audio_b64 is not readable audio")
+
+    durs = scale_scene_durations([sc["seconds"] for sc in p["scenes"]], audio_s, ec["seconds"])
+    content_end = sum(durs)
+    total = content_end + ec["seconds"]
+
+    segs, ambient = [], None
+    t_cursor = 0.0
+    for i, sc in enumerate(p["scenes"]):
+        d = durs[i]
+        frames = max(2, int(round(d * F)))
+        seg = os.path.join(workdir, "seg_%02d.mp4" % i)
+        # identical codec, size, rate and timescale on every segment, so the concat can stream-copy
+        enc = ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(F),
+               "-video_track_timescale", "15360", "-t", "%.3f" % d, seg]
+        if sc["type"] == "video":
+            src = os.path.join(workdir, "clip_%02d.mp4" % i)
+            with open(src, "wb") as f:
+                f.write(base64.b64decode(sc["b64"]))
+            vf = ("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=%d,setsar=1,"
+                  "tpad=stop_mode=clone:stop_duration=%.3f,format=yuv420p") % (W, H, W, H, F, d)
+            run(["ffmpeg", "-y", "-i", src, "-vf", vf] + enc)
+            if sc.get("ambient") and ambient is None:
+                amb = os.path.join(workdir, "ambient.wav")
+                try:
+                    run(["ffmpeg", "-y", "-i", src, "-vn", "-t", "%.3f" % d, "-ac", "2", "-ar", "48000", amb])
+                    ambient = (amb, t_cursor)
+                except Exception:
+                    ambient = None
+        elif sc["type"] == "image":
+            src = os.path.join(workdir, "img_%02d.png" % i)
+            with open(src, "wb") as f:
+                f.write(base64.b64decode(sc["b64"]))
+            z = "min(1.0+0.004*on,1.35)" if sc.get("punch") else "min(1.0+0.0006*on,1.18)"
+            vf = ("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,"
+                  "zoompan=z='%s':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p"
+                  ) % (UP * W, UP * H, UP * W, UP * H, z, frames, W, H, F)
+            # a single input frame: zoompan's d=frames emits exactly the scene's frames
+            run(["ffmpeg", "-y", "-i", src, "-vf", vf] + enc)
+        else:
+            src = os.path.join(workdir, "scr_%02d.png" % i)
+            try:
+                _download(sc["url"], src)
+            except Exception as e:
+                raise AdRequestError(502, "could not fetch screen %s: %s" % (sc["url"], e))
+            vf = ("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=%s,"
+                  "zoompan=z='min(1.0+0.0004*on,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p"
+                  ) % (2 * W, 2 * H, 2 * W, 2 * H, PERSIAN_HEX, frames, W, H, F)
+            run(["ffmpeg", "-y", "-i", src, "-vf", vf] + enc)
+        segs.append(seg)
+        t_cursor += d
+
+    # end card: Persian Blue, logo, wordmark, CTA, url (text via textfile: no escaping)
+    brand_txt = _write_text(workdir, "brand.txt", "FishPin")
+    cta_txt = _write_text(workdir, "cta.txt", ec["cta"])
+    url_txt = _write_text(workdir, "url.txt", ec["url"])
+    bold, semi = _ffpath(assets["Poppins-Bold.ttf"]), _ffpath(assets["Poppins-SemiBold.ttf"])
+    card = os.path.join(workdir, "seg_end.mp4")
+    card_fc = ("[1:v]scale=260:-1[lg];[0:v][lg]overlay=(W-w)/2:620[a];"
+               "[a]drawtext=fontfile='%s':textfile='%s':fontsize=110:fontcolor=white:x=(w-text_w)/2:y=920[b];"
+               "[b]drawtext=fontfile='%s':textfile='%s':fontsize=64:fontcolor=0xFFC857:x=(w-text_w)/2:y=1110[c];"
+               "[c]drawtext=fontfile='%s':textfile='%s':fontsize=54:fontcolor=white:x=(w-text_w)/2:y=1210,format=yuv420p[v]"
+               ) % (bold, _ffpath(brand_txt), semi, _ffpath(cta_txt), semi, _ffpath(url_txt))
+    run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=%s:s=%dx%d:r=%d:d=%.3f" % (PERSIAN_HEX, W, H, F, ec["seconds"]),
+         "-i", assets["logo.png"], "-filter_complex", card_fc, "-map", "[v]", "-an",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(F),
+         "-video_track_timescale", "15360", "-t", "%.3f" % ec["seconds"], card])
+    segs.append(card)
+
+    listfile = _write_text(workdir, "list.txt", "".join("file '%s'\n" % os.path.basename(s) for s in segs))
+    body = os.path.join(workdir, "body.mp4")
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listfile, "-c", "copy", body], cwd=workdir)
+
+    words = tokenize_script(p["script"])
+    timed = None
+    if words:
+        try:
+            timed = align_script_words(words, transcribe_words_multilingual(audio, p["script"]))
+        except Exception:
+            timed = None
+        if not timed:
+            timed = proportional_word_times(words, audio_s)
+    with open(os.path.join(workdir, "subs.ass"), "w", encoding="utf-8") as f:
+        f.write(build_ass_ad(clip_words_to(timed or [], content_end), W, H))
+
+    inputs = ["-i", body, "-i", assets["logo.png"], "-i", audio]
+    fc = [
+        "[0:v]ass=subs.ass:fontsdir=%s[vc]" % _ffpath(ASSETS_DIR),
+        "[1:v]scale=76:-1[lg]",
+        "[vc][lg]overlay=48:64:enable='between(t,1.0,%.3f)'[vl]" % content_end,
+        ("[vl]drawtext=fontfile='%s':textfile='%s':fontsize=44:fontcolor=white:borderw=2:bordercolor=black@0.4:"
+         "x=136:y=78:enable='between(t,1.0,%.3f)'[vout]") % (bold, _ffpath(brand_txt), content_end),
+        "[2:a]aresample=48000,aformat=channel_layouts=stereo,apad[vo]",
+    ]
+    mix = ["[vo]"]
+    idx = 3
+    if ambient:
+        inputs += ["-i", ambient[0]]
+        delay = int(round(ambient[1] * 1000))
+        fc.append("[%d:a]volume=0.25,adelay=%d|%d,aresample=48000,aformat=channel_layouts=stereo[amb]" % (idx, delay, delay))
+        mix.append("[amb]"); idx += 1
+    music = pick_music(len(p["scenes"]))
+    if music:
+        inputs += ["-i", music]
+        fc.append("[%d:a]volume=0.10,aloop=loop=-1:size=2e9,aresample=48000,aformat=channel_layouts=stereo[mus]" % idx)
+        mix.append("[mus]")
+    if len(mix) > 1:
+        fc.append("%samix=inputs=%d:duration=first:normalize=0[aout]" % ("".join(mix), len(mix)))
+        amap = "[aout]"
+    else:
+        amap = "[vo]"
+    out = os.path.join(workdir, "out.mp4")
+    run(["ffmpeg", "-y"] + inputs + ["-filter_complex", ";".join(fc), "-map", "[vout]", "-map", amap]
+        + ad_encode_args() + ["-t", "%.3f" % total, out], cwd=workdir)
+
+    try:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        shutil.copyfile(out, os.path.join(OUTPUT_DIR, "ad-" + stamp + ".mp4"))
+        prune_outputs()
+    except Exception:
+        pass
+    return out
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -436,7 +630,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         else:
             self.send_response(404); self.end_headers()
+    def _json(self, status, obj):
+        msg = json.dumps(obj).encode("utf-8")
+        self.send_response(status); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(msg))); self.end_headers(); self.wfile.write(msg)
+
     def do_POST(self):
+        if self.path == "/render-ad":
+            workdir = tempfile.mkdtemp(prefix="ad-")
+            try:
+                check_ad_token(self.headers.get("X-Render-Token", ""), os.environ.get("RENDER_AD_TOKEN", ""))
+                n = int(self.headers.get("Content-Length", "0"))
+                out = render_ad(json.loads(self.rfile.read(n).decode("utf-8")), workdir)
+                with open(out, "rb") as f:
+                    data = f.read()
+                self.send_response(200); self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+            except AdRequestError as e:
+                self._json(e.status, {"error": e.message})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+            finally:
+                shutil.rmtree(workdir, ignore_errors=True)
+            return
         if self.path != "/render":
             self.send_response(404); self.end_headers(); return
         workdir = tempfile.mkdtemp(prefix="reel-")
