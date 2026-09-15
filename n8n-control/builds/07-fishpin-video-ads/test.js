@@ -157,6 +157,59 @@ section('plan', 'Scene plan to render payload', () => {
   check('missing voiceover is not ok', noVo.ok === false && /voiceover/.test(noVo.reason));
 });
 
+// ---------------------------------------------------------------- prompt
+section('prompt', 'Script prompts and generation requests', () => {
+  const V = L('video-prompt.js');
+  const S = L('script-rules.js');
+  const B = L06('brand.js');
+  const I = L06('image-rules.js');
+  const voice = B.buildVoiceRules();
+
+  const schema = V.buildScriptSchema(S.SCREEN_IDS, S.BEATS);
+  check('schema requires all seven top-level fields',
+    JSON.stringify(schema.required) === JSON.stringify(['pillar', 'topic', 'hook', 'voiceover', 'description', 'hashtags', 'scenes']));
+  check('schema restricts screen to the allowlist',
+    JSON.stringify(schema.properties.scenes.items.properties.screen.enum) === JSON.stringify(S.SCREEN_IDS));
+  check('schema restricts scene type', JSON.stringify(schema.properties.scenes.items.properties.type.enum) === JSON.stringify(['veo', 'image', 'screen']));
+  check('screen guide covers exactly the allowlist', JSON.stringify(Object.keys(V.SCREEN_GUIDE)) === JSON.stringify(S.SCREEN_IDS));
+
+  const sys = V.buildScriptSystemPrompt(voice);
+  check('system prompt includes the shared voice rules verbatim', sys.indexOf(voice) !== -1);
+  check('system prompt states the length and scene rules',
+    /8 words/.test(sys) && /45 to 70 words/.test(sys) && /first scene/i.test(sys) && /exactly one veo/i.test(sys) && /1 or 2 screen/i.test(sys));
+  check('system prompt names every approved screen', S.SCREEN_IDS.every((id) => sys.indexOf('"' + id + '"') !== -1));
+  check('system prompt forbids drawn app screens and text in images', /never draw an app screen/i.test(sys) && /no text/i.test(sys));
+  check('system prompt forbids the social proof pillar', /social proof/i.test(sys));
+
+  const withTopic = V.buildScriptUserPrompt({ topicInput: 'SOS feature for night fishing', pillars: Object.keys(B.PILLARS) });
+  check('user prompt carries the typed topic', withTopic.indexOf('SOS feature for night fishing') !== -1);
+  const noTopic = V.buildScriptUserPrompt({ topicInput: '', pillars: Object.keys(B.PILLARS) });
+  check('blank topic lists pillars without social proof', /cost comparison/.test(noTopic) && !/social proof/.test(noTopic));
+  const prior = Array.from({ length: 20 }, (_, i) => ({ hook: 'hook number ' + i, topic: 't' + i }));
+  const withPrior = V.buildScriptUserPrompt({ topicInput: '', pillars: [], priorVideos: prior });
+  check('prior videos are capped to the most recent 15',
+    withPrior.indexOf('hook number 19') !== -1 && withPrior.indexOf('hook number 5') !== -1 && withPrior.indexOf('hook number 4') === -1);
+
+  const still = V.buildStillRequest('A fisherman at dusk.', I.STYLE_SUFFIX, I.NEGATIVES);
+  check('still is a 9:16 image request',
+    still.generationConfig.imageConfig.aspectRatio === '9:16' && JSON.stringify(still.generationConfig.responseModalities) === '["IMAGE"]');
+  const stillText = still.contents[0].parts[0].text;
+  check('still prompt has no brand lockup instruction', !/BRAND LOCKUP/.test(stillText) && still.contents[0].parts.length === 1);
+  check('still prompt forbids logos and text', /no logo/i.test(stillText) && /no text/i.test(stillText));
+  check('video negatives drop the supplied-logo exception', V.videoNegatives(I.NEGATIVES).every((n) => !/FishPin logo/.test(n)));
+
+  const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
+  check('Veo request is 9:16, 1080p, 6 seconds, adults only',
+    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' }));
+  check('Veo request animates the still', veo.instances[0].image.inlineData.data === 'B64' && veo.instances[0].image.inlineData.mimeType === 'image/png');
+
+  const tts = V.buildTtsRequest('Gabi na sa laot.', 'Gacrux');
+  check('TTS request uses the voice and returns audio',
+    tts.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Gacrux'
+      && JSON.stringify(tts.generationConfig.responseModalities) === '["AUDIO"]'
+      && tts.contents[0].parts[0].text.indexOf('Gabi na sa laot.') !== -1);
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));
