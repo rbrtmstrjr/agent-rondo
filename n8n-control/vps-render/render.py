@@ -1,62 +1,59 @@
 #!/usr/bin/env python3
-# Reel render service: images + Gemini voiceover + auto-synced captions -> MP4 (vertical 9:16).
-# Pure stdlib + ffmpeg CLI. POST /render {scenes:[{image_url,narration}], audio_b64, width, height} -> video/mp4
-import json, base64, os, re, subprocess, tempfile, shutil, urllib.request, datetime
+# Reel render service v4 (unskippable): images + Gemini voiceover + Whisper word-pop captions
+# + motion variety + fast transitions + optional music bed -> MP4 (vertical 9:16). Pure stdlib + ffmpeg.
+import json, base64, os, re, subprocess, tempfile, shutil, urllib.request, datetime, hmac, difflib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-W_DEFAULT, H_DEFAULT, FPS = 1080, 1920, 30
-OUTPUT_DIR = "/opt/reel-render/output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+W_DEFAULT, H_DEFAULT, FPS, UP, T = 1080, 1920, 30, 3, 0.25
+HOOK_SECS = 2.2
+ROOT = os.environ.get("RENDER_ROOT", "/opt/reel-render")
+OUTPUT_DIR = os.path.join(ROOT, "output")
+MUSIC_DIR = os.path.join(ROOT, "music")
+ASSETS_DIR = os.path.join(ROOT, "assets")
+for d in (OUTPUT_DIR, MUSIC_DIR, ASSETS_DIR):
+    os.makedirs(d, exist_ok=True)
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+TRANS = ["slideleft", "slideright", "smoothup", "fade"]
 
 def prune_outputs(keep=50):
     try:
-        files = sorted([os.path.join(OUTPUT_DIR, f) for f in os.listdir(OUTPUT_DIR) if f.endswith(".mp4")], key=os.path.getmtime)
-        for f in files[:-keep]:
+        fs_ = sorted([os.path.join(OUTPUT_DIR, f) for f in os.listdir(OUTPUT_DIR) if f.endswith(".mp4")], key=os.path.getmtime)
+        for f in fs_[:-keep]:
             os.remove(f)
     except Exception:
         pass
 
-SCANLINES = "/opt/reel-render/scanlines.png"
-def ensure_scanlines():
-    # Build a faint horizontal-scanline overlay once (for the old-TV vintage look).
-    if os.path.exists(SCANLINES):
-        return
+def pick_music(seed):
     try:
-        import subprocess as sp
-        sp.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920",
-                "-vf", "format=rgba,geq=r=0:g=0:b=0:a='if(lt(mod(Y,3),1),55,0)'",
-                "-frames:v", "1", SCANLINES], stdout=sp.PIPE, stderr=sp.PIPE)
+        files = sorted(f for f in os.listdir(MUSIC_DIR) if f.lower().endswith((".mp3", ".m4a", ".wav", ".ogg")))
+        return os.path.join(MUSIC_DIR, files[seed % len(files)]) if files else None
     except Exception:
-        pass
-ensure_scanlines()
-UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+        return None
 
 _WHISPER = None
 def transcribe_words(audio_path):
-    # Word-level timestamps via faster-whisper (loaded once, reused). Returns [(word, start, end), ...].
     global _WHISPER
     from faster_whisper import WhisperModel
     if _WHISPER is None:
         _WHISPER = WhisperModel("base.en", device="cpu", compute_type="int8")
-    segments, _info = _WHISPER.transcribe(audio_path, language="en", word_timestamps=True, vad_filter=True)
-    words = []
+    segments, _ = _WHISPER.transcribe(audio_path, language="en", word_timestamps=True, vad_filter=True)
+    out = []
     for seg in segments:
         for w in (seg.words or []):
             t = (w.word or "").strip()
             if t:
-                words.append((t, float(w.start), float(w.end)))
-    return words
+                out.append((t, float(w.start), float(w.end)))
+    return out
 
 def run(cmd, cwd=None):
     p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if p.returncode != 0:
-        raise RuntimeError(cmd[0] + " failed: " + p.stderr.decode("utf-8", "ignore")[-1500:])
+        raise RuntimeError(cmd[0] + " failed: " + p.stderr.decode("utf-8", "ignore")[-1800:])
     return p.stdout.decode("utf-8", "ignore")
 
 def probe_duration(path):
-    out = run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path])
     try:
-        return float(out.strip())
+        return float(run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path]).strip())
     except Exception:
         return 0.0
 
@@ -71,62 +68,32 @@ def ass_time(t):
 def words(s):
     return max(1, len((s or "").split()))
 
-def wrap_caption(text, max_chars=16):
-    # Break into short, punchy lines so captions never run off the frame.
-    out = []
-    cur = ""
-    for w in text.split():
-        if cur and len(cur) + 1 + len(w) > max_chars:
-            out.append(cur); cur = w
-        else:
-            cur = (cur + " " + w).strip()
-    if cur:
-        out.append(cur)
-    return "\\N".join(out)
-
-def build_ass(scenes, durs, W, H):
-    head = (
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n"
-        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
-        "Style: Cap,DejaVu Sans,68,&H0000FFFF,&H00000000,&H00000000,1,0,1,6,3,8,80,80,240\n\n"
-        "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-    ) % (W, H)
-    lines = []
-    t = 0.0
-    for i, sc in enumerate(scenes):
-        start = t; end = t + durs[i]; t = end
-        txt = re.sub(r"\s+", " ", (sc.get("narration") or "").strip()).upper()
-        txt = txt.replace("\\", "").replace("{", "").replace("}", "")
-        if not txt:
-            continue
-        lines.append("Dialogue: 0,%s,%s,Cap,,0,0,0,,%s" % (ass_time(start), ass_time(end), wrap_caption(txt)))
-    return head + "\n".join(lines) + "\n"
-
 def _esc(t):
     return t.replace("\\", "").replace("{", "").replace("}", "").strip().upper()
 
-def _group_words(words, max_words=4, max_chars=18):
-    groups, cur, cur_chars = [], [], 0
-    for w in words:
+def _group_words(ws, max_words=4, max_chars=18):
+    groups, cur, cc = [], [], 0
+    for w in ws:
         wl = len(w[0])
-        if cur and (len(cur) >= max_words or cur_chars + wl + 1 > max_chars):
-            groups.append(cur); cur, cur_chars = [], 0
-        cur.append(w); cur_chars += wl + 1
+        if cur and (len(cur) >= max_words or cc + wl + 1 > max_chars):
+            groups.append(cur); cur, cc = [], 0
+        cur.append(w); cc += wl + 1
     if cur:
         groups.append(cur)
     return groups
 
-def build_ass_karaoke(words, W, H):
-    # TikTok/Reels style: whole short line shown, the currently-spoken word highlighted yellow.
+def build_ass_karaoke(ws, W, H):
     head = (
         "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n"
         "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
-        "Style: Cap,DejaVu Sans,72,&H00FFFFFF,&H00000000,&H00000000,1,0,1,6,3,8,80,80,240\n\n"
+        "Style: Cap,DejaVu Sans,70,&H00FFFFFF,&H00000000,&H00000000,1,0,1,6,3,8,80,80,260\n"
+        "Style: Hook,DejaVu Sans,104,&H00FFFFFF,&H00000000,&H00000000,1,0,1,8,4,8,60,60,300\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     ) % (W, H)
-    YELLOW, WHITE = "&H0000FFFF&", "&H00FFFFFF&"
+    YELLOW = "&H0000FFFF&"
     out = []
-    for g in _group_words(words):
+    for g in _group_words(ws):
+        style = "Hook" if g[0][1] < HOOK_SECS else "Cap"
         for j in range(len(g)):
             start = g[j][1]
             end = g[j + 1][1] if j + 1 < len(g) else g[j][2]
@@ -135,9 +102,45 @@ def build_ass_karaoke(words, W, H):
             parts = []
             for k in range(len(g)):
                 u = _esc(g[k][0])
-                parts.append("{\\c%s}%s{\\c%s}" % (YELLOW, u, WHITE) if k == j else u)
-            out.append("Dialogue: 0,%s,%s,Cap,,0,0,0,,%s" % (ass_time(start), ass_time(end), " ".join(parts)))
+                if k == j:
+                    # active word: yellow + quick scale POP
+                    parts.append("{\\c%s\\fscx112\\fscy112\\t(0,90,\\fscx128\\fscy128)}%s{\\r%s}" % (YELLOW, u, style))
+                else:
+                    parts.append(u)
+            out.append("Dialogue: 0,%s,%s,%s,,0,0,0,,%s" % (ass_time(start), ass_time(end), style, " ".join(parts)))
     return head + "\n".join(out) + "\n"
+
+def build_ass_phrases(scenes, durs, W, H):
+    head = (
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n"
+        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
+        "Style: Cap,DejaVu Sans,70,&H00FFFFFF,&H00000000,&H00000000,1,0,1,6,3,8,80,80,260\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    ) % (W, H)
+    def wrap(t, n=16):
+        o, cur = [], ""
+        for w in t.split():
+            if cur and len(cur) + 1 + len(w) > n:
+                o.append(cur); cur = w
+            else:
+                cur = (cur + " " + w).strip()
+        if cur:
+            o.append(cur)
+        return "\\N".join(o)
+    lines, tt = [], 0.0
+    for i, sc in enumerate(scenes):
+        st = tt; en = tt + durs[i]; tt = en
+        txt = _esc(sc.get("narration") or "")
+        if txt:
+            lines.append("Dialogue: 0,%s,%s,Cap,,0,0,0,,%s" % (ass_time(st), ass_time(en), wrap(txt)))
+    return head + "\n".join(lines) + "\n"
+
+def motion(i):
+    if i == 0:
+        return "zoompan=z='min(1.0+0.0016*on,1.30)'"      # hook: fast zoom PUNCH
+    if i % 2 == 0:
+        return "zoompan=z='min(1.0+0.0006*on,1.22)'"      # slow push-in
+    return "zoompan=z='max(1.22-0.0006*on,1.02)'"          # slow pull-out
 
 def render(payload, workdir):
     W = int(payload.get("width", W_DEFAULT)); H = int(payload.get("height", H_DEFAULT))
@@ -153,7 +156,7 @@ def render(payload, workdir):
             with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
                 shutil.copyfileobj(r, f)
             if os.path.getsize(dest) < 1024:
-                raise RuntimeError("tiny image")
+                raise RuntimeError("tiny")
             valid.append(sc)
         except Exception:
             if os.path.exists(dest):
@@ -174,57 +177,74 @@ def render(payload, workdir):
         total = sum(min(4.0, max(2.0, words(s.get("narration")) / 2.5)) for s in scenes)
         audio_path = None
 
+    # durations weighted by words; scaled so AFTER transition-overlaps the video == audio length
     wts = [words(s.get("narration")) for s in scenes]
-    sw = sum(wts)
-    durs = [max(1.2, total * w / sw) for w in wts]
-    scale = total / sum(durs)
-    durs = [d * scale for d in durs]
+    target = total + (K - 1) * T
+    durs = [max(T + 0.8, target * w / sum(wts)) for w in wts]
+    durs = [d * (target / sum(durs)) for d in durs]
 
-    # Captions: word-by-word highlight synced to the voice (Whisper). Fallback to per-phrase.
+    # captions
     wseg = []
     if audio_path:
         try:
             wseg = transcribe_words(audio_path)
         except Exception:
             wseg = []
-    ass_text = build_ass_karaoke(wseg, W, H) if wseg else build_ass(scenes, durs, W, H)
+    ass_text = build_ass_karaoke(wseg, W, H) if wseg else build_ass_phrases(scenes, durs, W, H)
     with open(os.path.join(workdir, "subs.ass"), "w", encoding="utf-8") as f:
         f.write(ass_text)
 
-    UP = 3  # upscale factor before zoompan -> sub-pixel-smooth zoom (kills jitter)
+    # per-scene motion clips
     parts = []
     for i in range(K):
-        fr = max(1, int(round(durs[i] * FPS)))
+        fr = max(2, int(round(durs[i] * FPS)))
         parts.append(
             "[%d:v]scale=%d:%d:force_original_aspect_ratio=increase:flags=lanczos,crop=%d:%d,"
-            "zoompan=z='min(zoom+0.0006,1.18)':d=%d:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=%dx%d:fps=%d,setsar=1[v%d]"
-            % (i, UP * W, UP * H, UP * W, UP * H, fr, W, H, FPS, i)
+            "%s:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p[v%d]"
+            % (i, UP * W, UP * H, UP * W, UP * H, motion(i), fr, W, H, FPS, i)
         )
-    parts.append("".join("[v%d]" % i for i in range(K)) + "concat=n=%d:v=1:a=0[vcat]" % K)
-    vintage = bool(payload.get("vintage", False))
-    if vintage:
-        # Film-grain vintage (matches reference): clean grayscale, visible fine grain, very soft vignette.
-        # No scanlines, no color tint. Grain is per-frame so it shimmers like real film grain.
-        parts.append("[vcat]format=gray,eq=contrast=1.05:brightness=0.02,noise=alls=20:allf=t,vignette=PI/11,format=yuv420p[vfx]")
-        parts.append("[vfx]ass=subs.ass[vout]")
+    # fast transitions (xfade chain)
+    if K == 1:
+        vlabel = "[v0]"
     else:
-        parts.append("[vcat]ass=subs.ass[vout]")
+        acc = durs[0]; label = "v0"
+        for i in range(1, K):
+            off = max(0.0, acc - T)
+            new = "xf%d" % i
+            parts.append("[%s][v%d]xfade=transition=%s:duration=%.3f:offset=%.3f[%s]"
+                         % (label, i, TRANS[(i - 1) % len(TRANS)], T, off, new))
+            acc += durs[i] - T
+            label = new
+        vlabel = "[%s]" % label
 
+    # optional vintage grain (off by default)
+    if bool(payload.get("vintage", False)):
+        parts.append("%sformat=gray,eq=contrast=1.05:brightness=0.02,noise=alls=20:allf=t,vignette=PI/11,format=yuv420p[vfx]" % vlabel)
+        vlabel = "[vfx]"
+    parts.append("%sass=subs.ass[vout]" % vlabel)
+
+    # music bed (mix under voice) if a track exists
+    music = pick_music(K) if audio_path else None
+    if music:
+        parts.append("[%d:a]volume=0.14,aloop=loop=-1:size=2e9[mus]" % (K + 1))
+        parts.append("[%d:a][mus]amix=inputs=2:duration=first:normalize=0[aout]" % K)
+
+    fc = ";".join(parts)
     cmd = ["ffmpeg", "-y"]
     for i in range(K):
         cmd += ["-i", "img_%d.jpg" % i]
     if audio_path:
         cmd += ["-i", "audio.wav"]
-    fc = ";".join(parts)
+    if music:
+        cmd += ["-i", music]
     cmd += ["-filter_complex", fc, "-map", "[vout]"]
     if audio_path:
-        cmd += ["-map", "%d:a" % K, "-c:a", "aac", "-b:a", "128k", "-shortest"]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-            "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p",
-            "-r", str(FPS), "-movflags", "+faststart", "out.mp4"]
+        cmd += ["-map", "[aout]" if music else ("%d:a" % K), "-c:a", "aac", "-b:a", "128k"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "8M", "-bufsize", "16M",
+            "-pix_fmt", "yuv420p", "-r", str(FPS), "-shortest", "-movflags", "+faststart", "out.mp4"]
     run(cmd, cwd=workdir)
+
     out = os.path.join(workdir, "out.mp4")
-    # Keep a permanent copy on the VPS so a Slack/n8n hiccup never loses the video.
     try:
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copyfile(out, os.path.join(OUTPUT_DIR, "reel-" + stamp + ".mp4"))
@@ -233,28 +253,185 @@ def render(payload, workdir):
         pass
     return out
 
+# ============================================================================
+# /render-ad: FishPin video ads. Pure helpers (unit-tested locally); the ffmpeg
+# graph is render_ad(), added below these.
+# ============================================================================
+AD_W, AD_H, AD_FPS, AD_TAIL = 1080, 1920, 30, 0.4
+AMBER_ASS = "&H0057C8FF&"            # #FFC857 in ASS BGR order
+PERSIAN_HEX = "0x0A2461"
+SCREEN_URL_PREFIX = "https://www.fishpin.app/"
+AD_SCENE_TYPES = ("video", "image", "screen")
+
+class AdRequestError(Exception):
+    def __init__(self, status, message):
+        Exception.__init__(self, message)
+        self.status = status
+        self.message = message
+
+def check_ad_token(supplied, expected):
+    if not expected:
+        raise AdRequestError(503, "render-ad is not configured: RENDER_AD_TOKEN is unset")
+    if not hmac.compare_digest(str(supplied or ""), str(expected)):
+        raise AdRequestError(401, "missing or incorrect X-Render-Token")
+
+def validate_ad_payload(payload):
+    if not isinstance(payload, dict):
+        raise AdRequestError(400, "body must be a JSON object")
+    if not str(payload.get("audio_b64") or ""):
+        raise AdRequestError(400, "audio_b64 is required")
+    scenes = payload.get("scenes")
+    if not isinstance(scenes, list) or not (1 <= len(scenes) <= 8):
+        raise AdRequestError(400, "scenes must be a list of 1 to 8 scenes")
+    clean = []
+    for i, sc in enumerate(scenes):
+        n = i + 1
+        if not isinstance(sc, dict) or sc.get("type") not in AD_SCENE_TYPES:
+            raise AdRequestError(400, "scene %d: type must be one of %s" % (n, ", ".join(AD_SCENE_TYPES)))
+        try:
+            seconds = float(sc.get("seconds"))
+        except (TypeError, ValueError):
+            seconds = 0.0
+        if seconds <= 0:
+            raise AdRequestError(400, "scene %d: seconds must be greater than 0" % n)
+        if sc["type"] in ("video", "image") and not str(sc.get("b64") or ""):
+            raise AdRequestError(400, "scene %d: b64 is required for %s" % (n, sc["type"]))
+        if sc["type"] == "screen" and not str(sc.get("url") or "").startswith(SCREEN_URL_PREFIX):
+            raise AdRequestError(400, "scene %d: screen url must start with %s (www.fishpin.app only)" % (n, SCREEN_URL_PREFIX))
+        c = dict(sc); c["seconds"] = seconds
+        clean.append(c)
+    ec = payload.get("end_card") or {}
+    try:
+        ec_seconds = float(ec.get("seconds", 3.5))
+    except (TypeError, ValueError):
+        ec_seconds = 3.5
+    return {
+        "width": AD_W, "height": AD_H, "fps": AD_FPS,
+        "audio_b64": payload["audio_b64"],
+        "script": str(payload.get("script") or ""),
+        "language": str(payload.get("language") or "tl"),
+        "scenes": clean,
+        "end_card": {"cta": str(ec.get("cta") or ""), "url": str(ec.get("url") or ""),
+                     "seconds": min(6.0, max(1.0, ec_seconds))},
+    }
+
+def tokenize_script(script):
+    return [w for w in (script or "").split() if w]
+
+def _norm_token(w):
+    return re.sub(r"[^\w]", "", (w or "").lower(), flags=re.UNICODE)
+
+def align_script_words(script_words, recognised):
+    if not script_words or not recognised:
+        return None
+    a = [_norm_token(w) for w in script_words]
+    b = [_norm_token(r[0]) for r in recognised]
+    times = [None] * len(script_words)
+    matched = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                r = recognised[j1 + k]
+                times[i1 + k] = (float(r[1]), float(r[2]))
+                matched += 1
+    if matched == 0:
+        return None
+    n = len(script_words)
+    known = [i for i in range(n) if times[i] is not None]
+    for i in range(n):
+        if times[i] is not None:
+            continue
+        prev = max([k for k in known if k < i], default=None)
+        nxt = min([k for k in known if k > i], default=None)
+        if prev is not None and nxt is not None:
+            t0, t1 = times[prev][1], times[nxt][0]
+            gap = nxt - prev - 1
+            s = t0 + (t1 - t0) * (i - prev - 1) / gap
+            e = t0 + (t1 - t0) * (i - prev) / gap
+        elif prev is not None:
+            s = times[prev][1] + 0.3 * (i - prev - 1)
+            e = s + 0.3
+        else:
+            e = max(0.05, times[nxt][0] - 0.3 * (nxt - i - 1))
+            s = max(0.0, e - 0.3)
+        times[i] = (s, max(e, s + 0.05))
+    return [(script_words[i], times[i][0], times[i][1]) for i in range(n)]
+
+def proportional_word_times(script_words, total_seconds):
+    weights = [len(w) + 1 for w in script_words]
+    total_w = float(sum(weights)) or 1.0
+    out, t = [], 0.0
+    for w, wt in zip(script_words, weights):
+        d = float(total_seconds) * wt / total_w
+        out.append((w, t, t + d))
+        t += d
+    return out
+
+def scale_scene_durations(planned, audio_seconds, end_card_seconds, tail=AD_TAIL, min_scene=1.0):
+    p = [max(0.0, float(x)) for x in planned]
+    if not p or sum(p) <= 0:
+        raise ValueError("no planned durations")
+    total = max(min_scene * len(p), float(audio_seconds) + tail - float(end_card_seconds))
+    durs = [x * total / sum(p) for x in p]
+    short = [i for i, d in enumerate(durs) if d < min_scene]
+    for i in short:
+        durs[i] = min_scene
+    excess = sum(durs) - total
+    if excess > 1e-9:
+        free = [i for i in range(len(durs)) if i not in short]
+        free_total = sum(durs[i] for i in free)
+        for i in free:
+            durs[i] -= excess * durs[i] / free_total
+    return [round(d, 3) for d in durs]
+
+def _esc_ad(t):
+    return t.replace("\\", "").replace("{", "").replace("}", "").strip()
+
+def build_ass_ad(ws, W, H):
+    head = (
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 0\n\n"
+        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
+        "Style: Ad,Poppins,78,&H00FFFFFF,&H00000000,&H00000000,1,0,1,6,2,5,90,90,0\n\n"
+        "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    ) % (W, H)
+    out = []
+    for g in _group_words(ws, max_words=3, max_chars=20):
+        for j in range(len(g)):
+            start = g[j][1]
+            end = g[j + 1][1] if j + 1 < len(g) else g[j][2]
+            if end <= start:
+                end = start + 0.06
+            parts = []
+            for k in range(len(g)):
+                u = _esc_ad(g[k][0])
+                parts.append("{\\c%s}%s{\\rAd}" % (AMBER_ASS, u) if k == j else u)
+            out.append("Dialogue: 0,%s,%s,Ad,,0,0,0,,%s" % (ass_time(start), ass_time(end), " ".join(parts)))
+    return head + "\n".join(out) + "\n"
+
+def ad_encode_args():
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+            "-r", str(AD_FPS), "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+            "-maxrate", "8M", "-bufsize", "16M",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart"]
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
     def do_GET(self):
         if self.path == "/health":
-            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers()
-            self.wfile.write(b"ok")
+            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers(); self.wfile.write(b"ok")
         elif self.path in ("/videos", "/videos/"):
             files = sorted([f for f in os.listdir(OUTPUT_DIR) if f.endswith(".mp4")], reverse=True)
-            rows = "".join('<li><a href="/videos/%s">%s</a></li>' % (f, f) for f in files) or "<li>(no videos yet)</li>"
-            html = ("<html><head><title>Rendered Reels</title></head><body style='font-family:sans-serif'>"
-                    "<h2>Rendered Reels (%d)</h2><ul>%s</ul></body></html>" % (len(files), rows)).encode("utf-8")
-            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(html))); self.end_headers(); self.wfile.write(html)
+            rows = "".join('<li><a href="/videos/%s">%s</a></li>' % (f, f) for f in files) or "<li>(none yet)</li>"
+            html = ("<html><body style='font-family:sans-serif'><h2>Rendered Reels (%d)</h2><ul>%s</ul></body></html>" % (len(files), rows)).encode("utf-8")
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(html))); self.end_headers(); self.wfile.write(html)
         elif self.path.startswith("/videos/"):
-            name = os.path.basename(self.path[len("/videos/"):])
-            p = os.path.join(OUTPUT_DIR, name)
+            name = os.path.basename(self.path[len("/videos/"):]); p = os.path.join(OUTPUT_DIR, name)
             if name.endswith(".mp4") and os.path.isfile(p):
                 with open(p, "rb") as f:
                     data = f.read()
-                self.send_response(200); self.send_header("Content-Type", "video/mp4")
-                self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+                self.send_response(200); self.send_header("Content-Type", "video/mp4"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
             else:
                 self.send_response(404); self.end_headers()
         else:
@@ -269,14 +446,10 @@ class Handler(BaseHTTPRequestHandler):
             out = render(payload, workdir)
             with open(out, "rb") as f:
                 data = f.read()
-            self.send_response(200); self.send_header("Content-Type", "video/mp4")
-            self.send_header("Content-Length", str(len(data))); self.end_headers()
-            self.wfile.write(data)
+            self.send_response(200); self.send_header("Content-Type", "video/mp4"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
         except Exception as e:
             msg = json.dumps({"error": str(e)}).encode("utf-8")
-            self.send_response(500); self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(msg))); self.end_headers()
-            self.wfile.write(msg)
+            self.send_response(500); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(msg))); self.end_headers(); self.wfile.write(msg)
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
