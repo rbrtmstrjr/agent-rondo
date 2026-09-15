@@ -104,6 +104,59 @@ section('script', 'Script validation', () => {
   check('screen allowlist excludes the sign-in screen', S.SCREEN_IDS.indexOf('signin') === -1 && S.SCREEN_IDS.indexOf('onboarding6') === -1);
 });
 
+// ---------------------------------------------------------------- plan
+section('plan', 'Scene plan to render payload', () => {
+  const P = L('scene-plan.js');
+  const script = {
+    voiceover: 'Gabi na, nawala ang signal.',
+    scenes: [
+      { beat: 'hook', type: 'veo', seconds: 3, prompt: 'fog' },
+      { beat: 'stakes', type: 'image', seconds: 2.5, prompt: 'a' },
+      { beat: 'stakes', type: 'image', seconds: 2.5, prompt: 'b' },
+      { beat: 'demo', type: 'screen', seconds: 4, screen: 'navigate' },
+      { beat: 'relief', type: 'image', seconds: 5, prompt: 'c' },
+    ],
+  };
+  const assets = { voiceoverB64: 'VO', hookClipB64: 'CLIP', hookStillB64: 'STILL', imagesB64: ['I1', 'I2', 'I3'] };
+  const cfg = { endCardCta: 'I-download sa Play Store', websiteUrl: 'www.fishpin.app', endCardSeconds: 3.5 };
+
+  check('screen urls are all on www.fishpin.app',
+    Object.keys(P.SCREEN_URLS).every((k) => P.SCREEN_URLS[k].indexOf('https://www.fishpin.app/') === 0));
+  check('navigate is onboarding4', P.SCREEN_URLS.navigate === 'https://www.fishpin.app/images/onboarding/onboarding4.png');
+  check('dashboard is features1', P.SCREEN_URLS.dashboard === 'https://www.fishpin.app/images/features/features1.jpg');
+  check('no url points at onboarding6', !JSON.stringify(P.SCREEN_URLS).includes('onboarding6'));
+  check('counts image scenes', P.imageSceneCount(script) === 3);
+
+  const r = P.buildRenderPayload(script, assets, cfg);
+  check('ok with complete assets', r.ok === true && r.reason === '');
+  check('no fallback when the clip exists', r.hookFallback === false);
+  check('payload is 1080x1920 at 30fps', r.payload.width === 1080 && r.payload.height === 1920 && r.payload.fps === 30);
+  check('payload carries voiceover audio and script text', r.payload.audio_b64 === 'VO' && r.payload.script === script.voiceover);
+  check('payload language is Tagalog', r.payload.language === 'tl');
+  check('hook becomes a video scene with ambient sound',
+    JSON.stringify(r.payload.scenes[0]) === JSON.stringify({ type: 'video', b64: 'CLIP', seconds: 3, ambient: true }));
+  check('images keep script order', r.payload.scenes[1].b64 === 'I1' && r.payload.scenes[2].b64 === 'I2' && r.payload.scenes[4].b64 === 'I3');
+  check('screen scene resolves its url',
+    JSON.stringify(r.payload.scenes[3]) === JSON.stringify({ type: 'screen', url: P.SCREEN_URLS.navigate, seconds: 4 }));
+  check('end card comes from cfg',
+    JSON.stringify(r.payload.end_card) === JSON.stringify({ cta: 'I-download sa Play Store', url: 'www.fishpin.app', seconds: 3.5 }));
+
+  const fb = P.buildRenderPayload(script, Object.assign({}, assets, { hookClipB64: '' }), cfg);
+  check('missing clip falls back to the still', fb.ok === true && fb.hookFallback === true);
+  check('fallback hook is a punched image of the still',
+    JSON.stringify(fb.payload.scenes[0]) === JSON.stringify({ type: 'image', b64: 'STILL', seconds: 3, punch: true }));
+
+  const noStill = P.buildRenderPayload(script, Object.assign({}, assets, { hookClipB64: '', hookStillB64: '' }), cfg);
+  check('no clip and no still is not ok', noStill.ok === false && /hook/.test(noStill.reason) && noStill.payload === null);
+  const short = P.buildRenderPayload(script, Object.assign({}, assets, { imagesB64: ['I1'] }), cfg);
+  check('too few images is not ok', short.ok === false && /image/.test(short.reason));
+  const badScreen = P.buildRenderPayload({ voiceover: 'x', scenes: [script.scenes[0], { beat: 'demo', type: 'screen', seconds: 4, screen: 'signin' }] },
+    assets, cfg);
+  check('unknown screen is not ok', badScreen.ok === false && /screen/.test(badScreen.reason));
+  const noVo = P.buildRenderPayload(script, Object.assign({}, assets, { voiceoverB64: '' }), cfg);
+  check('missing voiceover is not ok', noVo.ok === false && /voiceover/.test(noVo.reason));
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));
