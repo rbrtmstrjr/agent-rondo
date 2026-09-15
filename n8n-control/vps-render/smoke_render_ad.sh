@@ -7,10 +7,10 @@ set -u
 PORT="${PORT:-8088}"
 OUT_DIR="${RENDER_ROOT:-/opt/reel-render}/output"
 BEFORE_FILES=$(ls "$OUT_DIR" 2>/dev/null || true)
+[ -n "${RENDER_AD_TOKEN:-}" ] || { echo "set RENDER_AD_TOKEN"; exit 2; }
 T=$(mktemp -d); cd "$T"; FAILS=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; FAILS=$((FAILS+1)); }
-[ -n "${RENDER_AD_TOKEN:-}" ] || { echo "set RENDER_AD_TOKEN"; exit 2; }
 
 cleanup() {
   kill "${HTTPD_PID:-}" 2>/dev/null

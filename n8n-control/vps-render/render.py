@@ -487,8 +487,11 @@ def _ffpath(p):
     return p.replace("\\", "/").replace(":", "\\:")
 
 def _decode_b64(data, what):
+    # validate=True: reject non-alphabet input outright (e.g. "****", or a
+    # "data:video/mp4;base64," prefix) instead of silently discarding the bad
+    # characters and decoding whatever base64-looking data is left.
     try:
-        return base64.b64decode(data, validate=False)
+        return base64.b64decode(data, validate=True)
     except (binascii.Error, ValueError, TypeError) as e:
         raise AdRequestError(400, "%s is not valid base64: %s" % (what, e))
 
@@ -671,6 +674,8 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     n = int(self.headers.get("Content-Length", "0"))
                 except (TypeError, ValueError):
+                    raise AdRequestError(400, "invalid Content-Length header")
+                if n < 0:
                     raise AdRequestError(400, "invalid Content-Length header")
                 body = self.rfile.read(n)
                 check_ad_token(self.headers.get("X-Render-Token", ""), os.environ.get("RENDER_AD_TOKEN", ""))

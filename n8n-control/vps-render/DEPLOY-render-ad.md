@@ -4,14 +4,19 @@ Run in the Hostinger browser terminal as root. Stop at any unexpected output and
 
 ## 1. Fingerprint, back up and check prerequisites
 
-### Fingerprint + backup
+### Fingerprint (check BEFORE backing up)
 ```bash
 md5sum /opt/reel-render/render.py
+```
+The new `render.py` is built on the repo base file, md5 `08e7ebce6dcb2268e1ae5b09ef1e2a85`. **STOP unless the live md5 equals that exactly** — if it is anything else (including a prior deploy's `70f5623a628477f3cd361ab706ddd0e4`), STOP and send `cat /opt/reel-render/render.py` so the change can be rebased onto the live file. Do **not** back up yet — only proceed to the backup once the md5 has been confirmed to match, so that re-running this step after a swap can never make the newest backup a copy of the new file instead of the original.
+
+### Only once the md5 matches: back up
+```bash
 BAK=/opt/reel-render/render.py.bak-$(date +%Y%m%d%H%M)
 cp /opt/reel-render/render.py "$BAK"
 echo "$BAK"
 ```
-The new `render.py` is built on the repo base file, md5 `08e7ebce6dcb2268e1ae5b09ef1e2a85`. **STOP unless the live md5 equals that exactly** — if it is anything else (including a prior deploy's `70f5623a628477f3cd361ab706ddd0e4`), STOP and send `cat /opt/reel-render/render.py` so the change can be rebased onto the live file. Report the md5 and the `$BAK` path.
+Report the md5 and the `$BAK` path.
 
 ### Prerequisite checks (STOP if any looks wrong — send the output)
 ```bash
@@ -23,9 +28,13 @@ docker ps --format '{{.Names}}'
 - `systemctl cat reel-render` confirms the unit name and shows a `User=` line (or none, meaning root). Note which user runs the service — needed for step 3.
 - `docker ps` lists the real running container names. Find the n8n container and use its name below as `<N8N_CONTAINER>`.
 ```bash
-docker network inspect $(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' <N8N_CONTAINER>) -f '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}}{{end}}'
+docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{println $k}}{{end}}' <N8N_CONTAINER>
 ```
-This prints the real Docker network's subnet and gateway as `<SUBNET> <GATEWAY>` (e.g. `172.18.0.0/16 172.18.0.1`). Use the discovered `<SUBNET>` and `<GATEWAY>` in place of the placeholders in steps 5 and 7 below. If `<GATEWAY>` is not `172.18.0.1`, the render URL configured in n8n must also use the discovered gateway, not `172.18.0.1`.
+This lists every Docker network the n8n container is attached to, one per line — there can be more than one. For each network name printed, inspect it:
+```bash
+docker network inspect <NETWORK_NAME> -f '{{range .IPAM.Config}}{{println .Subnet .Gateway}}{{end}}'
+```
+Use the network that the render service's gateway actually belongs to — normally the one whose gateway n8n already uses today, `172.18.0.1`. That network's subnet/gateway pair become `<SUBNET>` and `<GATEWAY>`, used in place of the placeholders in Step 7 below. If `<GATEWAY>` is not `172.18.0.1`, the render URL configured in n8n must also use the discovered gateway, not `172.18.0.1`.
 
 ## 2. Download the new files to a staging copy (does not touch the live render.py)
 The controller uploads both files (they contain no secrets) and gives you two URLs and two md5s.
@@ -57,9 +66,11 @@ RENDER_ROOT=/opt/reel-render/staging-root RENDER_AD_TOKEN=$TEST_TOKEN nohup /opt
 STAGING_PID=$!
 sleep 3
 curl -s http://127.0.0.1:8089/health; echo
-PORT=8089 RENDER_AD_TOKEN=$TEST_TOKEN bash /opt/reel-render/staging/smoke_render_ad.sh
+RENDER_ROOT=/opt/reel-render/staging-root PORT=8089 RENDER_AD_TOKEN=$TEST_TOKEN bash /opt/reel-render/staging/smoke_render_ad.sh
 kill $STAGING_PID
 ```
+Passing `RENDER_ROOT=/opt/reel-render/staging-root` to the smoke script itself (not only to the staging server) matters: without it, the smoke script's own output-folder cleanup falls back to `/opt/reel-render/output` — the **live** service's folder — so its cleanup trap could delete real reel/ad files the live service writes during this staging run, while the actual staging output under `staging-root/output` never gets cleaned up at all.
+
 Expected: `/health` prints `ok`, every smoke-test line is `PASS`, and `FAILS=0`. If anything fails: STOP, send the full output and `tail -50 /tmp/render-staging.log`; the live service on 8088 has not been touched.
 
 ## 5. Install and restart (only after step 4 printed FAILS=0)
@@ -80,13 +91,29 @@ Re-read the token from the drop-in rather than relying on step 5's shell variabl
 TOKEN=$(sed -n 's/^Environment=RENDER_AD_TOKEN=//p' /etc/systemd/system/reel-render.service.d/render-ad.conf)
 RENDER_AD_TOKEN="$TOKEN" bash /opt/reel-render/staging/smoke_render_ad.sh
 ```
+**Warning:** this run is against the live `render.py` with the live `RENDER_ROOT`, so its cleanup trap only protects the reel/ad files that already existed before it started — any real reel or ad that a live pipeline finishes rendering during these few minutes could get swept up and deleted along with the test output. Only run this step when you're confident no real reel/ad render is in flight.
+
 Expected: every line `PASS` and `FAILS=0` (default `PORT=8088`, so this hits the live service). Send the full output. If it does not print `FAILS=0`, run the Rollback section immediately.
 
 ## 7. Firewall port 8088 to the Docker network only
 ```bash
 ufw status numbered
 ```
-If any existing rule allows `8088` from `Anywhere`, delete it first (using the number shown): `ufw delete <n>`.
+If any existing rule allows `8088` from `Anywhere`, delete it: `ufw delete <n>`. Rule numbers shift after every delete — re-run `ufw status numbered` again before deleting the next one; never delete by a number you read before the previous delete.
+
+If `ufw status` above showed **inactive**, check what else is publicly listening before enabling it, so this step can't accidentally cut off something the owner relies on:
+```bash
+ss -tlnp
+```
+For every host port listed besides `22` (SSH) and `8088` (the render service), add an explicit allow — e.g.:
+```bash
+ufw allow 80/tcp
+ufw allow 443/tcp
+# ... and any other service the owner relies on
+```
+Docker-published ports do not need a rule here — Docker manages its own iptables rules independently of ufw.
+
+Then, always:
 ```bash
 ufw allow OpenSSH
 ufw allow from <SUBNET> to any port 8088 proto tcp
@@ -94,8 +121,11 @@ ufw deny 8088/tcp
 ufw --force enable
 ufw status numbered
 docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
+curl -sI https://n8n.srv1193790.hstgr.cloud | head -1
 ```
-`<SUBNET>` and `<GATEWAY>` are the values discovered in step 1 (e.g. `172.18.0.0/16` and `172.18.0.1`) — do not assume those defaults without checking step 1's output. Expected: the last command prints `ok`. The controller then confirms the public probe of `:8088/health` no longer answers.
+`<SUBNET>` and `<GATEWAY>` are the values discovered in step 1 — do not assume `172.18.0.0/16` / `172.18.0.1` without checking step 1's output.
+
+Expected: the `docker exec` prints `ok` and the `curl` prints an HTTP status line (n8n is still publicly reachable). **If either check fails, run `ufw disable` immediately and send the output** — do not leave the firewall in a broken state. Once both pass, the controller separately confirms the public probe of `:8088/health` no longer answers.
 
 ## Rollback
 ```bash

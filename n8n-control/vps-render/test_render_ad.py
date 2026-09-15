@@ -158,5 +158,10 @@ class RenderAdHelpers(unittest.TestCase):
             render._decode_b64("A", "audio_b64")
         self.assertEqual(cm.exception.status, 400)
 
+    def test_invalid_base64_non_alphabet_chars_400(self):
+        with self.assertRaises(render.AdRequestError) as cm:
+            render._decode_b64("****", "audio_b64")
+        self.assertEqual(cm.exception.status, 400)
+
 if __name__ == "__main__":
     unittest.main()
