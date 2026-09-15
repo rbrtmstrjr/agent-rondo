@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Reel render service v4 (unskippable): images + Gemini voiceover + Whisper word-pop captions
 # + motion variety + fast transitions + optional music bed -> MP4 (vertical 9:16). Pure stdlib + ffmpeg.
-import json, base64, os, re, subprocess, tempfile, shutil, urllib.request, datetime, hmac, difflib
+import json, base64, os, re, subprocess, tempfile, shutil, urllib.request, datetime, hmac, difflib, threading, binascii
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 W_DEFAULT, H_DEFAULT, FPS, UP, T = 1080, 1920, 30, 3, 0.25
@@ -301,6 +301,8 @@ def validate_ad_payload(payload):
         c = dict(sc); c["seconds"] = seconds
         clean.append(c)
     ec = payload.get("end_card") or {}
+    if not isinstance(ec, dict):
+        raise AdRequestError(400, "end_card must be an object")
     try:
         ec_seconds = float(ec.get("seconds", 3.5))
     except (TypeError, ValueError):
@@ -430,12 +432,21 @@ AD_ASSETS = {
 }
 
 def _download(url, dest, min_bytes=1024):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f)
-    if os.path.getsize(dest) < min_bytes:
-        os.remove(dest)
-        raise RuntimeError("download too small: " + url)
+    # download to a private temp name and only os.replace() it into place once fully
+    # validated, so a truncated/failed download or a concurrent reader never sees a
+    # partial file at `dest` (ensure_ad_assets only checks os.path.exists(dest)).
+    tmp = dest + ".part-" + str(os.getpid()) + "-" + str(threading.get_ident())
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f)
+        if os.path.getsize(tmp) < min_bytes:
+            raise RuntimeError("download too small: " + url)
+        os.replace(tmp, dest)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 def ensure_ad_assets():
     paths = {}
@@ -475,6 +486,26 @@ def _ffpath(p):
     # ffmpeg filter arguments: escape backslash and colon (paths only)
     return p.replace("\\", "/").replace(":", "\\:")
 
+def _decode_b64(data, what):
+    try:
+        return base64.b64decode(data, validate=False)
+    except (binascii.Error, ValueError, TypeError) as e:
+        raise AdRequestError(400, "%s is not valid base64: %s" % (what, e))
+
+def end_card_filter(bold, semi, brand_txt, cta_txt, url_txt):
+    # expansion=none: textfile content (CTA/URL copy) is user/brand text, not an ffmpeg
+    # expression -- a stray '%' (e.g. "100% libre") would otherwise crash the filter and
+    # a stray '\' would otherwise be silently eaten.
+    return ("[1:v]scale=260:-1[lg];[0:v][lg]overlay=(W-w)/2:620[a];"
+            "[a]drawtext=fontfile='%s':textfile='%s':fontsize=110:fontcolor=white:x=(w-text_w)/2:y=920:expansion=none[b];"
+            "[b]drawtext=fontfile='%s':textfile='%s':fontsize=64:fontcolor=0xFFC857:x=(w-text_w)/2:y=1110:expansion=none[c];"
+            "[c]drawtext=fontfile='%s':textfile='%s':fontsize=54:fontcolor=white:x=(w-text_w)/2:y=1210:expansion=none,format=yuv420p[v]"
+            ) % (bold, brand_txt, semi, cta_txt, semi, url_txt)
+
+def lockup_filter(bold, brand_txt, content_end):
+    return ("[vl]drawtext=fontfile='%s':textfile='%s':fontsize=44:fontcolor=white:borderw=2:bordercolor=black@0.4:"
+            "expansion=none:x=136:y=78:enable='between(t,1.0,%.3f)'[vout]") % (bold, brand_txt, content_end)
+
 def render_ad(payload, workdir):
     p = validate_ad_payload(payload)
     assets = ensure_ad_assets()
@@ -483,7 +514,7 @@ def render_ad(payload, workdir):
 
     audio = os.path.join(workdir, "vo.wav")
     with open(audio, "wb") as f:
-        f.write(base64.b64decode(p["audio_b64"]))
+        f.write(_decode_b64(p["audio_b64"], "audio_b64"))
     audio_s = probe_duration(audio)
     if audio_s <= 0:
         raise AdRequestError(400, "audio_b64 is not readable audio")
@@ -504,7 +535,7 @@ def render_ad(payload, workdir):
         if sc["type"] == "video":
             src = os.path.join(workdir, "clip_%02d.mp4" % i)
             with open(src, "wb") as f:
-                f.write(base64.b64decode(sc["b64"]))
+                f.write(_decode_b64(sc["b64"], "scene %d b64" % (i + 1)))
             vf = ("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=%d,setsar=1,"
                   "tpad=stop_mode=clone:stop_duration=%.3f,format=yuv420p") % (W, H, W, H, F, d)
             run(["ffmpeg", "-y", "-i", src, "-vf", vf] + enc)
@@ -518,7 +549,7 @@ def render_ad(payload, workdir):
         elif sc["type"] == "image":
             src = os.path.join(workdir, "img_%02d.png" % i)
             with open(src, "wb") as f:
-                f.write(base64.b64decode(sc["b64"]))
+                f.write(_decode_b64(sc["b64"], "scene %d b64" % (i + 1)))
             z = "min(1.0+0.004*on,1.35)" if sc.get("punch") else "min(1.0+0.0006*on,1.18)"
             vf = ("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,"
                   "zoompan=z='%s':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%dx%d:fps=%d,setsar=1,format=yuv420p"
@@ -544,11 +575,7 @@ def render_ad(payload, workdir):
     url_txt = _write_text(workdir, "url.txt", ec["url"])
     bold, semi = _ffpath(assets["Poppins-Bold.ttf"]), _ffpath(assets["Poppins-SemiBold.ttf"])
     card = os.path.join(workdir, "seg_end.mp4")
-    card_fc = ("[1:v]scale=260:-1[lg];[0:v][lg]overlay=(W-w)/2:620[a];"
-               "[a]drawtext=fontfile='%s':textfile='%s':fontsize=110:fontcolor=white:x=(w-text_w)/2:y=920[b];"
-               "[b]drawtext=fontfile='%s':textfile='%s':fontsize=64:fontcolor=0xFFC857:x=(w-text_w)/2:y=1110[c];"
-               "[c]drawtext=fontfile='%s':textfile='%s':fontsize=54:fontcolor=white:x=(w-text_w)/2:y=1210,format=yuv420p[v]"
-               ) % (bold, _ffpath(brand_txt), semi, _ffpath(cta_txt), semi, _ffpath(url_txt))
+    card_fc = end_card_filter(bold, semi, _ffpath(brand_txt), _ffpath(cta_txt), _ffpath(url_txt))
     run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=%s:s=%dx%d:r=%d:d=%.3f" % (PERSIAN_HEX, W, H, F, ec["seconds"]),
          "-i", assets["logo.png"], "-filter_complex", card_fc, "-map", "[v]", "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(F),
@@ -576,8 +603,7 @@ def render_ad(payload, workdir):
         "[0:v]ass=subs.ass:fontsdir=%s[vc]" % _ffpath(ASSETS_DIR),
         "[1:v]scale=76:-1[lg]",
         "[vc][lg]overlay=48:64:enable='between(t,1.0,%.3f)'[vl]" % content_end,
-        ("[vl]drawtext=fontfile='%s':textfile='%s':fontsize=44:fontcolor=white:borderw=2:bordercolor=black@0.4:"
-         "x=136:y=78:enable='between(t,1.0,%.3f)'[vout]") % (bold, _ffpath(brand_txt), content_end),
+        lockup_filter(bold, _ffpath(brand_txt), content_end),
         "[2:a]aresample=48000,aformat=channel_layouts=stereo,apad[vo]",
     ]
     mix = ["[vo]"]
@@ -639,9 +665,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/render-ad":
             workdir = tempfile.mkdtemp(prefix="ad-")
             try:
+                # read the full body BEFORE check_ad_token, so a 401/503 response is sent
+                # only after the client's request is fully drained -- otherwise some HTTP
+                # clients see the connection reset instead of the JSON error body.
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                except (TypeError, ValueError):
+                    raise AdRequestError(400, "invalid Content-Length header")
+                body = self.rfile.read(n)
                 check_ad_token(self.headers.get("X-Render-Token", ""), os.environ.get("RENDER_AD_TOKEN", ""))
-                n = int(self.headers.get("Content-Length", "0"))
-                out = render_ad(json.loads(self.rfile.read(n).decode("utf-8")), workdir)
+                try:
+                    payload = json.loads(body.decode("utf-8"))
+                except ValueError as e:
+                    raise AdRequestError(400, "body is not valid JSON: %s" % e)
+                out = render_ad(payload, workdir)
                 with open(out, "rb") as f:
                     data = f.read()
                 self.send_response(200); self.send_header("Content-Type", "video/mp4")

@@ -1,16 +1,36 @@
 #!/usr/bin/env bash
 # Run ON THE VPS after deploying: RENDER_AD_TOKEN=<token> bash smoke_render_ad.sh
 # Optional: PORT=8089 to point at a staging instance instead of the live one on 8088.
+# Optional: RENDER_ROOT=<dir> to match the render.py instance under test (defaults to
+# /opt/reel-render, the live service's root) -- used only to avoid polluting its output/.
 set -u
 PORT="${PORT:-8088}"
+OUT_DIR="${RENDER_ROOT:-/opt/reel-render}/output"
+BEFORE_FILES=$(ls "$OUT_DIR" 2>/dev/null || true)
 T=$(mktemp -d); cd "$T"; FAILS=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; FAILS=$((FAILS+1)); }
 [ -n "${RENDER_AD_TOKEN:-}" ] || { echo "set RENDER_AD_TOKEN"; exit 2; }
 
-ffmpeg -loglevel error -y -f lavfi -i testsrc2=s=1080x1920:r=24:d=6 -f lavfi -i sine=f=300:d=6 -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac clip.mp4
-ffmpeg -loglevel error -y -f lavfi -i color=c=0x147DFF:s=1024x1536 -frames:v 1 img.png
-ffmpeg -loglevel error -y -f lavfi -i sine=f=220:d=20 -ac 1 -ar 24000 vo.wav
+cleanup() {
+  kill "${HTTPD_PID:-}" 2>/dev/null
+  if [ -d "$OUT_DIR" ]; then
+    for f in "$OUT_DIR"/reel-*.mp4 "$OUT_DIR"/ad-*.mp4; do
+      [ -e "$f" ] || continue
+      base=$(basename "$f")
+      if ! printf '%s\n' "$BEFORE_FILES" | grep -Fxq "$base"; then
+        rm -f "$f"
+        echo "INFO  removed test output: $base"
+      fi
+    done
+  fi
+  rm -rf "$T"
+}
+trap cleanup EXIT
+
+ffmpeg -loglevel error -y -f lavfi -i testsrc2=s=1080x1920:r=24:d=6 -f lavfi -i sine=f=300:d=6 -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac clip.mp4 || { echo "fixture failed: clip.mp4"; exit 2; }
+ffmpeg -loglevel error -y -f lavfi -i color=c=0x147DFF:s=1024x1536 -frames:v 1 img.png || { echo "fixture failed: img.png"; exit 2; }
+ffmpeg -loglevel error -y -f lavfi -i sine=f=220:d=20 -ac 1 -ar 24000 vo.wav || { echo "fixture failed: vo.wav"; exit 2; }
 
 imgsize=$(stat -c %s img.png)
 [ "$imgsize" -ge 1024 ] || { echo "img.png is only $imgsize bytes (render() rejects downloads under 1024 bytes)"; exit 2; }
@@ -18,7 +38,13 @@ imgsize=$(stat -c %s img.png)
 # regression: serve img.png locally so the EXISTING /render endpoint (image_url based) can fetch it
 python3 -m http.server 8099 --bind 127.0.0.1 >/tmp/smoke-http.log 2>&1 &
 HTTPD_PID=$!
-trap 'kill "$HTTPD_PID" 2>/dev/null' EXIT
+
+ready=0
+for _ in $(seq 1 20); do
+  if curl -s -o /dev/null http://127.0.0.1:8099/img.png; then ready=1; break; fi
+  sleep 0.5
+done
+[ "$ready" = "1" ] || { echo "fixture http.server on 8099 never came up"; exit 2; }
 
 python3 - <<'PY'
 import base64, json

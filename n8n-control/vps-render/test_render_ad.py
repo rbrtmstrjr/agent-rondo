@@ -1,4 +1,5 @@
 import os, sys, tempfile, unittest, inspect
+from unittest import mock
 os.environ["RENDER_ROOT"] = tempfile.mkdtemp(prefix="render-ad-test-")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import render  # noqa: E402
@@ -119,6 +120,43 @@ class RenderAdHelpers(unittest.TestCase):
 
     def test_clip_words_clamps_a_word_straddling_the_end(self):
         self.assertEqual(render.clip_words_to([("a", 2.0, 4.0)], 3.0), [("a", 2.0, 3.0)])
+
+    def test_download_leaves_no_partial_or_dest_on_failure(self):
+        workdir = tempfile.mkdtemp(prefix="dl-test-")
+        dest = os.path.join(workdir, "asset.bin")
+
+        class _BoomResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *exc):
+                return False
+            def read(self, n=-1):
+                raise IOError("boom mid-stream")
+
+        with mock.patch.object(render.urllib.request, "urlopen", return_value=_BoomResponse()):
+            with self.assertRaises(Exception):
+                render._download("http://example.invalid/asset.bin", dest)
+        self.assertFalse(os.path.exists(dest))
+        leftovers = [f for f in os.listdir(workdir) if ".part-" in f]
+        self.assertEqual(leftovers, [])
+
+    def test_end_card_and_lockup_drawtext_disable_expansion(self):
+        ec = render.end_card_filter("bold.ttf", "semi.ttf", "brand.txt", "cta.txt", "url.txt")
+        lu = render.lockup_filter("bold.ttf", "brand.txt", 12.0)
+        self.assertEqual(ec.count("drawtext="), 3)
+        self.assertEqual(ec.count("expansion=none"), 3)
+        self.assertEqual(lu.count("drawtext="), 1)
+        self.assertEqual(lu.count("expansion=none"), 1)
+
+    def test_end_card_not_dict_400(self):
+        with self.assertRaises(render.AdRequestError) as cm:
+            render.validate_ad_payload(payload(end_card="oops"))
+        self.assertEqual(cm.exception.status, 400)
+
+    def test_invalid_base64_400(self):
+        with self.assertRaises(render.AdRequestError) as cm:
+            render._decode_b64("A", "audio_b64")
+        self.assertEqual(cm.exception.status, 400)
 
 if __name__ == "__main__":
     unittest.main()
