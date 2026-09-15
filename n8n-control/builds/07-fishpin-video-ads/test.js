@@ -210,6 +210,40 @@ section('prompt', 'Script prompts and generation requests', () => {
       && tts.contents[0].parts[0].text.indexOf('Gabi na sa laot.') !== -1);
 });
 
+// ---------------------------------------------------------------- sheet
+section('sheet', 'Videos tab rules', () => {
+  const V = L('video-sheet-rules.js');
+  check('headers are exactly the 10 Videos columns in order', JSON.stringify(V.VIDEO_HEADERS) === JSON.stringify(
+    ['id', 'created_at', 'topic_input', 'pillar', 'topic', 'hook', 'voiceover', 'status', 'video_url', 'est_cost_usd']));
+  check('column letters', V.columnLetter(0) === 'A' && V.columnLetter(7) === 'H' && V.columnLetter(9) === 'J');
+
+  const values = [V.VIDEO_HEADERS,
+    ['VID-1', '', '', 'safety', 't1', 'h1', 'v1', 'delivered'],
+    ['VID-2', '', '', 'safety', 't2', 'h2', 'v2', 'failed']];
+  const rows = V.parseValues(values);
+  check('parses rows with sheet row numbers', rows.length === 2 && rows[0]._rowNumber === 2 && rows[1].hook === 'h2');
+  check('prior videos come only from delivered rows', JSON.stringify(V.collectPriorVideos(rows)) === JSON.stringify([{ hook: 'h1', voiceover: 'v1', topic: 't1' }]));
+  const many = Array.from({ length: 20 }, (_, i) => ({ status: 'delivered', hook: 'h' + i, voiceover: 'v', topic: 't' }));
+  const capped = V.collectPriorVideos(many);
+  check('prior videos are capped to the most recent 15', capped.length === 15 && capped[0].hook === 'h5' && capped[14].hook === 'h19');
+
+  const row = V.buildNewRow({ id: 'VID-9', createdAt: '2026-09-15T01:02:03Z', topicInput: 'SOS at night' });
+  check('new row has 10 cells', row.length === 10);
+  check('new row places id, time and topic input', row[0] === 'VID-9' && row[1] === '2026-09-15T01:02:03Z' && row[2] === 'SOS at night');
+  check('new row starts generating', row[7] === 'generating');
+
+  check('row number from an append range', V.rowNumberFromAppend({ updates: { updatedRange: 'Videos!A7:J7' } }) === 7);
+  check('row number from a quoted tab name', V.rowNumberFromAppend({ updates: { updatedRange: "'Videos'!A12:J12" } }) === 12);
+  check('row number is null when absent', V.rowNumberFromAppend({}) === null);
+
+  const up = V.statusUpdate('Videos', 5, { video_url: 'https://files.slack.com/x', status: 'delivered', nonsense: 'x' });
+  check('status update targets exact cells in header order', JSON.stringify(up) === JSON.stringify({ valueInputOption: 'RAW', data: [
+    { range: 'Videos!H5', values: [['delivered']] }, { range: 'Videos!I5', values: [['https://files.slack.com/x']] }] }));
+  check('video id format', V.newVideoId(new Date(Date.UTC(2026, 8, 15, 1, 2, 3))) === 'VID-20260915-010203');
+  check('cost with a Veo hook and 4 images', V.estCost({ veoUsed: true, veoSeconds: 6, images: 4 }) === 0.65);
+  check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 6, images: 4 }) === 0.17);
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));
