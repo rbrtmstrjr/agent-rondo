@@ -56,9 +56,6 @@ function validateScript(script, opts) {
     reasons.push('voiceover is ' + voWords + ' words, must be ' + VO_MIN_WORDS + ' to ' + VO_MAX_WORDS
       + ' so it fits a 22 to 25 second video.');
   }
-  if (/—/.test(s.voiceover)) {
-    reasons.push('Em dash found in voiceover. Use a comma or period instead.');
-  }
 
   const desc = String(s.description || '');
   const descWords = scriptWordCount(desc);
