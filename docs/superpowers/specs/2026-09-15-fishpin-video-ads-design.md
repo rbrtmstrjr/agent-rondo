@@ -1,4 +1,4 @@
-# FishPin Video Ads → Facebook Reels — Design Spec
+# FishPin Video Ads → Slack — Design Spec
 
 **Date:** 2026-09-15
 **Owner:** Robert
@@ -11,25 +11,29 @@
 ## 1. Goal
 
 A manually-triggered n8n pipeline that turns a one-line topic into a ~22–25 second vertical
-FishPin video ad, gets it approved in Slack, and publishes it to the FishPin Facebook Page as
-a Reel.
+FishPin video ad and posts the finished MP4 to Slack, with a ready-to-paste Facebook caption and
+hashtags. The owner reviews it, re-edits it if needed, and uploads it to Facebook by hand.
+
+**Scope change (2026-09-15, owner):** the workflow does not publish to Facebook and has no
+approval step or regenerate loop. One run makes one video. Another version = another run.
 
 ### Owner decisions (brainstorming, 2026-09-15)
 
 | Decision | Choice |
 |---|---|
-| Budget | ~$1 per video including regenerations. Animated images + ONE real AI video clip for the hook |
+| Budget | ~$1 per video. Animated images + ONE real AI video clip for the hook |
 | Cadence | Manual only. No schedule |
 | Topic input | Trigger page with one text box. Blank = the AI picks a fresh angle |
 | Sound | Spoken Filipino voiceover, "local fisherman" voice |
 | Editing | Extend the existing VPS render service (approach A) |
+| Delivery | Slack `C0C1WS8PAAJ` only: the MP4 to download plus a ready-to-paste caption and hashtags. No buttons |
+| Log | One row per video in the `Videos` tab (topic, hook, voiceover, cost, Slack link); also feeds "do not repeat" |
 
 ### Non-goals (v1)
 
+- No Facebook or Instagram publishing, no approval gate, no regenerate loop. The owner uploads manually.
 - No schedule, no queue rows. Manual trigger only.
-- No Instagram cross-posting.
-- No Reels metrics (plays, watch-through). The Reel id is logged so this can be added later.
-- No paid Meta ad campaigns. Organic Page Reels only.
+- No paid Meta ad campaigns.
 - No behaviour changes to the image-album workflow (`UdSI0tFfYVuakPrK`). The one permitted edit
   to `builds/06-fishpin-fb-ads/lib/copy-rules.js` is an **extract-and-export refactor**: the prose
   rule checks (§4.2) are currently written inline inside `validateCopy` (verified — only
@@ -47,13 +51,11 @@ a Reel.
 |---|---|---|
 | Ad length that performs | 6–15s for ads; Reels sweet spot under 30s; hook decided in the first 3s; hook rate 30%+ is top-performing | Hootsuite, QuickFrame, AdStellar 2026 spec guides |
 | Silent viewing | ~85% of Facebook video plays silent; captions lift view time | same |
-| Reels API limits | 3–90s, 9:16, 1080×1920 recommended, 24–60fps, H.264/H.265, AAC-LC 48kHz stereo 128k+, closed GOP 2–5s, max 30 API-published Reels per 24h | Meta "Publish a Reel" guide |
-| Reels publish flow | `POST /{page_id}/video_reels upload_phase=start` → `POST rupload.facebook.com/video-upload/{ver}/{video_id}` (headers `Authorization: OAuth {token}`, `offset`, `file_size`, binary body) → `POST /{page_id}/video_reels upload_phase=finish video_state=PUBLISHED description=…` → `GET /{video_id}?fields=status` | Meta "Publish a Reel" guide |
+| Reels file spec (the MP4 is made upload-ready) | 3–90s, 9:16, 1080×1920 recommended, 24–60fps, H.264/H.265, AAC-LC 48kHz stereo 128k+, closed GOP 2–5s | Meta "Publish a Reel" guide |
 | Veo 3.1 pricing (1080p, audio included, no free tier) | Lite `veo-3.1-lite-generate-preview` $0.08/s · Fast $0.12/s · Standard $0.40/s | ai.google.dev pricing |
 | Veo 3.1 API | `…/models/{model}:predictLongRunning`; `parameters.aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds "4"/"6"/"8"`; image-to-video via `instances[0].image.inlineData`; image input requires `personGeneration "allow_adult"`; poll the operation until `done`; video at `response.generateVideoResponse.generatedSamples[0].video.uri`, downloaded with `x-goog-api-key`; kept 2 days; audio cannot be disabled; latency 11s–6min | ai.google.dev Veo guide |
 | Gemini Omni Flash | ~$0.10/s at 720p, 1080p is upscaled — not cheaper than Veo Lite | therundown.ai, eesel.ai |
 | Gemini TTS | Filipino (`fil`) supported; models `gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts`; output 24kHz mono 16-bit PCM; tone/pace steerable by natural-language prompt | ai.google.dev speech generation |
-| n8n send-and-wait timeout | `limitWaitTime` is a fixedCollection: `{ values: { limitType: 'afterTimeInterval', resumeAmount, resumeUnit } }` | n8n source `utils/sendAndWait/descriptions.ts` |
 | Slack file delivery from n8n | `files.getUploadURLExternal` → POST bytes → `files.completeUploadExternal` (no `channel_id`) → wait ~5s → `chat.postMessage`. Sharing via `channel_id` can return `ok:true` and never appear | proven in workflow `xmBD3loDGu09i4Sf` |
 | VPS render service | Up (`/health` 200). systemd `reel-render`, `/opt/reel-render/render.py`, venv with faster-whisper `base.en` (English only). Reachable from the public internet on port 8088 with no auth | live probe + memory |
 
@@ -126,7 +128,7 @@ never be copied into build 07.
 ```
 Trigger page POST /webhook/fishpin-video-ad (topic, shared secret)  ┐
 Manual Trigger (n8n)                                                ┴─► Config
-  → Load Videos history (Sheet tab "Videos")
+  → Load Videos history (Sheet tab "Videos") → append this run's row (status generating)
   → Write Script (Gemini gemini-2.5-flash, responseSchema)
   → Validate Script ──invalid──► retry (max 3) ──► needs_manual + Slack
   → [assets, all before any render]
@@ -138,12 +140,9 @@ Manual Trigger (n8n)                                                ┴─► Co
                     → on failure/timeout: hook falls back to the still
        Screens    : allowlist URLs only
   → Render (POST http://172.18.0.1:8088/render-ad, header X-Render-Token) → MP4
-  → Slack preview (external upload pattern) in C0C1WS8PAAJ
-  → Slack Review: sendAndWait, approvalType double, limitWaitTime 6h (fixedCollection)
-       Approve  → Publish Reel (start → rupload → finish PUBLISHED)
-                  → poll status every 15s, max 10 min → Sheet row posted → Slack ✅ + Reel link
-       Decline  → attempt+1 (max 3) → new angle, regenerate everything → needs_manual at the cap
-       Timeout  → expired, nothing posted
+  → Slack delivery in C0C1WS8PAAJ (external upload pattern): the MP4 + hook, topic, voiceover,
+    scene list, ready-to-paste caption and hashtags, estimated cost
+  → Sheet row delivered (script fields, Slack file link, cost)
 ```
 
 ### 4.2 Script contract (Gemini `responseSchema`, enforced by `validateScript`)
@@ -159,35 +158,35 @@ Manual Trigger (n8n)                                                ┴─► Co
 | `type = "screen"` | 1–2 total; `screen` ∈ allowlist ids |
 | `type = "image"` | `prompt` required, no text or UI in the scene |
 | planned total | sum of `seconds` 18–28 (end card excluded) |
-| `description` | 20–60 words of prose, 1–2 short paragraphs, no links, no hashtags, no CTA line; same shared prose rule checks as `voiceover`. The final Reel description is composed by build-06 `buildPostMessage` (description + CTA + both links + hashtags) |
+| `description` | 20–60 words of prose, 1–2 short paragraphs, no links, no hashtags, no CTA line; same shared prose rule checks as `voiceover`. The ready-to-paste caption in Slack is composed by build-06 `buildPostMessage` (description + CTA + both links + hashtags) |
 | `hashtags` | 3–5 |
-| repeat check | exact normalised match of `hook` or `voiceover` against published `Videos` rows = rejection; the 15 most recent published hooks/topics are passed to the prompt as "do not repeat" |
+| repeat check | exact normalised match of `hook` or `voiceover` against delivered `Videos` rows = rejection; the 15 most recent delivered hooks/topics are passed to the prompt as "do not repeat" |
 
 ### 4.3 Config keys
 
-`pageId` `1020295897824587` · `graphVersion` `v21.0` · FB credential `HFWwLB58m3JWzduP` ·
 `sheetId` `1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E` · `videosTab` `Videos` ·
-`reviewChannel` / `opsChannel` `C0C1WS8PAAJ` · `scriptModel` `gemini-2.5-flash` ·
-`imageModel` `gemini-2.5-flash-image` · `veoModel` `veo-3.1-lite-generate-preview` ·
-`veoSeconds` `6` · `veoResolution` `1080p` · `veoMaxWaitMinutes` `8` ·
-`ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Gacrux` (proven in this repo; §9 auditions
-`Algenib` and `Achird` against it) · `maxAttempts` `3` · `maxScriptRetries` `3` ·
-`reviewTimeoutHours` `6` · `renderUrl` `http://172.18.0.1:8088/render-ad` ·
-`websiteUrl` `www.fishpin.app` ·
+`deliveryChannel` / `opsChannel` `C0C1WS8PAAJ` · `scriptModel` `gemini-2.5-flash` ·
+`scriptTemperature` `0.9` · `imageModel` `gemini-2.5-flash-image` ·
+`veoModel` `veo-3.1-lite-generate-preview` · `veoSeconds` `6` · `veoResolution` `1080p` ·
+`veoMaxWaitMinutes` `8` · `ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Gacrux`
+(proven in this repo; §9 auditions `Algenib` and `Achird` against it) · `maxScriptRetries` `3` ·
+`renderUrl` `http://172.18.0.1:8088/render-ad` · `websiteUrl` `www.fishpin.app` ·
 `playStoreUrl` `https://play.google.com/store/apps/details?id=com.fishpin.app` ·
+`endCardCta` `I-download sa Play Store` · `endCardSeconds` `3.5` ·
+`postCta` `I-download ang FishPin sa Play Store.` ·
 `renderToken` and `triggerSecret` injected from env at deploy time (`FISHPIN_RENDER_TOKEN`,
 `FISHPIN_VIDEO_TRIGGER_SECRET`), placeholders in committed JSON, same mechanism as build 06's
 `FISHPIN_LOOP_SECRET`.
 
 ### 4.4 Sheet tab `Videos`
 
-Same spreadsheet as the image ads. Append-then-update by `_rowNumber` (never append to change a
-row — the build-06 lesson).
+Same spreadsheet as the image ads. Append once, then update by `_rowNumber` (never append to
+change a row — the build-06 lesson).
 
-`id, created_at, topic_input, pillar, topic, hook, voiceover, status, attempt, video_id, reel_url,
-posted_at, est_cost_usd`
+`id, created_at, topic_input, pillar, topic, hook, voiceover, status, video_url, est_cost_usd`
+(columns A–J; `video_url` is the Slack file permalink).
 
-`status`: `generating` / `in_review` / `posted` / `needs_manual` / `expired` / `failed`.
+`status`: `generating` / `delivered` / `needs_manual` / `failed`.
 
 ---
 
@@ -264,34 +263,16 @@ Via the Hostinger browser terminal, with exact commands supplied at implementati
 
 ---
 
-## 6. Approval and publishing
-
-### 6.1 Slack
+## 6. Slack delivery
 
 1. `files.getUploadURLExternal` → POST MP4 bytes → `files.completeUploadExternal` (files array
    only, no `channel_id`) → Wait 5s.
-2. `chat.postMessage` to `C0C1WS8PAAJ`: attempt N of 3, pillar, hook, full voiceover, scene list,
-   estimated cost so far, video file link. Delivery is verified from the `ok`/`ts` in the response.
-3. `sendAndWait`, `approvalOptions.values.approvalType = "double"`,
-   `options.limitWaitTime = { values: { limitType: "afterTimeInterval", resumeAmount: 6, resumeUnit: "hours" } }`
-   with a numeric literal written at build time (no expression inside the fixedCollection).
-4. Decision routing reuses build-06 `lib/flow-rules.js` `routeApproval` (verified:
-   `{data:{approved:true}}` → `approve`, `{data:{approved:false}}` → `both`, `{data:{}}` or `{}` →
-   `timeout`). Build 07 treats `both` as a decline. The two-button mode carries no reason text, so a
-   decline steers the regeneration with build-06's exported `DECLINE_NOTE` constant plus the
-   rejected hook and voiceover passed as "do not reuse".
-
-### 6.2 Facebook Reel
-
-1. `POST /{graphVersion}/{pageId}/video_reels` `upload_phase=start` → `video_id`.
-2. `POST https://rupload.facebook.com/video-upload/{graphVersion}/{video_id}` headers
-   `Authorization: OAuth {token}`, `offset: 0`, `file_size: <bytes>`, body = MP4 bytes.
-3. `POST /{graphVersion}/{pageId}/video_reels` `upload_phase=finish`, `video_state=PUBLISHED`,
-   `description` = `buildPostMessage` output.
-4. Poll `GET /{graphVersion}/{video_id}?fields=status,permalink_url` every 15s, max 10 min, until
-   `status.video_status` is `ready` and `publishing_phase.status` is `complete`. `error` at any
-   phase = failure.
-5. Only then: Sheet row `posted`, `reel_url`, `posted_at`; Slack ✅ with the link.
+2. `chat.postMessage` to `C0C1WS8PAAJ`: pillar, hook, topic, full voiceover, scene list (and a
+   note when Veo fell back to the still), the ready-to-paste caption (build-06 `buildPostMessage`:
+   description + `postCta` + both links + hashtags), estimated cost, and the video file link.
+   Delivery is verified from `completeUploadExternal`'s `ok` and the message's `ok`/`ts`.
+3. Only then: Sheet row `delivered` with pillar, topic, hook, voiceover, `video_url` (Slack file
+   permalink) and `est_cost_usd`. There are no buttons and nothing waits.
 
 ---
 
@@ -304,10 +285,8 @@ Via the Hostinger browser terminal, with exact commands supplied at implementati
 | TTS failure | stop before image/Veo spend; `failed` + Slack |
 | AI image failure | stop before Veo spend; `failed` + Slack |
 | Render 4xx/5xx or timeout (600s) | `failed` + Slack with the service error |
-| Slack upload/post not `ok` | `failed` + ops alert; nothing is published without a delivered preview |
-| Decline at attempt 3 | `needs_manual` + Slack |
-| Review timeout | `expired`; nothing posted; no further spend |
-| Reels start/upload/finish error or processing `error` | Slack with Facebook's exact error; row `failed`; never marked posted |
+| Slack upload/post not `ok` | `failed` + ops alert with Slack's error; the row is never marked delivered |
+| Trigger with a wrong or placeholder secret | rejected before any spend + Slack; no row written |
 | Uncaught | `settings.errorWorkflow = 660Xkpo164VSNTDZ` |
 
 Ordering rule: cheap steps before paid ones, and every paid step gated on the previous step's
@@ -323,10 +302,9 @@ success.
 | Hook still + 3 scene images | ~$0.15 |
 | Script + voiceover | ~$0.01 |
 | VPS render | $0 |
-| **Per attempt** | **~$0.65** |
-| Worst case (3 attempts) | ~$1.95 |
+| **Per video** | **~$0.65** (≈ $0.17 when Veo falls back to the still) |
 
-Wall time per attempt: ~3–8 min (Veo 11s–6min, caption timing 30–60s, encode 1–2 min).
+Wall time per video: ~3–8 min (Veo 11s–6min, caption timing 30–60s, encode 1–2 min).
 
 ---
 
@@ -338,16 +316,17 @@ Wall time per attempt: ~3–8 min (Veo 11s–6min, caption timing 30–60s, enco
    `Achird`) for the owner to choose `ttsVoice`.
 2. **Offline tests** (`node test.js`): `validateScript` rules (hook length, word band, first-scene
    Veo, single Veo, screen allowlist, planned seconds band, social-proof rejection, repeat check),
-   build-06 rule reuse, scene-duration scaling maths, `limitWaitTime` fixedCollection shape, Reels
-   three-call sequence and status polling wiring, no `.first()` on fan-out nodes, every Code node
-   parses under `AsyncFunction`, no secrets in committed JSON.
+   build-06 rule reuse, every Code node body run against a fake n8n, Veo polling and fallback
+   wiring, the row marked delivered only after a delivered Slack message, no `.first()` on fan-out
+   nodes, every Code node parses under `AsyncFunction`, no secrets in committed JSON.
 3. **Render tests**: ffmpeg and faster-whisper are not installed locally, so the pure helpers
    (token check, payload validation, Filipino script-to-timing alignment, duration scaling, ASS
    captions, encode arguments) are Python `unittest`s run locally, and a smoke script on the VPS
    checks the real encode with `ffprobe` (1080×1920, 30fps, H.264 yuv420p, keyframes every 2s,
    AAC 48kHz stereo, total duration), token rejection, non-allowlisted screen rejection and that
    `/health` still answers.
-4. **Live:** one run declined (regeneration path), then one approved and verified on the Page.
+4. **Live:** one run with a typed topic and one with a blank topic, each delivered to Slack; the
+   owner downloads and watches both.
 
 ---
 
@@ -356,10 +335,11 @@ Wall time per attempt: ~3–8 min (Veo 11s–6min, caption timing 30–60s, enco
 ```
 n8n-control/builds/07-fishpin-video-ads/
   lib/script-rules.js     validateScript, scene/allowlist rules, planned-duration checks
-  lib/scene-plan.js       duration scaling, render payload shaping (pure)
-  lib/reels-rules.js      Reels status interpretation (pure)
+  lib/scene-plan.js       render payload shaping, Veo fallback (pure)
+  lib/video-prompt.js     script schema, prompts, still/Veo/TTS requests (pure)
+  lib/video-sheet-rules.js  Videos tab rows and updates, cost (pure)
   nodes/*.js              n8n glue
-  build.js                inlines ../06-fishpin-fb-ads/lib/{brand,copy-rules,flow-rules}.js + lib/
+  build.js                inlines ../06-fishpin-fb-ads/lib/{brand,copy-rules,image-rules}.js + lib/
   test.js
   trigger.html            topic box; opened locally by the owner, never hosted. The shared
                           secret is typed into a password field and kept in the browser's
@@ -374,12 +354,10 @@ n8n-control/vps-render/render.py   adds /render-ad; /render unchanged
 
 | Risk | Mitigation |
 |---|---|
-| Slack does not show the video preview | spike (§9.1) before building; fall back to a Facebook-hosted draft link only if the spike fails |
+| Slack does not deliver or play the MP4 | spike (§9.1) before building; the file link still downloads even if inline playback fails |
 | Whisper `small` misaligns Tagalog | display script words, not recognised words; proportional fallback |
 | Live `render.py` differs from the repo copy | §5.4 step 1 fingerprints the live file before editing |
 | Veo rejects a scene (people/content filter) | still-image fallback; prompts avoid minors and distress imagery |
-| FB page token expires 2026-11-10 | noted in README; Reels publish fails loudly with Facebook's error |
-| `graphVersion v21.0` vs Reels docs at v25.0 | spike verifies the Reels calls on v21.0; Config change if needed |
 
 ---
 
@@ -397,7 +375,6 @@ n8n-control/vps-render/render.py   adds /render-ad; /render unchanged
 - [Google — Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
 - [Google — Veo 3.1 guide](https://ai.google.dev/gemini-api/docs/veo)
 - [Google — Speech generation (TTS)](https://ai.google.dev/gemini-api/docs/speech-generation)
-- [n8n — sendAndWait descriptions](https://github.com/n8n-io/n8n/blob/master/packages/nodes-base/utils/sendAndWait/descriptions.ts)
 - [Hootsuite — Facebook ad sizes 2026](https://blog.hootsuite.com/facebook-ad-sizes/)
 - [QuickFrame — Facebook video ad specs 2026](https://quickframe.mountain.com/blog/facebook-video-ad-specs/)
 - [AdStellar — Facebook video ad specifications 2026](https://www.adstellar.ai/blog/facebook-video-ad-specifications)
