@@ -2557,6 +2557,39 @@ section('insights', 'Insights workflow structure', () => {
     Array.isArray(rBothEmpty.out) && rBothEmpty.out.length === 0);
 });
 
+// ---------------------------------------------------------------- prose
+section('prose', 'Extracted prose rule checks (shared with the video workflow)', () => {
+  const B = L('brand.js');
+  const C = L('copy-rules.js');
+  const OPTS = { bannedWords: B.BANNED_WORDS, competitors: B.COMPETITORS };
+  ['emDashReasons', 'bannedWordReasons', 'emojiReasons', 'allCapsReasons', 'complianceReasons',
+   'forbiddenClaimReasons', 'priceReasons', 'checkProse']
+    .forEach((fn) => check(fn + ' is exported as a function', typeof C[fn] === 'function'));
+  if (typeof C.checkProse !== 'function') return;
+
+  const clean = 'Nawala ang signal sa laot? Okay lang, gumagana pa rin yung mapa kahit gabi na.';
+  check('clean text passes checkProse', C.checkProse({ voiceover: clean, description: clean }, OPTS).length === 0);
+  check('em dash names its field',
+    C.emDashReasons({ description: 'a — b' })[0] === 'Em dash found in description. Use a comma, colon, or parentheses.');
+  check('banned word found case-insensitively',
+    C.bannedWordReasons('A SEAMLESS trip', B.BANNED_WORDS).some((r) => /seamless/i.test(r)));
+  check('emoji budget uses the label', C.emojiReasons('🎣🐟⚓🌊', 'voiceover')[0] === 'voiceover has 4 emoji, max is 3');
+  check('3 emoji is allowed', C.emojiReasons('🎣🐟⚓', 'voiceover').length === 0);
+  check('all-caps run flagged per field', C.allCapsReasons({ voiceover: 'NORMAL LANG yan' }).length === 1);
+  check('known acronyms are not shouting', C.allCapsReasons({ voiceover: 'walang GPS SMS signal' }).length === 0);
+  check('rescue guarantee flagged',
+    C.complianceReasons('hindi ka mamamatay sa laot', []).some((r) => /Rescue guarantee/.test(r)));
+  check('plural competitor flagged',
+    C.complianceReasons('mas mura kaysa Garmins', B.COMPETITORS).some((r) => /competitor/.test(r)));
+  check('iPhone claim flagged', C.forbiddenClaimReasons('available din sa iPhone').length === 1);
+  check('bare P price flagged', C.priceReasons('P999 lang').length === 1);
+  check('ordinary counts are not prices', C.priceReasons('mahigit 200 species at 3 to 5 contacts').length === 0);
+  check('checkProse reports a problem in the description field',
+    C.checkProse({ voiceover: clean, description: 'Isang app — para sa laot.' }, OPTS).some((r) => /description/.test(r)));
+  check('checkProse applies the price rule across fields',
+    C.checkProse({ voiceover: clean, description: 'Halagang P999 lang.' }, OPTS).some((r) => /price/.test(r)));
+});
+
 // ---------------------------------------------------------------- live
 if (LIVE) {
   const B = L('brand.js');
