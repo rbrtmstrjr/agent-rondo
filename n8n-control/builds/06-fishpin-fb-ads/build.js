@@ -115,8 +115,8 @@ const nodes = [
       { id: 'c9', name: 'maxAttempts', value: 3, type: 'number' },
       { id: 'c10', name: 'maxCopyRetries', value: 1, type: 'number' },
       { id: 'c11', name: 'reviewTimeoutHours', value: 6, type: 'number' },
-      { id: 'c12', name: 'reviewChannel', value: 'C0BDSV5RB5G', type: 'string' },
-      { id: 'c13', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
+      { id: 'c12', name: 'reviewChannel', value: 'C0C1WS8PAAJ', type: 'string' },
+      { id: 'c13', name: 'opsChannel', value: 'C0C1WS8PAAJ', type: 'string' },
       // Both links are required in EVERY generated caption (validateCopy rule
       // 10), and websiteUrl is also set under the brand lockup in the bottom
       // left of every image. They live here, not in lib/brand.js, so a url

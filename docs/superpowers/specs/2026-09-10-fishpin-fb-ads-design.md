@@ -564,10 +564,10 @@ so the fleet-wide error handler alerts nowhere. Activating it is a prerequisite.
 | Google Sheets | exists | `AYzUUEYWUCPKxHFI`, service account `n8n-sheets@gen-lang-client-0754500282.iam.gserviceaccount.com`. New Sheet must be shared with it. |
 | Slack | exists | `DnfgaCSu303JPlI3` ("Slack - n8n Bot"). |
 
-Slack channels are Config values. Default `reviewChannel` and `opsChannel` both point at
-`C0BDSV5RB5G` (`#chatbot-automation`) so the build is testable on day one; the intended
-end state is a dedicated `#fishpin-ads` channel, which is a one-line Config edit once the
-channel exists and the bot is invited.
+Slack channels are Config values. `reviewChannel` and `opsChannel` (and the insights
+workflow's `opsChannel`) all point at the dedicated FishPin ads channel `C0C1WS8PAAJ`,
+moved off the shared `#chatbot-automation` (`C0BDSV5RB5G`) on 2026-09-15. The bot must be
+a member of that channel or every Slack node fails with `not_in_channel`.
 
 `sendAndWait` requires n8n's `WEBHOOK_URL` to be publicly reachable. It is
 (`https://n8n.srv1193790.hstgr.cloud`), and the existing FB workflow already relies on it.

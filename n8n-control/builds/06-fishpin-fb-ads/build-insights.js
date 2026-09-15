@@ -52,7 +52,7 @@ const nodes = [
       { id: 'i1', name: 'sheetId', value: '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E', type: 'string' },
       { id: 'i2', name: 'queueTab', value: 'Queue', type: 'string' },
       { id: 'i3', name: 'graphVersion', value: 'v21.0', type: 'string' },
-      { id: 'i4', name: 'opsChannel', value: 'C0BDSV5RB5G', type: 'string' },
+      { id: 'i4', name: 'opsChannel', value: 'C0C1WS8PAAJ', type: 'string' },
       { id: 'i5', name: 'insightsDelayHours', value: 24, type: 'number' },
     ] }, options: {} },
     id: 'i-cfg', name: 'Config', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: pos(-180, 300) },

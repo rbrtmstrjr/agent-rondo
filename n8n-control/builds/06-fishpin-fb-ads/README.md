@@ -363,10 +363,10 @@ string, which `Notify Queue Empty` prints to the ops channel.
 1. The bot needs these OAuth scopes: `chat:write`, `files:write`, `channels:read`.
 2. Invite the bot to both the review channel (`reviewChannel` in Config — where
    `Slack Review`'s approval form is posted) and the ops channel (`opsChannel` — success
-   and failure notifications). By default both point at the same channel
-   (`C0BDSV5RB5G`, `#chatbot-automation`) so the build is testable without creating a new
-   channel first; point them at a dedicated `#fishpin-ads` channel later by editing the
-   `Config` node.
+   and failure notifications). Both point at the dedicated FishPin ads channel
+   `C0C1WS8PAAJ` (moved off the shared `#chatbot-automation` on 2026-09-15), and the
+   insights workflow's engagement digest posts there too. To move them again, edit
+   `reviewChannel` / `opsChannel` in each workflow's `Config` node and invite the bot.
 3. `Slack Review` uses `operation: sendAndWait` with `approvalOptions.values.approvalType
    = 'double'`, so the reviewer gets two buttons **in the channel** (Approve / Disapprove)
    and never leaves Slack. This needs n8n's own `WEBHOOK_URL` to be **publicly reachable**
@@ -393,8 +393,8 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `maxAttempts` | How many times a reviewer may Decline before `needs_manual`. Each Decline regenerates the copy AND the images. | `3` |
 | `maxCopyRetries` | Machine copy-validation retry budget before `needs_manual`. | `1` |
 | `reviewTimeoutHours` | How long `Slack Review`'s two-button `sendAndWait` waits before the row goes `expired`. A timeout consumes no human attempt. | `6` |
-| `reviewChannel` | Slack channel id the approval form is posted to. | `C0BDSV5RB5G` |
-| `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0BDSV5RB5G` |
+| `reviewChannel` | Slack channel id the approval form is posted to. | `C0C1WS8PAAJ` |
+| `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0C1WS8PAAJ` |
 | `websiteUrl` | FishPin's website. Appended to **every** post by `buildPostMessage` (never written by the model), and set under the brand lockup in every image. | `www.fishpin.app` |
 | `playStoreUrl` | FishPin's Play Store listing. Appended to **every** post, on the line under `websiteUrl`. (Corrected 2026-09-11: the package id was `app.fishpin`, which is not the app.) | `https://play.google.com/store/apps/details?id=com.fishpin.app` |
 | `selfWebhookUrl` | This workflow's own webhook, used by `Loop Guard`'s re-invocation. | `https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad` |
@@ -407,7 +407,7 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `sheetId` | Same Sheet as the main pipeline. | `FILL_IN_SHEET_ID` |
 | `queueTab` | Tab name for the Queue sheet. | `Queue` |
 | `graphVersion` | Facebook Graph API version. | `v21.0` |
-| `opsChannel` | Slack channel id for the engagement digest. | `C0BDSV5RB5G` |
+| `opsChannel` | Slack channel id for the engagement digest. | `C0C1WS8PAAJ` |
 | `insightsDelayHours` | How old a post must be before it's scanned for metrics. | `24` |
 
 ---

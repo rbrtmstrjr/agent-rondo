@@ -1465,6 +1465,13 @@ section('workflow', 'Main workflow structure', () => {
   check('the old Mon/Wed/Fri 05:30 and 18:30 slots are gone',
     !/1,3,5/.test(JSON.stringify(cronSlots)));
 
+  // Owner decision 2026-09-15: this workflow has its own Slack channel.
+  const mainCfgVal = (k) => (byName['Config'].parameters.assignments.assignments.find(a => a.name === k) || {}).value;
+  check('reviewChannel is the dedicated FishPin ads channel', mainCfgVal('reviewChannel') === 'C0C1WS8PAAJ');
+  check('opsChannel is the dedicated FishPin ads channel', mainCfgVal('opsChannel') === 'C0C1WS8PAAJ');
+  check('no Config value still points at #chatbot-automation',
+    !JSON.stringify(byName['Config'].parameters).includes('C0BDSV5RB5G'));
+
   // ---------------------------------------------------------------- C2: fail-closed image URL
   // Get Photo URL carries onError continueRegularOutput. Post Preview's text
   // ends with $('Get Photo URL').first().json.images[0].source; if that
@@ -2289,6 +2296,8 @@ section('insights', 'Insights workflow structure', () => {
   check('insights workflow pins Asia/Manila in settings', wf.settings.timezone === 'Asia/Manila');
   check('the insights Schedule Trigger carries Asia/Manila',
     byName['Schedule Trigger'].parameters.timezone === 'Asia/Manila');
+  check('the insights digest posts to the dedicated FishPin ads channel',
+    (byName['Config'].parameters.assignments.assignments.find(a => a.name === 'opsChannel') || {}).value === 'C0C1WS8PAAJ');
 
   // ---------------------------------------------------------------- C1: the digest
   // Notify Digest's ONLY predecessor is Update Row, an HTTP node returning the
