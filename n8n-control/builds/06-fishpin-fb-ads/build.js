@@ -76,19 +76,19 @@ const cfgVal = (k) => "={{ $('Config').first().json." + k + ' }}';
 const sheetUrl = (suffix) => "={{ '" + SHEET_BASE + "/' + $('Config').first().json.sheetId + '" + suffix + "' }}";
 
 // Everything about this pipeline is stated in Philippine local time — the
-// 05:30 / 18:30 posting slots, `posted_at`, the 24h insights cutoff, and the
+// daily 09:00 posting slot, `posted_at`, the 24h insights cutoff, and the
 // README. n8n resolves a cron expression against the workflow's timezone,
 // which falls back to the INSTANCE timezone (UTC on a default VPS install)
-// when the workflow does not set one — so an unset timezone fires the "18:30"
-// slot at 02:30 Manila. Set in both places: settings.timezone is what n8n
+// when the workflow does not set one — so an unset timezone fires the "09:00"
+// slot at 17:00 Manila. Set in both places: settings.timezone is what n8n
 // actually honours, and the node-level value keeps the intent visible on the
 // node itself and pins it if the workflow is ever copied into another file.
 const TZ = 'Asia/Manila';
 
 const nodes = [
+  // One post a day, every day, at 09:00 Manila (owner decision, 2026-09-15).
   { parameters: { rule: { interval: [
-      { field: 'cronExpression', expression: '30 5 * * 1,3,5' },
-      { field: 'cronExpression', expression: '30 18 * * 1,3,5' },
+      { field: 'cronExpression', expression: '0 9 * * *' },
     ] }, timezone: TZ },
     id: 'n-sched', name: 'Schedule Trigger', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(-620, 200) },
   { parameters: {}, id: 'n-man', name: 'Manual Trigger', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: pos(-620, 360) },

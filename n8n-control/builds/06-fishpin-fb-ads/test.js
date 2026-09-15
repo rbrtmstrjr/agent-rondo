@@ -1453,13 +1453,17 @@ section('workflow', 'Main workflow structure', () => {
   // ---------------------------------------------------------------- I1: timezone
   // The README and spec both state Asia/Manila. n8n resolves cron against the
   // workflow timezone and falls back to the INSTANCE timezone when unset — UTC
-  // on a default VPS install — so an unset timezone fires "18:30" at 02:30
-  // Manila, in the middle of the night, for the entire posting schedule.
+  // on a default VPS install — so an unset timezone fires "09:00" at 17:00
+  // Manila, for the entire posting schedule.
   check('main workflow pins Asia/Manila in settings', wf.settings.timezone === 'Asia/Manila');
   check('the Schedule Trigger node itself carries Asia/Manila',
     byName['Schedule Trigger'].parameters.timezone === 'Asia/Manila');
-  check('the evening cron slot is still 18:30 Mon/Wed/Fri',
-    JSON.stringify(byName['Schedule Trigger'].parameters.rule.interval).includes('30 18 * * 1,3,5'));
+  // Owner decision 2026-09-15: one post a day at 09:00, every day of the week.
+  const cronSlots = byName['Schedule Trigger'].parameters.rule.interval;
+  check('the schedule has exactly one slot', cronSlots.length === 1);
+  check('the one slot is 09:00 every day', cronSlots[0].expression === '0 9 * * *');
+  check('the old Mon/Wed/Fri 05:30 and 18:30 slots are gone',
+    !/1,3,5/.test(JSON.stringify(cronSlots)));
 
   // ---------------------------------------------------------------- C2: fail-closed image URL
   // Get Photo URL carries onError continueRegularOutput. Post Preview's text

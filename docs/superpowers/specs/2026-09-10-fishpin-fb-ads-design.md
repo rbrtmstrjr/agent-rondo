@@ -35,7 +35,7 @@
   README.md
   test.js                   802 offline checks + the --live Gemini copy test
 ```
-Schedule Trigger (05:30 / 18:30, Mon Wed Fri, Asia/Manila)  |
+Schedule Trigger (09:00 daily, Asia/Manila)                 |
 Manual Trigger                                              |--> Config --> Load Queue Row
 Webhook  POST /webhook/fishpin-ad   (loop re-entry)         |                    |
                                                 Queue empty? --yes--> Slack ops, stop
@@ -118,8 +118,8 @@ Owner creates the Sheet and shares it (Editor) with
 | `scheduled_for` | human | optional, reserved; the scheduler currently takes the first `ready` row |
 
 **Row claiming.** The scheduler selects the first row with `status = ready` and immediately
-writes `status = in_review`. Without this, the 18:30 run would pick up the same row the
-05:30 run is still holding in a 6-hour Slack review. Terminal statuses (`posted`,
+writes `status = in_review`. Without this, the next day's 09:00 run would pick up a row
+that is still sitting in an unanswered Slack review. Terminal statuses (`posted`,
 `measured`, `needs_manual`, `expired`, `failed`, `blocked_needs_asset`) are never
 re-selected; only a human returning a row to `ready` puts it back in rotation.
 | `caption` | workflow | the approved caption as published |

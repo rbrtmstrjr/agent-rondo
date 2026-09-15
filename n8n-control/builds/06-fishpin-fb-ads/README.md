@@ -25,7 +25,7 @@ because the flyer never got made."*
 ### A. `FishPin Ad Creative -> FB (Approve)` — the main pipeline
 
 ```
-Schedule Trigger (05:30 / 18:30, Mon/Wed/Fri, Asia/Manila)   |
+Schedule Trigger (09:00 daily, Asia/Manila)                  |
 Manual Trigger                                               |--> Config --> Load Queue Row
 Webhook  POST /webhook/fishpin-ad   (loop re-entry, shared secret)  |             |
                                                  Queue empty? --yes--> Slack ops (with the
@@ -217,8 +217,8 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
   a row that is not `in_review`.
 - ✅ **Idempotency / dedup** — `Claim Row` flips a row to `in_review` the instant it's
   picked, in a single targeted-cell Sheets write, before any generation happens. That
-  prevents the 18:30 run from picking up the same row the 05:30 run is still holding in
-  a 6-hour Slack review. Only a human manually resetting a row's `status` back to `ready`
+  prevents the next day's 09:00 run from picking up a row that is still sitting in an
+  unanswered Slack review. Only a human manually resetting a row's `status` back to `ready`
   returns it to rotation, and terminal statuses (`posted`, `measured`, `needs_manual`,
   `expired`, `failed`, `blocked_needs_asset`) are never re-selected.
 - ✅ **Credentials** — Gemini, Google Sheets, Slack, and Facebook Graph all go through
@@ -577,7 +577,7 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
 3. Replace `Config.loopSecret` with a real random string (see "Loop secret" above). The
    regeneration loop refuses every call until you do.
 4. Confirm both workflows show **Asia/Manila** as their timezone in n8n's workflow
-   settings, and that the Schedule Trigger previews the next run at 05:30/18:30 *Manila*
+   settings, and that the Schedule Trigger previews the next run at 09:00 *Manila*
    time, not UTC.
 5. Confirm the Slack bot is present in the review channel and that a `sendAndWait` form
    actually renders there and comes back (post a throwaway test message with the same
