@@ -2590,6 +2590,23 @@ section('prose', 'Extracted prose rule checks (shared with the video workflow)',
     C.checkProse({ voiceover: clean, description: 'Halagang P999 lang.' }, OPTS).some((r) => /price/.test(r)));
 });
 
+// ---------------------------------------------------------------- voice
+section('voice', 'Voice rules extracted for reuse by the video workflow', () => {
+  const B = L('brand.js');
+  const crypto = require('crypto');
+  const BEFORE = '191ed66f777a0344fc16f004e26e5f7b488667ddd98aa147b4f667933caab885';
+  check('buildVoiceRules is exported as a function', typeof B.buildVoiceRules === 'function');
+  if (typeof B.buildVoiceRules !== 'function') return;
+  const v = B.buildVoiceRules();
+  check('voice rules carry the brand voice, price, problem-first and compliance blocks',
+    /BRAND VOICE/.test(v) && /PRICE RULE/.test(v) && /PROBLEM FIRST/.test(v) && /COMPLIANCE/.test(v) && /PRODUCT FACTS/.test(v));
+  check('voice rules carry no image-post instructions',
+    !/IMAGE PROMPT RULES/.test(v) && !/Return only the JSON/.test(v) && !/writing organic Facebook Page posts/.test(v));
+  check('image system prompt is byte-identical after the extraction',
+    crypto.createHash('sha256').update(B.buildSystemPrompt()).digest('hex') === BEFORE);
+  check('image system prompt contains the voice rules verbatim', B.buildSystemPrompt().indexOf(v) !== -1);
+});
+
 // ---------------------------------------------------------------- live
 if (LIVE) {
   const B = L('brand.js');

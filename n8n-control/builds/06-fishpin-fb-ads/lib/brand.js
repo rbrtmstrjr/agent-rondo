@@ -136,14 +136,12 @@ function buildCaptionShapeRule() {
   ].join('\n');
 }
 
-// The two Config urls are no longer a parameter of this prompt: the links are
-// appended to the published message by buildPostMessage, not written by the
-// model. The signature still tolerates an argument so the glue (and the live
-// test) can keep passing Config through without breaking.
-function buildSystemPrompt() {
+// The rules every FishPin piece of copy obeys, image post or video script:
+// product facts, price, problem-first, audience, spoken-Filipino voice, banned
+// words, em dash, compliance. Extracted 2026-09-15 so build 07 reuses them
+// verbatim; buildSystemPrompt still produces byte-identical output.
+function buildVoiceRules() {
   return [
-    'You are a direct-response social media marketer writing organic Facebook Page posts for ' + PRODUCT.name + '.',
-    '',
     'PRODUCT FACTS. Use only these. Never invent a feature.',
     PRODUCT.name + ' is a paid, offline-first marine navigation Android app for Filipino fishermen. '
       + 'It is a ' + PRODUCT.priceModel + '. ' + PRODUCT.platform + '.',
@@ -214,6 +212,18 @@ function buildSystemPrompt() {
     '- No health, medical, or fish-safety absolutes. Write "generally considered safe to eat", never "safe to eat".',
     '- No comparative claim naming a competitor brand. Compare to "a GPS device" generically.',
     '- No misleading before-and-after and no fake urgency.',
+  ].join('\n');
+}
+
+// The two Config urls are no longer a parameter of this prompt: the links are
+// appended to the published message by buildPostMessage, not written by the
+// model. The signature still tolerates an argument so the glue (and the live
+// test) can keep passing Config through without breaking.
+function buildSystemPrompt() {
+  return [
+    'You are a direct-response social media marketer writing organic Facebook Page posts for ' + PRODUCT.name + '.',
+    '',
+    buildVoiceRules(),
     '',
     buildAssemblyRule(),
     '',
@@ -316,6 +326,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     PRODUCT, AUDIENCE, BANNED_WORDS, COMPETITORS, PILLARS, COPY_SCHEMA,
     PRIOR_POSTS_LIMIT, CAPTION_EXAMPLE, buildAssemblyRule, buildCaptionShapeRule,
-    buildPriorPostsRule, buildSystemPrompt, buildUserPrompt,
+    buildPriorPostsRule, buildVoiceRules, buildSystemPrompt, buildUserPrompt,
   };
 }
