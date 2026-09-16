@@ -168,8 +168,8 @@ Manual Trigger (n8n)                                                ┴─► Co
 `deliveryChannel` / `opsChannel` `C0C1WS8PAAJ` · `scriptModel` `gemini-2.5-flash` ·
 `scriptTemperature` `0.9` · `imageModel` `gemini-2.5-flash-image` ·
 `veoModel` `veo-3.1-lite-generate-preview` · `veoSeconds` `8` (1080p requires 8s) · `veoResolution` `1080p` ·
-`veoMaxWaitMinutes` `8` · `ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Gacrux`
-(proven in this repo; §9 auditions `Algenib` and `Achird` against it) · `maxScriptRetries` `3` ·
+`veoMaxWaitMinutes` `8` · `ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Algenib`
+(chosen by the owner from the live spike, 2026-09-16) · `maxScriptRetries` `3` ·
 `renderUrl` `http://172.18.0.1:8090/render-ad` · `websiteUrl` `www.fishpin.app` ·
 `playStoreUrl` `https://play.google.com/store/apps/details?id=com.fishpin.app` ·
 `endCardCta` `I-download sa Play Store` · `endCardSeconds` `3.5` ·

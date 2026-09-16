@@ -12,8 +12,9 @@ const { assemble } = require('./node-libs.js');
 const GEMINI = { id: 'S0qfsjLzQfKC04iG', name: 'Gemini - Brand Variations' };
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
 const SLACK = { id: 'DnfgaCSu303JPlI3', name: 'Slack - n8n Bot' };
-// The owner's choice from the spike's three Filipino samples.
-const TTS_VOICE = 'Gacrux';
+// Owner's choice from the live spike (execution 2985, 2026-09-16): Algenib
+// (rejected: Gacrux and Achird).
+const TTS_VOICE = 'Algenib';
 
 const ERROR_WF = '660Xkpo164VSNTDZ';
 const TZ = 'Asia/Manila';

@@ -1136,9 +1136,9 @@ section('prompt', 'Script prompts and generation requests', () => {
     veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
       && !('inlineData' in veo.instances[0].image));
 
-  const tts = V.buildTtsRequest('Gabi na sa laot.', 'Gacrux');
+  const tts = V.buildTtsRequest('Gabi na sa laot.', 'Algenib');
   check('TTS request uses the voice and returns audio',
-    tts.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Gacrux'
+    tts.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Algenib'
       && JSON.stringify(tts.generationConfig.responseModalities) === '["AUDIO"]'
       && tts.contents[0].parts[0].text.indexOf('Gabi na sa laot.') !== -1);
 });
@@ -2360,7 +2360,7 @@ const CFG = {
   sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
   scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
   veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 8, veoResolution: '1080p', veoMaxWaitMinutes: 8,
-  ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
+  ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Algenib', maxScriptRetries: 3,
   renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
   playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
   endCardCta: 'I-download sa Play Store', endCardSeconds: 3.5, postCta: 'I-download ang FishPin sa Play Store.',
@@ -3246,8 +3246,9 @@ const { assemble } = require('./node-libs.js');
 const GEMINI = { id: 'S0qfsjLzQfKC04iG', name: 'Gemini - Brand Variations' };
 const SHEETS = { id: 'AYzUUEYWUCPKxHFI', name: 'Google Sheets - Content Log' };
 const SLACK = { id: 'DnfgaCSu303JPlI3', name: 'Slack - n8n Bot' };
-// The owner's choice from the spike's three Filipino samples.
-const TTS_VOICE = 'Gacrux';
+// Owner's choice from the live spike (execution 2985, 2026-09-16): Algenib
+// (rejected: Gacrux and Achird).
+const TTS_VOICE = 'Algenib';
 
 const ERROR_WF = '660Xkpo164VSNTDZ';
 const TZ = 'Asia/Manila';
