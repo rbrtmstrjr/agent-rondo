@@ -101,12 +101,24 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+chmod 600 /etc/systemd/system/reel-render-ad.service
 ```
+The token is inline in this unit file (there's no separate drop-in this time), so `chmod 600` keeps
+it from being world-readable — the heredoc alone would otherwise leave it at the default 0644.
+
 If step 1's `systemctl cat reel-render` showed a `User=` line, add the same `User=<ServiceUser>`
 line into the `[Service]` block above (matching `reel-render`'s convention) before continuing — edit
-the unit file or re-run the `cat > ... <<EOF` block with it included. If `reel-render` runs as root,
-leave `User=` out (root is systemd's default).
+the unit file or re-run the `cat > ... <<EOF` block with it included — and hand the directory over to
+that user, since it was created as root back in step 2:
 ```bash
+chown -R <ServiceUser>: /opt/reel-render-ad
+```
+Note: step 4's staged test ran as root (it started the same venv's python directly with no `User=`
+involved), so it never actually exercised this user's read/execute/write permissions — this `chown`,
+and the checks below, are the first real test of them. If `reel-render` runs as root, leave `User=`
+out and skip the `chown` (root is systemd's default and already owns `/opt/reel-render-ad`).
+```bash
+ss -tlnp | grep -w 8090 || echo "8090 free"
 systemctl daemon-reload
 systemctl enable --now reel-render-ad
 systemctl status reel-render-ad --no-pager | head -5
@@ -130,23 +142,29 @@ output — there is no equivalent of the old "only run when no reel is in flight
 Expected: every line `PASS` and `FAILS=0` (now hitting the live `reel-render-ad` service on 8090).
 Send the full output. If it does not print `FAILS=0`, run the Rollback section immediately.
 
-## 7. Firewall port 8090 to the Docker network only (leave 8088's rules untouched)
+## 7. Firewall: lock 8090 to the Docker network, and restore n8n's access to 8088
+`ufw --force enable` sets ufw's default INPUT policy to DROP, and container→gateway traffic (n8n
+calling `http://<GATEWAY>:8088/render`, the existing reel pipeline) crosses the host's INPUT chain
+just like any other inbound connection — so enabling ufw without an explicit allow for 8088 from the
+Docker network would silently cut n8n off from the reel service it already depends on today. This
+step restores exactly that access; it does **not** touch 8088's public-facing exposure at all.
 ```bash
 ufw status numbered
 ```
 If any existing rule allows `8090` from `Anywhere`, delete it: `ufw delete <n>`. Rule numbers shift
 after every delete — re-run `ufw status numbered` again before deleting the next one; never delete
-by a number you read before the previous delete. **Do not add or remove anything for port `8088`** —
-`reel-render`'s firewall exposure is unchanged and out of scope for this deploy.
+by a number you read before the previous delete. Leave every existing `8088` rule exactly as you
+find it here — this step adds one new Docker-network-scoped allow for `8088` below (restoring the
+access it already had before ufw is enabled), but never adds, removes, or widens any of its
+public-facing rules.
 
 If `ufw status` above showed **inactive**, check what else is publicly listening before enabling it,
 so this step can't accidentally cut off something the owner relies on:
 ```bash
 ss -tlnp
 ```
-For every host port listed besides `22` (SSH), `8088` (the existing reel service — leave as-is,
-don't add a rule for it here either), and `8090` (this new render-ad service), add an explicit
-allow — e.g.:
+For every host port listed besides `22` (SSH), `8088` and `8090` (both handled explicitly below,
+not as generic public allows), add an explicit allow — e.g.:
 ```bash
 ufw allow 80/tcp
 ufw allow 443/tcp
@@ -160,18 +178,25 @@ Then, always:
 ufw allow OpenSSH
 ufw allow from <SUBNET> to any port 8090 proto tcp
 ufw deny 8090/tcp
+ufw allow from <SUBNET> to any port 8088 proto tcp
 ufw --force enable
 ufw status numbered
 docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8090/health; echo
+docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
 curl -sI https://n8n.srv1193790.hstgr.cloud | head -1
 ```
 `<SUBNET>` and `<GATEWAY>` are the values discovered in step 1 — do not assume `172.18.0.0/16` /
-`172.18.0.1` without checking step 1's output.
+`172.18.0.1` without checking step 1's output. The `ufw allow from <SUBNET> to any port 8088` line
+only restores the Docker-network access the reel service already had — it is not `ufw allow
+8088/tcp` (which would open it to Anywhere), and no public `ufw deny 8088/tcp` is added either:
+8088's public-facing exposure is left exactly as the operator finds it, whatever that is.
 
-Expected: the `docker exec` prints `ok` and the `curl` prints an HTTP status line (n8n is still
-publicly reachable). **If either check fails, run `ufw disable` immediately and send the output** —
-do not leave the firewall in a broken state. Once both pass, the controller separately confirms the
-public probe of `:8090/health` no longer answers.
+Expected: **both** `docker exec` checks print `ok` (8090 confirms the new service; 8088 confirms
+n8n's access to the existing reel service survived enabling ufw) and the `curl` prints an HTTP
+status line (n8n is still publicly reachable). **If any of these three checks fail, run `ufw
+disable` immediately and send the output** — do not leave the firewall in a broken state. Once all
+three pass, the controller separately confirms the public probe of `:8090/health` no longer
+answers.
 
 ## Rollback
 ```bash
@@ -179,5 +204,7 @@ systemctl disable --now reel-render-ad
 # optionally also remove its files entirely:
 # rm -rf /opt/reel-render-ad
 ```
-The `reel-render` service (port 8088) was never touched by this deploy, so there is nothing to
-restore for it.
+The `reel-render` service itself (its `render.py`, its systemd unit) was never touched by this
+deploy, so there is nothing to restore there. Step 7's `ufw allow from <SUBNET> to any port 8088`
+rule is purely additive (it only restores Docker-network access that existed before ufw was
+enabled) and safe to leave in place even after this rollback.

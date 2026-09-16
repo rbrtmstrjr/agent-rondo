@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Run ON THE VPS after deploying: RENDER_AD_TOKEN=<token> bash smoke_render_ad.sh
-# Optional: PORT=8089 to point at a staging instance instead of the live one on 8088.
+# Defaults to the reel-render-ad service (port 8090, RENDER_ROOT=/opt/reel-render-ad).
+# Optional: PORT=8089 to point at a staging instance instead of the live one on 8090.
 # Optional: RENDER_ROOT=<dir> to match the render.py instance under test (defaults to
-# /opt/reel-render, the live service's root) -- used only to avoid polluting its output/.
+# /opt/reel-render-ad, reel-render-ad's root) -- used only to avoid polluting its output/.
 set -u
-PORT="${PORT:-8088}"
-OUT_DIR="${RENDER_ROOT:-/opt/reel-render}/output"
+PORT="${PORT:-8090}"
+OUT_DIR="${RENDER_ROOT:-/opt/reel-render-ad}/output"
 BEFORE_FILES=$(ls "$OUT_DIR" 2>/dev/null || true)
 [ -n "${RENDER_AD_TOKEN:-}" ] || { echo "set RENDER_AD_TOKEN"; exit 2; }
 T=$(mktemp -d); cd "$T"; FAILS=0
@@ -35,7 +36,9 @@ ffmpeg -loglevel error -y -f lavfi -i sine=f=220:d=20 -ac 1 -ar 24000 vo.wav || 
 imgsize=$(stat -c %s img.png)
 [ "$imgsize" -ge 1024 ] || { echo "img.png is only $imgsize bytes (render() rejects downloads under 1024 bytes)"; exit 2; }
 
-# regression: serve img.png locally so the EXISTING /render endpoint (image_url based) can fetch it
+# regression: serve img.png locally so this service's own /render endpoint (image_url based,
+# the code shared with reel-render but NOT a probe of the separate live reel-render service)
+# can fetch it
 python3 -m http.server 8099 --bind 127.0.0.1 >/tmp/smoke-http.log 2>&1 &
 HTTPD_PID=$!
 
@@ -66,9 +69,9 @@ PY
 
 code=$(curl -s -o render_old_out.mp4 -w '%{http_code}' --max-time 600 -X POST "http://127.0.0.1:$PORT/render" -H 'Content-Type: application/json' --data-binary @render_old.json)
 if [ "$code" = "200" ] && ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of default=nw=1:nk=1 render_old_out.mp4 2>/dev/null | grep -q video; then
-  pass "existing /render still renders"
+  pass "/render still renders on this service"
 else
-  fail "existing /render still renders -> $code: $(head -c 400 render_old_out.mp4)"
+  fail "/render still renders on this service -> $code: $(head -c 400 render_old_out.mp4)"
 fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/render-ad" -H 'Content-Type: application/json' --data-binary @ok.json)
