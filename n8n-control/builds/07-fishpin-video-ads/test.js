@@ -527,6 +527,59 @@ section('gen', 'Generation glue (real node bodies)', () => {
   });
 });
 
+// ---------------------------------------------------------------- deliver
+section('deliver', 'Slack delivery and failure sink glue (real node bodies)', () => {
+  const VS = J({ valid: true, script: GOOD_SCRIPT, script_try: 1 });
+  const SR = (over) => J(Object.assign({}, SET_ROW_NEW, over || {}));
+  const renderItem = [{ json: { ok: true, bytes: MP4.length, file_name: 'VID-20260915-010203.mp4', est_cost: 0.65 },
+    binary: { video: binOf(MP4, 'video/mp4') } }];
+  const cells = (j) => JSON.stringify(j.sheet_body && j.sheet_body.data);
+  const complete = (over) => J(Object.assign({ ok: true, files: [{ id: 'F1', permalink: 'https://fishpin.slack.com/files/U1/F1/vid.mp4' }] }, over || {}));
+
+  // upload
+  glue('reattach ok', 'reattach-video.js', { nodes: { 'Set Row': SR(), 'Check Render': renderItem },
+    input: J({ ok: true, upload_url: 'https://files.slack.com/upload/v1/x', file_id: 'F1' }) }, (o, j) => {
+    check('reattach-video: puts the MP4 back on the item for the byte upload',
+      j.ok === true && j.file_id === 'F1' && o[0].binary.video.data === MP4.toString('base64'));
+  });
+  glue('reattach refused', 'reattach-video.js', { nodes: { 'Set Row': SR(), 'Check Render': renderItem }, input: J({ ok: false, error: 'invalid_auth' }) }, (o, j) => {
+    check('reattach-video: Slack refusing the upload stops the run', j.ok === false && j.status === 'failed' && /invalid_auth/.test(j.message));
+  });
+
+  // delivery
+  const dNodes = (over) => Object.assign({ Config: withCfg(), 'Set Row': SR(), 'Validate Script': VS, 'Check Render': renderItem, 'Slack Complete': complete() }, over || {});
+  glue('delivery ok', 'check-delivery.js', { nodes: dNodes(), input: J({ ok: true, ts: '1726000000.0001' }) }, (o, j) => {
+    check('check-delivery: a delivered message carries the Slack file link', j.ok === true && j.ts === '1726000000.0001'
+      && j.video_url === 'https://fishpin.slack.com/files/U1/F1/vid.mp4');
+    check('check-delivery: the row is marked delivered with the script, link and cost', cells(j) === JSON.stringify([
+      { range: 'Videos!D7', values: [[GOOD_SCRIPT.pillar]] }, { range: 'Videos!E7', values: [[GOOD_SCRIPT.topic]] },
+      { range: 'Videos!F7', values: [[GOOD_SCRIPT.hook]] }, { range: 'Videos!G7', values: [[GOOD_SCRIPT.voiceover]] },
+      { range: 'Videos!H7', values: [['delivered']] }, { range: 'Videos!I7', values: [['https://fishpin.slack.com/files/U1/F1/vid.mp4']] },
+      { range: 'Videos!J7', values: [['0.65']] }]));
+  });
+  glue('delivery upload failed', 'check-delivery.js', { nodes: dNodes({ 'Slack Complete': J({ ok: false, error: 'file_not_found' }) }), input: J({ ok: true, ts: '1' }) }, (o, j) => {
+    check('check-delivery: an unfinished upload stops the run', j.ok === false && /upload/.test(j.message) && /file_not_found/.test(j.message));
+  });
+  glue('delivery not posted', 'check-delivery.js', { nodes: dNodes(), input: J({ ok: false, error: 'channel_not_found' }) }, (o, j) => {
+    check('check-delivery: an undelivered message stops the run', j.ok === false && j.status === 'failed' && /channel_not_found/.test(j.message));
+  });
+
+  // failure sink
+  glue('stop failed', 'stop.js', { nodes: { Config: withCfg(), 'Set Row': SR() }, input: J({ ok: false, status: 'failed', message: 'render failed' }) }, (o, j) => {
+    check('stop: records the failure status on the row',
+      j.has_row === true && j.message === 'render failed' && cells(j) === JSON.stringify([{ range: 'Videos!H7', values: [['failed']] }]));
+  });
+  glue('stop no row', 'stop.js', { nodes: { Config: withCfg() }, input: J({ ok: false, status: 'rejected', message: 'wrong secret' }) }, (o, j) => {
+    check('stop: a run rejected before any row exists writes nothing', j.has_row === false && j.sheet_body === null && j.status === 'rejected');
+  });
+  glue('stop bad row', 'stop.js', { nodes: { Config: withCfg(), 'Set Row': J({ ok: false, status: 'failed', message: 'append failed' }) }, input: J({ status: 'failed', message: 'append failed' }) }, (o, j) => {
+    check('stop: a failed Set Row writes nothing', j.has_row === false && j.sheet_body === null);
+  });
+  glue('stop no message', 'stop.js', { nodes: { Config: withCfg(), 'Set Row': SR() }, input: J({}) }, (o, j) => {
+    check('stop: a missing message still says where to look', j.status === 'failed' && /n8n execution/.test(j.message));
+  });
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));

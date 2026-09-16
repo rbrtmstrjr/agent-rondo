@@ -19,6 +19,9 @@ const NODE_LIBS = {
   'check-veo-poll.js': [],
   'build-render-payload.js': ['scene-plan.js'],
   'check-render.js': ['06/copy-rules.js', 'video-sheet-rules.js'],
+  'reattach-video.js': [],
+  'check-delivery.js': ['video-sheet-rules.js'],
+  'stop.js': ['video-sheet-rules.js'],
 };
 
 function libSource(name) {
