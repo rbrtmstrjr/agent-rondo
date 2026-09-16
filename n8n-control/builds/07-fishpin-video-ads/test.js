@@ -580,6 +580,100 @@ section('deliver', 'Slack delivery and failure sink glue (real node bodies)', ()
   });
 });
 
+// ---------------------------------------------------------------- wf
+section('wf', 'Assembled workflow structure', () => {
+  const file = path.join(__dirname, 'fishpin-video-ads.workflow.json');
+  check('workflow: the JSON exists (run node build.js first)', fs.existsSync(file));
+  if (!fs.existsSync(file)) return;
+  const raw = fs.readFileSync(file, 'utf8');
+  const wf = JSON.parse(raw);
+  const byName = {};
+  wf.nodes.forEach((n) => { byName[n.name] = n; });
+  const outs = (from, b) => ((((wf.connections[from] || {}).main) || [])[b || 0] || []).map((c) => c.node);
+  const ins = (to) => {
+    const r = [];
+    Object.keys(wf.connections).forEach((from) => (wf.connections[from].main || []).forEach((br, bi) =>
+      (br || []).forEach((c) => { if (c.node === to) r.push(from + '#' + bi); })));
+    return r;
+  };
+  const code = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.code');
+  const httpNodes = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest');
+  const cfgVals = {};
+  byName.Config.parameters.assignments.assignments.forEach((a) => { cfgVals[a.name] = a.value; });
+
+  check('workflow: 51 nodes with unique names and ids', wf.nodes.length === 51 && Object.keys(byName).length === 51
+    && new Set(wf.nodes.map((n) => n.id)).size === 51);
+  const dangling = [];
+  Object.keys(wf.connections).forEach((from) => {
+    if (!byName[from]) dangling.push(from);
+    (wf.connections[from].main || []).forEach((br) => (br || []).forEach((c) => { if (!byName[c.node]) dangling.push(c.node); }));
+  });
+  check('workflow: every connection names an existing node', dangling.length === 0);
+  if (dangling.length) console.log('     dangling: ' + dangling.join(', '));
+  const orphans = wf.nodes.filter((n) => ['Trigger Webhook', 'Manual Trigger'].indexOf(n.name) === -1 && ins(n.name).length === 0)
+    .map((n) => n.name);
+  check('workflow: every node except the two triggers has an incoming connection', orphans.length === 0);
+  if (orphans.length) console.log('     orphans: ' + orphans.join(', '));
+  check('workflow: each glue file is exactly one Code node', code.length === Object.keys(NODE_LIBS).length
+    && Object.keys(NODE_LIBS).every((f) => code.filter((n) => n.parameters.jsCode === assemble(f)).length === 1));
+  const broken = [];
+  code.forEach((n) => { try { new AsyncFn(n.parameters.jsCode); } catch (e) { broken.push(n.name + ': ' + e.message); } });
+  check('workflow: every Code node body compiles under AsyncFunction', broken.length === 0);
+  if (broken.length) console.log('     ' + broken.join('\n     '));
+  check('workflow: no Code node body references module.exports', code.every((n) => !/module\.exports/.test(n.parameters.jsCode)));
+  check('workflow: fan-out nodes are never read with .first()', !/\$\('(Build Image Requests|Generate Image)'\)\.first\(/.test(raw));
+
+  check('workflow: Config holds the approved values', cfgVals.sheetId === '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'
+    && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
+    && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 6 && cfgVals.veoMaxWaitMinutes === 8
+    && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
+    && cfgVals.renderUrl === 'http://172.18.0.1:8088/render-ad'
+    && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
+    && cfgVals.postCta === 'I-download ang FishPin sa Play Store.');
+  check('workflow: the committed build carries placeholders, never the secrets',
+    cfgVals.triggerSecret === 'FILL_IN_VIDEO_TRIGGER_SECRET' && cfgVals.renderToken === 'FILL_IN_RENDER_TOKEN');
+  check('workflow: no API key or token appears anywhere in the JSON',
+    !/AIza[0-9A-Za-z_-]{20,}|EAA[A-Za-z0-9]{20,}|xox[abp]-[0-9A-Za-z-]+/.test(raw));
+  const credIds = [];
+  wf.nodes.forEach((n) => Object.keys(n.credentials || {}).forEach((k) => credIds.push(n.credentials[k].id)));
+  check('workflow: only the Gemini, Sheets and Slack credentials are used',
+    credIds.length > 0 && credIds.every((id) => ['S0qfsjLzQfKC04iG', 'AYzUUEYWUCPKxHFI', 'DnfgaCSu303JPlI3'].indexOf(id) !== -1));
+  check('workflow: uncaught errors go to the Ops error handler, in Manila time',
+    wf.settings.errorWorkflow === '660Xkpo164VSNTDZ' && wf.settings.timezone === 'Asia/Manila');
+  check('workflow: the trigger webhook acknowledges immediately',
+    byName['Trigger Webhook'].parameters.responseMode === 'onReceived' && byName['Trigger Webhook'].parameters.path === 'fishpin-video-ad');
+
+  check('workflow: every HTTP node declares its error behaviour',
+    httpNodes.every((n) => ['continueRegularOutput', 'stopWorkflow'].indexOf(n.onError) !== -1));
+  check('workflow: paid, row-creating and posting calls are never retried',
+    ['Veo Start', 'Render', 'Append Row', 'Post Video'].every((nm) => byName[nm].retryOnFail !== true));
+  const R = byName.Render.parameters;
+  check('workflow: Render sends the token header and the JSON binary, with a 10-minute timeout',
+    R.headerParameters.parameters.some((h) => h.name === 'X-Render-Token' && /renderToken/.test(h.value))
+      && R.contentType === 'binaryData' && R.inputDataFieldName === 'payload' && R.options.timeout === 600000
+      && R.options.response.response.responseFormat === 'file');
+  check('workflow: nothing is published to Facebook',
+    !/graph\.facebook\.com|rupload\.facebook\.com|facebookGraphApi/.test(raw) && wf.nodes.every((n) => !/facebook/i.test(n.type)));
+  check('workflow: nothing waits for a human', wf.nodes.every((n) => (n.parameters || {}).operation !== 'sendAndWait'));
+  check('workflow: the row is marked delivered only after Slack confirms the upload and the message',
+    outs('Slack Complete')[0] === 'Wait 5s' && outs('Wait 5s')[0] === 'Post Video' && outs('Post Video')[0] === 'Check Delivery'
+      && JSON.stringify(ins('Delivered?')) === '["Check Delivery#0"]' && JSON.stringify(ins('Mark Delivered')) === '["Delivered?#0"]'
+      && /deliveryChannel/.test(byName['Post Video'].parameters.jsonBody));
+  check('workflow: Veo polls through a Wait and every no-clip path falls back to the still',
+    outs('Veo Pending?', 0)[0] === 'Wait Veo' && outs('Wait Veo')[0] === 'Veo Poll' && outs('Veo Clip?', 0)[0] === 'Veo Download'
+      && outs('Veo Clip?', 1)[0] === 'Build Render Payload' && outs('Veo Started?', 1)[0] === 'Build Render Payload'
+      && outs('Veo Download')[0] === 'Build Render Payload');
+  check('workflow: script retries loop back to Build Script Request and the cap goes to Stop',
+    outs('Retry Script?', 0)[0] === 'Build Script Request' && outs('Retry Script?', 1)[0] === 'Stop');
+  const gates = ['Started?', 'Row OK?', 'Voice OK?', 'Images OK?', 'Payload OK?', 'Render OK?', 'Upload Ready?', 'Delivered?'];
+  const leaks = gates.filter((g) => outs(g, 1)[0] !== 'Stop');
+  check('workflow: every failure branch goes to Stop', leaks.length === 0);
+  if (leaks.length) console.log('     not wired to Stop: ' + leaks.join(', '));
+  check('workflow: Stop records the row when one exists and always reports',
+    outs('Stop')[0] === 'Has Row?' && outs('Has Row?', 0)[0] === 'Mark Terminal' && outs('Has Row?', 1)[0] === 'Notify Stopped'
+      && outs('Mark Terminal')[0] === 'Notify Stopped');
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));
