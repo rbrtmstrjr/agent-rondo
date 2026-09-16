@@ -129,7 +129,7 @@ function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
     parameters: {
       aspectRatio: '9:16',
       resolution: c.veoResolution || '1080p',
-      durationSeconds: String(c.veoSeconds || 6),
+      durationSeconds: Number(c.veoSeconds) || 6,
       personGeneration: 'allow_adult',
     },
   };

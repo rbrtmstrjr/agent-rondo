@@ -26,7 +26,7 @@
 - Script rules: hook ≤ 8 words; voiceover 45–70 words; description 20–60 words, 1–2 paragraphs; 5–6 scenes; `scenes[0]` is `beat:"hook"`, `type:"veo"`; exactly one `veo` scene; 1–2 `screen` scenes; planned seconds 18–28; hashtags 3–5; pillar ≠ `social proof`.
 - Screen allowlist ids: `offline`, `spots`, `path`, `navigate`, `dashboard`, `smarter` (URLs in spec §3.1). `onboarding6` is never used.
 - Voiceover and description must pass build-06 prose rules (no peso figure, no em dash, banned words, all-caps, emoji ≤ 3, compliance, forbidden claims, competitor names, fabricated counts).
-- Veo: `veo-3.1-lite-generate-preview`, `aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds "6"`, image-to-video, `personGeneration "allow_adult"`, poll every 15s, give up after 8 min → hook falls back to the still.
+- Veo: `veo-3.1-lite-generate-preview`, `aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds` number `6` (not the string `"6"` — the API returns HTTP 400 for a string), image-to-video, `personGeneration "allow_adult"`, poll every 15s, give up after 8 min → hook falls back to the still.
 - Captions: Poppins, white `&H00FFFFFF`, active word Amber `#FFC857` = ASS `&H0057C8FF&`, middle of frame; logo lockup top-left from 1.0s; end card 3.5s on `#0A2461`.
 - Encode: 1080×1920, 30fps, `libx264`, `yuv420p`, `-g 60 -keyint_min 60 -sc_threshold 0`, `-maxrate 8M -bufsize 16M`, AAC-LC 48000 Hz stereo 160k, `+faststart`.
 - Retries: script validation max 3 tries.
@@ -111,7 +111,7 @@ const nodes = [
   code('Extract Still', "const p=($json.candidates||[])[0]?.content?.parts||[];const d=(p.find(x=>x.inlineData||x.inline_data)||{});const i=d.inlineData||d.inline_data||{};return [{json:{mime:i.mimeType||i.mime_type||'image/png',b64:i.data||'',bytes:Buffer.from(i.data||'','base64').length}}];"),
   http('Veo Start', Object.assign(cred(GEMINI), { method: 'POST', url: G + 'models/veo-3.1-lite-generate-preview:predictLongRunning',
     sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { bytesBase64Encoded: $json.b64, mimeType: $json.mime } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' } }) }}" }), GEMINI),
+    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { bytesBase64Encoded: $json.b64, mimeType: $json.mime } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: 6, personGeneration: 'allow_adult' } }) }}" }), GEMINI),
   { parameters: { amount: 15, unit: 'seconds' }, name: 'Wait 15s', type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: at(), webhookId: 'fishpin-video-spike-wait' },
   http('Veo Poll', Object.assign(cred(GEMINI), { method: 'GET', url: "={{ '" + G + "' + $('Veo Start').first().json.name }}" }), GEMINI),
   code('Poll Guard', "const start=$('Veo Start').first().json;if(!start.name) throw new Error('Veo Start failed: ' + JSON.stringify(start).slice(0,400));\nif ($json.done === true) return [{json:{done:true, uri: $json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '', raw: $json}}];\nif ($runIndex >= 32) throw new Error('Veo did not finish in 8 minutes: ' + JSON.stringify($json).slice(0,500));\nreturn [{json:{done:false}}];"),
@@ -1083,7 +1083,7 @@ git commit -m "refactor(fishpin-ads): extract shared voice rules into buildVoice
   - `buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) -> body` (`cfg = { veoResolution, veoSeconds }`)
   - `buildTtsRequest(voiceover, voice) -> body`
 
-`durationSeconds` is sent as a string per Google's docs. If Task 1's FINDINGS recorded that Veo only accepts a number, change that single line and its test to a number.
+`durationSeconds` is a JSON number, not a string — verified live 2026-09-16, the string form `"6"` returns HTTP 400 `INVALID_ARGUMENT` ("The value type for `durationSeconds` needs to be a number.") from `veo-3.1-lite-generate-preview:predictLongRunning`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1131,7 +1131,7 @@ section('prompt', 'Script prompts and generation requests', () => {
 
   const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
   check('Veo request is 9:16, 1080p, 6 seconds, adults only',
-    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' }));
+    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: 6, personGeneration: 'allow_adult' }));
   check('Veo request animates the still',
     veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
       && !('inlineData' in veo.instances[0].image));
@@ -1286,7 +1286,7 @@ function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
     parameters: {
       aspectRatio: '9:16',
       resolution: c.veoResolution || '1080p',
-      durationSeconds: String(c.veoSeconds || 6),
+      durationSeconds: Number(c.veoSeconds) || 6,
       personGeneration: 'allow_adult',
     },
   };
@@ -2523,8 +2523,8 @@ section('gen', 'Generation glue (real node bodies)', () => {
     'Collect Images': J({ ok: true, hook_still_b64: 'STILL', hook_still_mime: 'image/png' }) } }, (o, j) => {
     const b = JSON.parse(j.veoBody);
     check('build-veo-request: animates the hook still at 9:16, 1080p, 6 seconds',
-      b.parameters.durationSeconds === '6' && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
-        && b.instances[0].image.inlineData.data === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
+      b.parameters.durationSeconds === 6 && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
+        && b.instances[0].image.bytesBase64Encoded === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
   });
   glue('veo started', 'check-veo-start.js', { input: J({ name: 'models/veo-3.1-lite-generate-preview/operations/abc' }) }, (o, j) => {
     check('check-veo-start: an operation name means started', j.started === true && /operations\/abc$/.test(j.name));
