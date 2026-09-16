@@ -711,5 +711,11 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
+def ad_port():
+    # lets a second instance of this same file run as its own systemd service on a
+    # different port (e.g. reel-render-ad on 8090) without any code fork -- defaults to
+    # 8088 so the original reel-render deployment is unaffected.
+    return int(os.environ.get("RENDER_AD_PORT", "8088"))
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", 8088), Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", ad_port()), Handler).serve_forever()

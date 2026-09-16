@@ -278,7 +278,7 @@ const CFG = {
   scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
   veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 6, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
-  renderUrl: 'http://172.18.0.1:8088/render-ad', websiteUrl: 'www.fishpin.app',
+  renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
   playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
   endCardCta: 'I-download sa Play Store', endCardSeconds: 3.5, postCta: 'I-download ang FishPin sa Play Store.',
   triggerSecret: 'test-trigger-secret', renderToken: 'test-render-token',
@@ -627,7 +627,7 @@ section('wf', 'Assembled workflow structure', () => {
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
     && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 6 && cfgVals.veoMaxWaitMinutes === 8
     && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
-    && cfgVals.renderUrl === 'http://172.18.0.1:8088/render-ad'
+    && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
     && cfgVals.postCta === 'I-download ang FishPin sa Play Store.');
   check('workflow: the committed build carries placeholders, never the secrets',

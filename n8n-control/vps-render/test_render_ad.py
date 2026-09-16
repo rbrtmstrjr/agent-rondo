@@ -163,5 +163,14 @@ class RenderAdHelpers(unittest.TestCase):
             render._decode_b64("****", "audio_b64")
         self.assertEqual(cm.exception.status, 400)
 
+    def test_ad_port_defaults_to_8088(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("RENDER_AD_PORT", None)
+            self.assertEqual(render.ad_port(), 8088)
+
+    def test_ad_port_honours_override(self):
+        with mock.patch.dict(os.environ, {"RENDER_AD_PORT": "8090"}):
+            self.assertEqual(render.ad_port(), 8090)
+
 if __name__ == "__main__":
     unittest.main()

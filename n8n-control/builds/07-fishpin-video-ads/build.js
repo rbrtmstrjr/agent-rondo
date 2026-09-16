@@ -92,7 +92,7 @@ const nodes = [
       A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.9), A('imageModel', 'gemini-2.5-flash-image'),
       A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 6), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
       A('ttsModel', 'gemini-3.1-flash-tts-preview'), A('ttsVoice', TTS_VOICE), A('maxScriptRetries', 3),
-      A('renderUrl', 'http://172.18.0.1:8088/render-ad'),
+      A('renderUrl', 'http://172.18.0.1:8090/render-ad'),
       A('websiteUrl', 'www.fishpin.app'), A('playStoreUrl', 'https://play.google.com/store/apps/details?id=com.fishpin.app'),
       A('endCardCta', 'I-download sa Play Store'), A('endCardSeconds', 3.5), A('postCta', 'I-download ang FishPin sa Play Store.'),
       A('triggerSecret', TRIGGER_SECRET), A('renderToken', RENDER_TOKEN),
