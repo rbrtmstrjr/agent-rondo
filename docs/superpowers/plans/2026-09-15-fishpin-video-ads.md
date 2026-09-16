@@ -1088,6 +1088,8 @@ git commit -m "refactor(fishpin-ads): extract shared voice rules into buildVoice
 
 `durationSeconds` is a JSON number, not a string — verified live 2026-09-16, the string form `"6"` returns HTTP 400 `INVALID_ARGUMENT` ("The value type for `durationSeconds` needs to be a number.") from `veo-3.1-lite-generate-preview:predictLongRunning`.
 
+Live run 2988 (2026-09-16) showed `validateScript` correctly rejecting model output twice: an 85-word voiceover (the 45-70 range was easy to skim past) and a `type:"screen"` scene with no `screen` id (the response schema only requires `beat`/`type`/`seconds`, so a missing `screen` is schema-valid but rule-invalid). `buildScriptSystemPrompt` now states the word count as a HARD LIMIT with an explicit "count the words first" instruction, and states the per-scene field requirement (`screen` scenes need an allowlisted id and no `prompt`; `image`/`veo` scenes need a `prompt` and no `screen`) as its own bullet; `buildScriptUserPrompt` ends with a short pre-answer compliance checklist.
+
 - [ ] **Step 1: Write the failing tests**
 
 ```js
@@ -1110,7 +1112,11 @@ section('prompt', 'Script prompts and generation requests', () => {
   const sys = V.buildScriptSystemPrompt(voice);
   check('system prompt includes the shared voice rules verbatim', sys.indexOf(voice) !== -1);
   check('system prompt states the length and scene rules',
-    /8 words/.test(sys) && /45 to 70 words/.test(sys) && /first scene/i.test(sys) && /exactly one veo/i.test(sys) && /1 or 2 screen/i.test(sys));
+    /8 words/.test(sys) && /45 to 70 words/.test(sys) && /first scene/i.test(sys) && /exactly one veo/i.test(sys) && /1 or 2 screen/i.test(sys)
+      && /count the words/i.test(sys) && /55 to 60 words/.test(sys) && /regenerated/i.test(sys)
+      && /must include a "screen" id/i.test(sys) && /must not include "prompt"/i.test(sys)
+      && /must include a "prompt"/i.test(sys) && /must not include "screen"/i.test(sys)
+      && /scene with no "screen" id is rejected/i.test(sys));
   check('system prompt names every approved screen', S.SCREEN_IDS.every((id) => sys.indexOf('"' + id + '"') !== -1));
   check('system prompt forbids drawn app screens and text in images', /never draw an app screen/i.test(sys) && /no text/i.test(sys));
   check('system prompt forbids the social proof pillar', /social proof/i.test(sys));
@@ -1213,6 +1219,9 @@ function buildScriptSystemPrompt(voiceRules) {
       + 'problem, never the product and never a price.',
     '- voiceover: 45 to 70 words, written to be SPOKEN aloud by a calm kuya on the pier, about 24 seconds. '
       + 'It starts with the hook idea, walks through the problem, shows how FishPin helps, and ends on relief.',
+    '- HARD LIMIT ON THE VOICEOVER: 45 to 70 words. Before you answer, count the words in your voiceover '
+      + 'sentence by sentence and aim for 55 to 60 words, the safe middle of the range. A voiceover outside '
+      + '45 to 70 words is rejected and the whole script is regenerated, so get the count right the first time.',
     '- description: the Reel caption, 20 to 60 words of prose in 1 or 2 short paragraphs. No links, no '
       + 'hashtags, no call-to-action line: those are added automatically.',
     '- hashtags: 3 to 5, mixing Tagalog and English, no spam tags.',
@@ -1223,6 +1232,9 @@ function buildScriptSystemPrompt(voiceRules) {
     '- The first scene is the hook: beat "hook", type "veo". Its prompt describes ONE short moment of real '
       + 'motion that shows the problem (fog rolling over the sea, night falling, a dead engine). There is '
       + 'exactly one veo scene in the whole video.',
+    '- FIELDS PER SCENE TYPE, EXACTLY: a scene with type "screen" MUST include a "screen" id from the list '
+      + 'below and must NOT include "prompt". A scene with type "image" or "veo" MUST include a "prompt" and '
+      + 'must NOT include "screen". A "screen" scene with no "screen" id is rejected.',
     '- Use 1 or 2 screen scenes (beat "demo") to show the real FishPin app. Choose only from these screens:',
     Object.keys(SCREEN_GUIDE).map((id) => '  "' + id + '": ' + SCREEN_GUIDE[id]).join('\n'),
     '- If the feature you talk about has no matching screen (SOS, the fish guide, AI fish scan, the catch '
@@ -1252,6 +1264,12 @@ function buildScriptUserPrompt(ctx) {
     lines.push('', 'Already made. Do not repeat any of these hooks, and take a different angle on any repeated subject:');
     prior.forEach((p) => lines.push('- ' + String(p.hook || '') + (p.topic ? ' (topic: ' + p.topic + ')' : '')));
   }
+  lines.push('', 'Before you answer, check:',
+    '- voiceover is 45 to 70 words (count them)',
+    '- every "screen" scene has an allowlisted "screen" id',
+    '- every "image" or "veo" scene has a "prompt"',
+    '- scene seconds add up to 18 to 28',
+    '- 3 to 5 hashtags');
   return lines.join('\n');
 }
 
@@ -2361,7 +2379,7 @@ const glue = (label, file, ctx, assert) => defer(label, runNode(file, ctx).then(
 
 const CFG = {
   sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
-  scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
+  scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.7, imageModel: 'gemini-2.5-flash-image',
   veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 8, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Algenib', maxScriptRetries: 3,
   renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
@@ -3353,7 +3371,7 @@ const nodes = [
   { parameters: { assignments: { assignments: [
       A('sheetId', '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'), A('videosTab', 'Videos'),
       A('deliveryChannel', 'C0C1WS8PAAJ'), A('opsChannel', 'C0C1WS8PAAJ'),
-      A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.9), A('imageModel', 'gemini-2.5-flash-image'),
+      A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.7), A('imageModel', 'gemini-2.5-flash-image'),
       A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 8), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
       A('ttsModel', 'gemini-3.1-flash-tts-preview'), A('ttsVoice', TTS_VOICE), A('maxScriptRetries', 3),
       A('renderUrl', 'http://172.18.0.1:8090/render-ad'),
@@ -3705,7 +3723,7 @@ Nothing is published to Facebook and nothing waits for a click. Another version 
 |---|---|---|
 | `sheetId` / `videosTab` | FishPin Ads Generator / `Videos` | |
 | `deliveryChannel` / `opsChannel` | `C0C1WS8PAAJ` | video and failure messages |
-| `scriptModel` / `scriptTemperature` | `gemini-2.5-flash` / `0.9` | |
+| `scriptModel` / `scriptTemperature` | `gemini-2.5-flash` / `0.7` | lowered from 0.9 after live run 2988 produced non-compliant scripts (Task 6) |
 | `imageModel` | `gemini-2.5-flash-image` | |
 | `veoModel` / `veoSeconds` / `veoResolution` / `veoMaxWaitMinutes` | `veo-3.1-lite-generate-preview` / `8` / `1080p` / `8` | |
 | `ttsModel` / `ttsVoice` | `gemini-3.1-flash-tts-preview` / owner's choice | |

@@ -179,7 +179,11 @@ section('prompt', 'Script prompts and generation requests', () => {
   const sys = V.buildScriptSystemPrompt(voice);
   check('system prompt includes the shared voice rules verbatim', sys.indexOf(voice) !== -1);
   check('system prompt states the length and scene rules',
-    /8 words/.test(sys) && /45 to 70 words/.test(sys) && /first scene/i.test(sys) && /exactly one veo/i.test(sys) && /1 or 2 screen/i.test(sys));
+    /8 words/.test(sys) && /45 to 70 words/.test(sys) && /first scene/i.test(sys) && /exactly one veo/i.test(sys) && /1 or 2 screen/i.test(sys)
+      && /count the words/i.test(sys) && /55 to 60 words/.test(sys) && /regenerated/i.test(sys)
+      && /must include a "screen" id/i.test(sys) && /must not include "prompt"/i.test(sys)
+      && /must include a "prompt"/i.test(sys) && /must not include "screen"/i.test(sys)
+      && /scene with no "screen" id is rejected/i.test(sys));
   check('system prompt names every approved screen', S.SCREEN_IDS.every((id) => sys.indexOf('"' + id + '"') !== -1));
   check('system prompt forbids drawn app screens and text in images', /never draw an app screen/i.test(sys) && /no text/i.test(sys));
   check('system prompt forbids the social proof pillar', /social proof/i.test(sys));
@@ -280,7 +284,7 @@ const glue = (label, file, ctx, assert) => defer(label, runNode(file, ctx).then(
 
 const CFG = {
   sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
-  scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
+  scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.7, imageModel: 'gemini-2.5-flash-image',
   veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 8, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
   renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',

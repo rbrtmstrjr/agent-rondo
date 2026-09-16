@@ -95,7 +95,7 @@ const nodes = [
   { parameters: { assignments: { assignments: [
       A('sheetId', '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'), A('videosTab', 'Videos'),
       A('deliveryChannel', 'C0C1WS8PAAJ'), A('opsChannel', 'C0C1WS8PAAJ'),
-      A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.9), A('imageModel', 'gemini-2.5-flash-image'),
+      A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.7), A('imageModel', 'gemini-2.5-flash-image'),
       A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 8), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
       A('ttsModel', 'gemini-3.1-flash-tts-preview'), A('ttsVoice', TTS_VOICE), A('maxScriptRetries', 3),
       A('renderUrl', 'http://172.18.0.1:8090/render-ad'),

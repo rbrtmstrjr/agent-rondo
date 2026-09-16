@@ -55,6 +55,9 @@ function buildScriptSystemPrompt(voiceRules) {
       + 'problem, never the product and never a price.',
     '- voiceover: 45 to 70 words, written to be SPOKEN aloud by a calm kuya on the pier, about 24 seconds. '
       + 'It starts with the hook idea, walks through the problem, shows how FishPin helps, and ends on relief.',
+    '- HARD LIMIT ON THE VOICEOVER: 45 to 70 words. Before you answer, count the words in your voiceover '
+      + 'sentence by sentence and aim for 55 to 60 words, the safe middle of the range. A voiceover outside '
+      + '45 to 70 words is rejected and the whole script is regenerated, so get the count right the first time.',
     '- description: the Reel caption, 20 to 60 words of prose in 1 or 2 short paragraphs. No links, no '
       + 'hashtags, no call-to-action line: those are added automatically.',
     '- hashtags: 3 to 5, mixing Tagalog and English, no spam tags.',
@@ -65,6 +68,9 @@ function buildScriptSystemPrompt(voiceRules) {
     '- The first scene is the hook: beat "hook", type "veo". Its prompt describes ONE short moment of real '
       + 'motion that shows the problem (fog rolling over the sea, night falling, a dead engine). There is '
       + 'exactly one veo scene in the whole video.',
+    '- FIELDS PER SCENE TYPE, EXACTLY: a scene with type "screen" MUST include a "screen" id from the list '
+      + 'below and must NOT include "prompt". A scene with type "image" or "veo" MUST include a "prompt" and '
+      + 'must NOT include "screen". A "screen" scene with no "screen" id is rejected.',
     '- Use 1 or 2 screen scenes (beat "demo") to show the real FishPin app. Choose only from these screens:',
     Object.keys(SCREEN_GUIDE).map((id) => '  "' + id + '": ' + SCREEN_GUIDE[id]).join('\n'),
     '- If the feature you talk about has no matching screen (SOS, the fish guide, AI fish scan, the catch '
@@ -94,6 +100,12 @@ function buildScriptUserPrompt(ctx) {
     lines.push('', 'Already made. Do not repeat any of these hooks, and take a different angle on any repeated subject:');
     prior.forEach((p) => lines.push('- ' + String(p.hook || '') + (p.topic ? ' (topic: ' + p.topic + ')' : '')));
   }
+  lines.push('', 'Before you answer, check:',
+    '- voiceover is 45 to 70 words (count them)',
+    '- every "screen" scene has an allowlisted "screen" id',
+    '- every "image" or "veo" scene has a "prompt"',
+    '- scene seconds add up to 18 to 28',
+    '- 3 to 5 hashtags');
   return lines.join('\n');
 }
 
