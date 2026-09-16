@@ -201,7 +201,9 @@ section('prompt', 'Script prompts and generation requests', () => {
   const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
   check('Veo request is 9:16, 1080p, 6 seconds, adults only',
     JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' }));
-  check('Veo request animates the still', veo.instances[0].image.inlineData.data === 'B64' && veo.instances[0].image.inlineData.mimeType === 'image/png');
+  check('Veo request animates the still',
+    veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
+      && !('inlineData' in veo.instances[0].image));
 
   const tts = V.buildTtsRequest('Gabi na sa laot.', 'Gacrux');
   check('TTS request uses the voice and returns audio',
@@ -441,7 +443,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
     const b = JSON.parse(j.veoBody);
     check('build-veo-request: animates the hook still at 9:16, 1080p, 6 seconds',
       b.parameters.durationSeconds === '6' && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
-        && b.instances[0].image.inlineData.data === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
+        && b.instances[0].image.bytesBase64Encoded === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
   });
   glue('veo started', 'check-veo-start.js', { input: J({ name: 'models/veo-3.1-lite-generate-preview/operations/abc' }) }, (o, j) => {
     check('check-veo-start: an operation name means started', j.started === true && /operations\/abc$/.test(j.name));

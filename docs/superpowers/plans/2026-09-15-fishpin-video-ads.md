@@ -111,10 +111,10 @@ const nodes = [
   code('Extract Still', "const p=($json.candidates||[])[0]?.content?.parts||[];const d=(p.find(x=>x.inlineData||x.inline_data)||{});const i=d.inlineData||d.inline_data||{};return [{json:{mime:i.mimeType||i.mime_type||'image/png',b64:i.data||'',bytes:Buffer.from(i.data||'','base64').length}}];"),
   http('Veo Start', Object.assign(cred(GEMINI), { method: 'POST', url: G + 'models/veo-3.1-lite-generate-preview:predictLongRunning',
     sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { inlineData: { mimeType: $json.mime, data: $json.b64 } } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' } }) }}" }), GEMINI),
+    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { bytesBase64Encoded: $json.b64, mimeType: $json.mime } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' } }) }}" }), GEMINI),
   { parameters: { amount: 15, unit: 'seconds' }, name: 'Wait 15s', type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: at(), webhookId: 'fishpin-video-spike-wait' },
   http('Veo Poll', Object.assign(cred(GEMINI), { method: 'GET', url: "={{ '" + G + "' + $('Veo Start').first().json.name }}" }), GEMINI),
-  code('Poll Guard', "if ($json.done === true) return [{json:{done:true, uri: $json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '', raw: $json}}];\nif ($runIndex >= 32) throw new Error('Veo did not finish in 8 minutes: ' + JSON.stringify($json).slice(0,500));\nreturn [{json:{done:false}}];"),
+  code('Poll Guard', "const start=$('Veo Start').first().json;if(!start.name) throw new Error('Veo Start failed: ' + JSON.stringify(start).slice(0,400));\nif ($json.done === true) return [{json:{done:true, uri: $json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '', raw: $json}}];\nif ($runIndex >= 32) throw new Error('Veo did not finish in 8 minutes: ' + JSON.stringify($json).slice(0,500));\nreturn [{json:{done:false}}];"),
   { parameters: { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
       conditions: [{ id: 'd', leftValue: '={{ $json.done }}', rightValue: true, operator: { type: 'boolean', operation: 'true', singleValue: true } }], combinator: 'and' }, options: {} },
     name: 'Veo Done?', type: 'n8n-nodes-base.if', typeVersion: 2, position: at() },
@@ -1132,7 +1132,9 @@ section('prompt', 'Script prompts and generation requests', () => {
   const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
   check('Veo request is 9:16, 1080p, 6 seconds, adults only',
     JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: '6', personGeneration: 'allow_adult' }));
-  check('Veo request animates the still', veo.instances[0].image.inlineData.data === 'B64' && veo.instances[0].image.inlineData.mimeType === 'image/png');
+  check('Veo request animates the still',
+    veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
+      && !('inlineData' in veo.instances[0].image));
 
   const tts = V.buildTtsRequest('Gabi na sa laot.', 'Gacrux');
   check('TTS request uses the voice and returns audio',
@@ -1272,12 +1274,14 @@ function buildStillRequest(scenePrompt, styleSuffix, negatives) {
   };
 }
 
+// image-to-video uses `bytesBase64Encoded`, not `inlineData` — verified live 2026-09-16,
+// `inlineData` returns HTTP 400 from `veo-3.1-lite-generate-preview`.
 function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
   const c = cfg || {};
   return {
     instances: [{
       prompt: String(scenePrompt || '').trim() + ' Slow, steady camera motion. No text on screen. No sudden cuts.',
-      image: { inlineData: { mimeType: stillMime || 'image/png', data: stillB64 } },
+      image: { bytesBase64Encoded: stillB64, mimeType: stillMime || 'image/png' },
     }],
     parameters: {
       aspectRatio: '9:16',

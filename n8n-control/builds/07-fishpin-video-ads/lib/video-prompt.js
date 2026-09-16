@@ -124,7 +124,7 @@ function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
   return {
     instances: [{
       prompt: String(scenePrompt || '').trim() + ' Slow, steady camera motion. No text on screen. No sudden cuts.',
-      image: { inlineData: { mimeType: stillMime || 'image/png', data: stillB64 } },
+      image: { bytesBase64Encoded: stillB64, mimeType: stillMime || 'image/png' },
     }],
     parameters: {
       aspectRatio: '9:16',
