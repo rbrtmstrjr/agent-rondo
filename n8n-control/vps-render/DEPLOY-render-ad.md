@@ -33,8 +33,9 @@ than one. For each network name printed, inspect it:
 docker network inspect <NETWORK_NAME> -f '{{range .IPAM.Config}}{{println .Subnet .Gateway}}{{end}}'
 ```
 Use the network whose gateway the render service already talks to today — normally `172.18.0.1`.
-That network's subnet/gateway pair become `<SUBNET>` and `<GATEWAY>`, used in place of the
-placeholders in Step 7 below. If `<GATEWAY>` is not `172.18.0.1`, n8n's `renderUrl` must also use the
+That network's gateway becomes `$GATEWAY`, used in place of the placeholder in Steps 5 and 7 below
+(it's also what the service will be bound to, so the service is reachable from exactly this
+network and nowhere else). If `<GATEWAY>` is not `172.18.0.1`, n8n's `renderUrl` must also use the
 discovered gateway (it is currently configured as `http://172.18.0.1:8090/render-ad`).
 
 ## 2. Lay down the new service's files under /opt/reel-render-ad
@@ -83,13 +84,19 @@ a systemd service yet at this point: no unit, no port-8090 listener, and `/opt/r
 Expected: `/health` prints `ok`, every smoke-test line is `PASS`, and `FAILS=0`. If anything fails:
 STOP, send the full output and `tail -50 /tmp/render-ad-staging.log`.
 
-## 5. Install as its own systemd service on port 8090 (only after step 4 printed FAILS=0)
+## 5. Install as its own systemd service, bound to the Docker gateway only (only after step 4 printed FAILS=0)
+Use the `<GATEWAY>` discovered in step 1 (normally `172.18.0.1`, but use the value you actually
+found there, not a hardcoded one). Binding the listen address itself — rather than opening the port
+and then firewalling it — means the process never accepts a connection from outside the Docker
+bridge in the first place:
 ```bash
 TOKEN=$(openssl rand -hex 24)
+GATEWAY=172.18.0.1   # replace with the value discovered in step 1 if different
 cat > /etc/systemd/system/reel-render-ad.service <<EOF
 [Unit]
 Description=FishPin /render-ad (separate from reel-render)
-After=network.target
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 WorkingDirectory=/opt/reel-render-ad
@@ -97,6 +104,7 @@ ExecStart=/opt/reel-render/venv/bin/python3 /opt/reel-render-ad/render.py
 Environment=RENDER_ROOT=/opt/reel-render-ad
 Environment=RENDER_AD_TOKEN=$TOKEN
 Environment=RENDER_AD_PORT=8090
+Environment=RENDER_AD_BIND=$GATEWAY
 Restart=always
 
 [Install]
@@ -106,6 +114,10 @@ chmod 600 /etc/systemd/system/reel-render-ad.service
 ```
 The token is inline in this unit file (there's no separate drop-in this time), so `chmod 600` keeps
 it from being world-readable — the heredoc alone would otherwise leave it at the default 0644.
+`After=network.target docker.service` plus `Requires=docker.service` make sure the Docker bridge
+(and therefore the gateway address the service is about to bind) already exists before this unit
+starts; `Restart=always` (already set above) covers the remaining race if the bridge is still
+coming up on first boot, since the service will simply retry.
 
 If step 1's `systemctl cat reel-render` showed a `User=` line, add the same `User=<ServiceUser>`
 line into the `[Service]` block above (matching `reel-render`'s convention) before continuing — edit
@@ -128,9 +140,16 @@ prints `8090 free`.
 systemctl daemon-reload
 systemctl enable --now reel-render-ad
 systemctl status reel-render-ad --no-pager | head -5
-curl -s http://127.0.0.1:8090/health; echo
+ss -tlnp | grep -w 8090
+docker exec <N8N_CONTAINER> wget -qO- http://$GATEWAY:8090/health; echo
 echo "$TOKEN"
 ```
+The `ss` line must show the socket bound to `$GATEWAY:8090`, **not** `0.0.0.0:8090` — if it shows
+`0.0.0.0`, `RENDER_AD_BIND` did not take effect (check the unit's `Environment=` line and
+`systemctl daemon-reload` above) and the service is reachable from more than the Docker bridge.
+`docker exec ... wget` must print `ok` — this is how n8n itself reaches the service, so it is the
+real-world check that this bind change hasn't cut n8n off.
+
 Copy the token into your local `n8n-control/.env` as `FISHPIN_RENDER_TOKEN=<token>` yourself. Do not
 paste it into chat.
 
@@ -145,96 +164,77 @@ Because this service has its own `RENDER_ROOT` (`/opt/reel-render-ad`, entirely 
 `/opt/reel-render`), the smoke script's cleanup can never touch the `reel-render` service's real
 output — there is no equivalent of the old "only run when no reel is in flight" caution here.
 
-Expected: every line `PASS` and `FAILS=0` (now hitting the live `reel-render-ad` service on 8090).
-Send the full output. If it does not print `FAILS=0`, run the Rollback section immediately.
+**Note:** `smoke_render_ad.sh` talks to `http://127.0.0.1:$PORT`, and step 5's `RENDER_AD_BIND`
+means the live service no longer listens on loopback — so once the service is bound to the gateway,
+this script will fail to connect when run against the live instance, not because anything is broken.
+Run it here *before* moving the bind to the gateway (i.e. right after step 4's style of test, or
+against a temporary staging instance with `RENDER_AD_BIND` unset) to get full `/render` and
+`/render-ad` content coverage; once the live service is gateway-bound, step 5's `docker exec ...
+wget .../health` and step 7's checks below are what confirm the live, bound instance is reachable
+and correct — they just don't re-cover every smoke-test assertion.
 
-## 7. Firewall: lock 8090 to the Docker network, and restore n8n's access to 8088
-`ufw --force enable` sets ufw's default INPUT policy to DROP, and container→gateway traffic (n8n
-calling `http://<GATEWAY>:8088/render`, the existing reel pipeline) crosses the host's INPUT chain
-just like any other inbound connection — so enabling ufw without an explicit allow for 8088 from the
-Docker network would silently cut n8n off from the reel service it already depends on today. This
-step restores exactly that Docker-network access. What happens to 8088's *public* exposure depends
-on ufw's starting state (see below) — it is not simply "unchanged" in every case.
+Expected: every line `PASS` and `FAILS=0`. If it does not print `FAILS=0`, run the Rollback section
+immediately.
+
+## 7. Confirm the bind, not a firewall, is what's protecting the port
+No firewall step is needed here — the service never listens anywhere but the Docker gateway, so
+there's nothing for a firewall to additionally block. This step just proves that's actually true.
 ```bash
-ufw status numbered
+ss -tlnp | grep -w 8090
 ```
-If any existing rule allows `8090` from `Anywhere`, delete it: `ufw delete <n>`. Rule numbers shift
-after every delete — re-run `ufw status numbered` again before deleting the next one; never delete
-by a number you read before the previous delete.
-
-**Check this listing for a `DENY` rule on port `8088`.** An earlier revision of this very runbook
-paired a Docker-subnet 8088 allow with a public `ufw deny 8088/tcp`, so a box deployed under that
-revision may already have one. ufw evaluates `ufw-user-input` first-rule-wins, and a plain appended
-allow lands *after* that existing DENY — so it would never actually match, and n8n would stay cut
-off exactly as this step exists to prevent. Two ways to fix it:
-- **Preferred:** insert the new 8088 allow at position 1 instead of appending it (the always-run
-  block below already does this — `ufw insert 1 allow from <SUBNET> to any port 8088 proto tcp` —
-  precisely for this reason), so it is evaluated before any existing rule, including a stale DENY,
-  without deleting or otherwise touching that DENY or anything else already there.
-- Delete the stale DENY instead (`ufw delete <n>`, re-running `ufw status numbered` between deletes
-  since numbers shift). This also works, but it changes 8088's public exposure — that DENY may have
-  been intentional — so only do this if you've confirmed with the owner that opening 8088 publicly
-  is fine. Insert is the safer default; prefer it unless you have a specific reason to delete.
-
-Leave every other existing `8088` rule exactly as you find it — this step's only change to 8088 is
-the one inserted Docker-network-scoped allow described above.
-
-If `ufw status` above showed **inactive**, check what else is publicly listening before enabling it,
-so this step can't accidentally cut off something the owner relies on:
+Must show only `$GATEWAY:8090` (e.g. `172.18.0.1:8090`) — **not** `0.0.0.0:8090` and not
+`127.0.0.1:8090`. If you see `0.0.0.0`, stop and recheck the unit's `Environment=RENDER_AD_BIND=`
+line and re-run `systemctl daemon-reload && systemctl restart reel-render-ad`.
 ```bash
-ss -tlnp
+docker exec <N8N_CONTAINER> wget -qO- http://$GATEWAY:8090/health; echo
 ```
-For every host port listed besides `22` (SSH), `8088` and `8090` (both handled explicitly below,
-not as generic public allows), add an explicit allow — e.g.:
+Must print `ok` — this is n8n's own path to the service (`renderUrl` in the workflow config points
+at `http://$GATEWAY:8090/render-ad`), so this is the real dependency check, not just a syntactic one.
+
+From **outside the box** (not a command run on the VPS itself — a curl run on the box would go over
+loopback/the bridge and prove nothing about external reachability; the controller runs this check):
 ```bash
-ufw allow 80/tcp
-ufw allow 443/tcp
-# ... and any other service the owner relies on
+curl -m 5 http://<PUBLIC_IP>:8090/health
 ```
-Docker-published ports do not need a rule here — Docker manages its own iptables rules independently
-of ufw.
+Must fail or time out within the 5s limit. If it succeeds, the service is reachable from the public
+internet and this step has failed — stop and re-check the bind address before doing anything else.
 
-Before enabling, get a baseline for the 8088 health check so a pre-existing problem is never
-mistaken for one this step caused:
+**If you prefer a firewall instead** (e.g. because a future change needs the service to listen on
+more than the Docker bridge): the equivalent `ufw` rules would be `ufw allow from <SUBNET> to any
+port 8090 proto tcp` plus `ufw deny 8090/tcp` (the Docker-subnet allow evaluated before the deny),
+alongside the pre-existing `8088` rules for the `reel-render` service — see this runbook's git
+history for the full worked example. That is not the documented default here: binding the listen
+address is simpler, needs no `ufw --force enable` on a box that has never run a firewall before, and
+can't be silently defeated by a later `ufw disable` or a misordered rule.
+
+## 8. Rotate the token
+The token used while setting this service up was visible on-screen during the deploy session, so
+treat it as burned and replace it before relying on this service for real traffic.
 ```bash
-docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
+NEWTOKEN=$(openssl rand -hex 24)
+sed -i "s/^Environment=RENDER_AD_TOKEN=.*/Environment=RENDER_AD_TOKEN=$NEWTOKEN/" /etc/systemd/system/reel-render-ad.service
+chmod 600 /etc/systemd/system/reel-render-ad.service
+systemctl daemon-reload
+systemctl restart reel-render-ad
+systemctl status reel-render-ad --no-pager | head -5
+echo "$NEWTOKEN"
 ```
-Note whether this prints `ok`. If it does **not**, that is a pre-existing condition unrelated to
-this firewall change — record it now, and do not treat the same check failing again after `ufw
---force enable` below as a firewall regression; it was already broken before ufw was touched.
-
-Then, always:
+Copy `$NEWTOKEN` into your local `n8n-control/.env` as `FISHPIN_RENDER_TOKEN=<newtoken>` yourself —
+do not paste it into chat — then redeploy the workflow so n8n actually sends the new token:
+```powershell
+$cfg = @{}; foreach ($l in Get-Content .env) { if ($l -match '^\s*([^=#]+?)\s*=\s*(.*)$') { $cfg[$matches[1]] = $matches[2].Trim() } }
+$env:FISHPIN_VIDEO_TRIGGER_SECRET = $cfg["FISHPIN_VIDEO_TRIGGER_SECRET"]; $env:FISHPIN_RENDER_TOKEN = $cfg["FISHPIN_RENDER_TOKEN"]
+node builds\07-fishpin-video-ads\build.js
+$env:FISHPIN_VIDEO_TRIGGER_SECRET = $null; $env:FISHPIN_RENDER_TOKEN = $null
+.\n8n.ps1 update <workflow id> builds\07-fishpin-video-ads\fishpin-video-ads.workflow.json
+node builds\07-fishpin-video-ads\build.js   # back to placeholders before any commit
+```
+Confirm the old token no longer works and the new one does:
 ```bash
-ufw allow OpenSSH
-ufw allow from <SUBNET> to any port 8090 proto tcp
-ufw deny 8090/tcp
-ufw insert 1 allow from <SUBNET> to any port 8088 proto tcp
-ufw --force enable
-ufw status numbered
-docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8090/health; echo
-docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
-curl -sI https://n8n.srv1193790.hstgr.cloud | head -1
+docker exec <N8N_CONTAINER> wget -qO- --header="X-Render-Token: <old token>" --post-data='{}' http://$GATEWAY:8090/render-ad; echo
 ```
-`<SUBNET>` and `<GATEWAY>` are the values discovered in step 1 — do not assume `172.18.0.0/16` /
-`172.18.0.1` without checking step 1's output. The inserted 8088 rule only restores the
-Docker-network access the reel service already had — it is not `ufw allow 8088/tcp` (which would
-open it to Anywhere).
-
-**On 8088's public exposure specifically:** if ufw was already active before this step, its existing
-8088 rules (checked above) are left exactly as found. If ufw was **inactive**, enabling it now closes
-8088 to the public internet, the same as every other port not explicitly allowed — this is
-deliberate (the `ss -tlnp` sweep above intentionally excludes 8088 from the generic public-allow
-list), not an oversight. Either way, only the Docker network keeps access to 8088 through the
-inserted rule.
-
-Expected: the pre-enable 8088 baseline above matched what you expected (or its failure was already
-noted as pre-existing), and now **both** `docker exec` checks print `ok` (8090 confirms the new
-service; 8088 confirms n8n's access to the existing reel service survived enabling ufw) and the
-`curl` prints an HTTP status line (n8n is still publicly reachable). **If either post-enable
-`docker exec` check newly fails (i.e. the 8088 one printed `ok` in the baseline but not now), or the
-`curl` fails, run `ufw disable` immediately and send the output** — do not leave the firewall in a
-broken state. Once everything checks out, the controller separately confirms the public probe of
-`:8090/health` no longer answers.
+Expect a `401`-style JSON error body for the old token. A real render triggered from `trigger.html`
+against the redeployed workflow is the actual proof the new token round-trips end to end.
 
 ## Rollback
 ```bash
@@ -243,6 +243,5 @@ systemctl disable --now reel-render-ad
 # rm -rf /opt/reel-render-ad
 ```
 The `reel-render` service itself (its `render.py`, its systemd unit) was never touched by this
-deploy, so there is nothing to restore there. Step 7's inserted `ufw ... allow from <SUBNET> to any
-port 8088` rule is purely additive (it only restores Docker-network access that existed before ufw
-was enabled) and safe to leave in place even after this rollback.
+deploy, so there is nothing to restore there. No firewall rules were added by this runbook (the
+service is protected by its bind address, not `ufw`), so there is nothing else to undo.

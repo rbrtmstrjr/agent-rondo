@@ -732,5 +732,11 @@ def ad_port():
     # 8088 so the original reel-render deployment is unaffected.
     return int(os.environ.get("RENDER_AD_PORT", "8088"))
 
+def ad_bind():
+    # lets the service bind only the Docker gateway address (e.g. 172.18.0.1) so it is
+    # reachable from containers on that bridge and from nowhere else, without a
+    # server-wide firewall -- defaults to 0.0.0.0 so nothing else changes.
+    return os.environ.get("RENDER_AD_BIND", "0.0.0.0")
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", ad_port()), Handler).serve_forever()
+    ThreadingHTTPServer((ad_bind(), ad_port()), Handler).serve_forever()

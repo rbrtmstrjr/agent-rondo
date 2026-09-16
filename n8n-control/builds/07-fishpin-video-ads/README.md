@@ -68,7 +68,7 @@ Veo 3.1 Lite only offers 1080p at an 8-second clip length, so every clip is 8s @
 ## Setup
 
 1. **Sheet**: a `Videos` tab in "FishPin Ads Generator" with this header row: `id, created_at, topic_input, pillar, topic, hook, voiceover, status, video_url, est_cost_usd`.
-2. **Render service**: follow `n8n-control/vps-render/DEPLOY-render-ad.md`. `/render-ad` runs as its own systemd service, `reel-render-ad`, on port 8090 from its own `/opt/reel-render-ad` — a completely separate deploy from the owner's existing `reel-render` service on port 8088 (an older code variant), which the runbook never touches. It ends with `FISHPIN_RENDER_TOKEN` in `n8n-control/.env` and port 8090 locked to the Docker network only, never exposed to the public internet.
+2. **Render service**: follow `n8n-control/vps-render/DEPLOY-render-ad.md`. `/render-ad` runs as its own systemd service, `reel-render-ad`, on port 8090 from its own `/opt/reel-render-ad` — a completely separate deploy from the owner's existing `reel-render` service on port 8088 (an older code variant), which the runbook never touches. It ends with `FISHPIN_RENDER_TOKEN` in `n8n-control/.env` and the service bound only to the Docker gateway address (`RENDER_AD_BIND`, e.g. `172.18.0.1`) — reachable from the n8n container and nowhere else, with no firewall rule involved.
 3. **Secrets**: `FISHPIN_VIDEO_TRIGGER_SECRET` and `FISHPIN_RENDER_TOKEN` live only in `n8n-control/.env` (git-ignored). The committed JSON carries `FILL_IN_*` placeholders, which the workflow refuses to run with.
 4. **Deploy or update** (PowerShell, from `n8n-control`):
    ```powershell

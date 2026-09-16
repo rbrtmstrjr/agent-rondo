@@ -172,5 +172,14 @@ class RenderAdHelpers(unittest.TestCase):
         with mock.patch.dict(os.environ, {"RENDER_AD_PORT": "8090"}):
             self.assertEqual(render.ad_port(), 8090)
 
+    def test_ad_bind_defaults_to_all_interfaces(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("RENDER_AD_BIND", None)
+            self.assertEqual(render.ad_bind(), "0.0.0.0")
+
+    def test_ad_bind_honours_override(self):
+        with mock.patch.dict(os.environ, {"RENDER_AD_BIND": "172.18.0.1"}):
+            self.assertEqual(render.ad_bind(), "172.18.0.1")
+
 if __name__ == "__main__":
     unittest.main()
