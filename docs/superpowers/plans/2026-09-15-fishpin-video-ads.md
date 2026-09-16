@@ -173,7 +173,7 @@ cd ..\..
 .\n8n.ps1 create builds\07-fishpin-video-ads\spike\spike.workflow.json
 ```
 
-Expected: `wrote spike.workflow.json (18 nodes)` then `Created workflow  id=<SPIKE_ID>  name=SPIKE FishPin video (delete after)`. Activate it and fire it:
+Expected: `wrote spike.workflow.json (19 nodes)` then `Created workflow  id=<SPIKE_ID>  name=SPIKE FishPin video (delete after)`. Activate it and fire it:
 
 ```powershell
 $root = "C:\Users\rober\OneDrive\Documents\automation\n8n-control"
@@ -1844,6 +1844,8 @@ git commit -m "feat(render): pure /render-ad helpers with unit tests; paths from
 
 ### Task 9: Render service — `render_ad`, the `/render-ad` route, VPS smoke test and deploy
 
+**Owner amendment (2026-09-16, separate service):** the live `/opt/reel-render/render.py` is a different, older variant (md5 `70f5623a…`, 284 lines) than the repo's v4 base, so it is NOT replaced. `/render-ad` runs as its own `reel-render-ad` service from `/opt/reel-render-ad/` on port 8090 (`RENDER_AD_PORT`), with its own `RENDER_ROOT`; the reel service on 8088 is never touched. Config `renderUrl` is `http://172.18.0.1:8090/render-ad`. The implemented `DEPLOY-render-ad.md` is authoritative over the Step 5–8 text below.
+
 **Owner amendment (2026-09-15, "test it first"):** the smoke script takes `PORT` and also proves the existing `/render` still renders; the runbook tests the new `render.py` as a staging copy on `127.0.0.1:8089` (own `RENDER_ROOT`, throwaway token) and only replaces the live file after that smoke test prints `FAILS=0`, then smoke-tests the live service again before the firewall step. The Step 5, 6 and 8 text below predates this amendment; the implemented runbook is authoritative.
 
 Builds the video in three ffmpeg passes that are each simple to debug: one segment per scene plus the end card, a stream-copy concat, then a final pass that burns captions, overlays the logo lockup and mixes audio to Facebook's spec. Verified on the VPS by a smoke script, because ffmpeg is not installed locally.
@@ -2355,7 +2357,7 @@ const CFG = {
   scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
   veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 6, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
-  renderUrl: 'http://172.18.0.1:8088/render-ad', websiteUrl: 'www.fishpin.app',
+  renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
   playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
   endCardCta: 'I-download sa Play Store', endCardSeconds: 3.5, postCta: 'I-download ang FishPin sa Play Store.',
   triggerSecret: 'test-trigger-secret', renderToken: 'test-render-token',
@@ -3169,7 +3171,7 @@ section('wf', 'Assembled workflow structure', () => {
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
     && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 6 && cfgVals.veoMaxWaitMinutes === 8
     && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
-    && cfgVals.renderUrl === 'http://172.18.0.1:8088/render-ad'
+    && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
     && cfgVals.postCta === 'I-download ang FishPin sa Play Store.');
   check('workflow: the committed build carries placeholders, never the secrets',
@@ -3320,7 +3322,7 @@ const nodes = [
       A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.9), A('imageModel', 'gemini-2.5-flash-image'),
       A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 6), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
       A('ttsModel', 'gemini-3.1-flash-tts-preview'), A('ttsVoice', TTS_VOICE), A('maxScriptRetries', 3),
-      A('renderUrl', 'http://172.18.0.1:8088/render-ad'),
+      A('renderUrl', 'http://172.18.0.1:8090/render-ad'),
       A('websiteUrl', 'www.fishpin.app'), A('playStoreUrl', 'https://play.google.com/store/apps/details?id=com.fishpin.app'),
       A('endCardCta', 'I-download sa Play Store'), A('endCardSeconds', 3.5), A('postCta', 'I-download ang FishPin sa Play Store.'),
       A('triggerSecret', TRIGGER_SECRET), A('renderToken', RENDER_TOKEN),
@@ -3674,7 +3676,7 @@ Nothing is published to Facebook and nothing waits for a click. Another version 
 | `veoModel` / `veoSeconds` / `veoResolution` / `veoMaxWaitMinutes` | `veo-3.1-lite-generate-preview` / `6` / `1080p` / `8` | |
 | `ttsModel` / `ttsVoice` | `gemini-3.1-flash-tts-preview` / owner's choice | |
 | `maxScriptRetries` | `3` | script validation tries |
-| `renderUrl` | `http://172.18.0.1:8088/render-ad` | Docker host address |
+| `renderUrl` | `http://172.18.0.1:8090/render-ad` | Docker host address |
 | `websiteUrl` / `playStoreUrl` | `www.fishpin.app` / `…?id=com.fishpin.app` | |
 | `endCardCta` / `endCardSeconds` / `postCta` | `I-download sa Play Store` / `3.5` / `I-download ang FishPin sa Play Store.` | |
 | `triggerSecret` / `renderToken` | from `.env` at deploy | never committed |

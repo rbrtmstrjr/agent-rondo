@@ -139,7 +139,7 @@ Manual Trigger (n8n)                                                ┴─► Co
                     → poll every 15s, max 8 min → download (googlePalmApi credential)
                     → on failure/timeout: hook falls back to the still
        Screens    : allowlist URLs only
-  → Render (POST http://172.18.0.1:8088/render-ad, header X-Render-Token) → MP4
+  → Render (POST http://172.18.0.1:8090/render-ad, header X-Render-Token) → MP4
   → Slack delivery in C0C1WS8PAAJ (external upload pattern): the MP4 + hook, topic, voiceover,
     scene list, ready-to-paste caption and hashtags, estimated cost
   → Sheet row delivered (script fields, Slack file link, cost)
@@ -170,7 +170,7 @@ Manual Trigger (n8n)                                                ┴─► Co
 `veoModel` `veo-3.1-lite-generate-preview` · `veoSeconds` `6` · `veoResolution` `1080p` ·
 `veoMaxWaitMinutes` `8` · `ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Gacrux`
 (proven in this repo; §9 auditions `Algenib` and `Achird` against it) · `maxScriptRetries` `3` ·
-`renderUrl` `http://172.18.0.1:8088/render-ad` · `websiteUrl` `www.fishpin.app` ·
+`renderUrl` `http://172.18.0.1:8090/render-ad` · `websiteUrl` `www.fishpin.app` ·
 `playStoreUrl` `https://play.google.com/store/apps/details?id=com.fishpin.app` ·
 `endCardCta` `I-download sa Play Store` · `endCardSeconds` `3.5` ·
 `postCta` `I-download ang FishPin sa Play Store.` ·
@@ -243,23 +243,33 @@ bytes; errors as JSON `{error}` with status 4xx/5xx.
 ### 5.3 Security
 
 - `X-Render-Token` on `/render-ad` (above).
-- Firewall: allow TCP 8088 from Docker network `172.18.0.0/16`, deny from everywhere else. n8n
-  reaches the service at `172.18.0.1`, so existing reels keep working, and the currently-public
-  `/render` and `/videos` stop being exposed.
+- Firewall: allow TCP 8090 from the Docker network only, deny it publicly. n8n reaches the new
+  service at the Docker gateway (normally `172.18.0.1:8090`). The existing reel service on 8088 is
+  left exactly as it is — its exposure is a separate decision, out of scope for this build.
 
 ### 5.4 Deployment (owner runs; Claude has no SSH access)
 
-Via the Hostinger browser terminal, with exact commands supplied at implementation time:
+**Separate service (owner decision, 2026-09-16).** The live `/opt/reel-render/render.py` turned
+out to be a different, older variant (md5 `70f5623a…`, 284 lines: film-grain vintage, scanlines,
+DejaVu-Sans phrase captions) from the repo's v4 base the new file was built on. Rather than merge
+or overwrite the code the owner's reels depend on, `/render-ad` ships as its own service:
 
-1. Record `md5sum /opt/reel-render/render.py` and back it up. The repo copy is md5
-   `08e7ebce6dcb2268e1ae5b09ef1e2a85`; memory records a later deploy
-   `70f5623a628477f3cd361ab706ddd0e4`. The new file must
-   be built on whichever version is live, so this step comes first.
-2. Download the new `render.py`, verify its md5.
-3. Pre-download faster-whisper `small` into the venv cache.
-4. Add `Environment=RENDER_AD_TOKEN=…` to the systemd unit, `daemon-reload`, restart
-   `reel-render`, check `/health`.
-5. Apply the firewall rule; confirm n8n can still reach `/health` and the public probe fails.
+1. Prerequisites only (no change to the reel service): ffmpeg has `drawtext`, `ass`, `zoompan`,
+   `amix`; note `reel-render`'s `User=` and venv; discover the n8n container, subnet and gateway.
+2. Install the new `render.py` and `smoke_render_ad.sh` under `/opt/reel-render-ad/` (own
+   `output/`, `music/`, `assets/`; music copied from the reel service), verify both md5s,
+   `py_compile` with the existing venv.
+3. Pre-download faster-whisper `small` as the service user.
+4. Stage-test on `127.0.0.1:8089` with `RENDER_ROOT=/opt/reel-render-ad` and a throwaway token;
+   STOP on any failure — nothing has been installed as a service yet.
+5. Create the `reel-render-ad` systemd unit (port from `RENDER_AD_PORT=8090`, own `RENDER_ROOT`,
+   `Environment=RENDER_AD_TOKEN=…`), enable it, check `/health`.
+6. Smoke-test the live service on 8090; its own `RENDER_ROOT` means the cleanup can never touch
+   the reel service's output.
+7. Firewall: allow 8090 from the Docker subnet, deny it publicly; leave the 8088 rules untouched;
+   confirm n8n reaches `/health` and that n8n itself is still reachable.
+
+Rollback is `systemctl disable --now reel-render-ad`: the reel service was never modified.
 
 ---
 
