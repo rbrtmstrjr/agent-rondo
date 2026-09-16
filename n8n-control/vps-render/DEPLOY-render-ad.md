@@ -1,9 +1,10 @@
 # Deploy /render-ad to the VPS as its own service
 
-The live `/opt/reel-render/render.py` (unit `reel-render`, port 8088) is a different, older
-variant than the repo's base — it has 97 lines of its own (film-grain vintage, a scanline overlay,
-DejaVu-Sans phrase captions, a different zoompan curve) that don't exist upstream. The owner decided
-**not** to merge or replace it: `/render-ad` runs as a brand-new, separate service instead.
+This repo's `render.py` is the video-ad service's file. The live `/opt/reel-render/render.py`
+(unit `reel-render`, port 8088) is a different, older variant that has diverged from it — it has
+97 lines of its own (film-grain vintage, a scanline overlay, DejaVu-Sans phrase captions, a
+different zoompan curve) that don't exist in this repo, and it is not tracked in git. The owner
+decided **not** to merge or replace it: `/render-ad` runs as a brand-new, separate service instead.
 
 **This deploy never copies over, restarts, or backs up `/opt/reel-render/render.py` or the
 `reel-render` unit. They are completely out of scope — every step below only ever touches

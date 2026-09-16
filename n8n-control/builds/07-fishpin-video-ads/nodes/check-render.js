@@ -17,7 +17,10 @@ if (buf.length < 50000 || buf.slice(4, 8).toString('latin1') !== 'ftyp') {
   return fail('Render service error: ' + buf.toString('utf8', 0, Math.min(buf.length, 400)));
 }
 
-const veoUsed = $('Check Veo Poll').isExecuted && $('Check Veo Poll').first().json.state === 'done';
+// Google bills Veo once generation starts, not once the clip lands: a timed-out
+// poll or a corrupt download still cost $0.64, so cost is derived from Check
+// Veo Start (started), never from whether the clip made it all the way through.
+const veoUsed = $('Check Veo Start').isExecuted && $('Check Veo Start').first().json.started === true;
 const cost = estCost({ veoUsed, veoSeconds: Number(cfg.veoSeconds), images: pics.image_count });
 const postMessage = buildPostMessage(
   { caption: script.description, cta: cfg.postCta, hashtags: script.hashtags },

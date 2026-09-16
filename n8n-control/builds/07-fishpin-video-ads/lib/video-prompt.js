@@ -51,7 +51,7 @@ function buildScriptSystemPrompt(voiceRules) {
     'VIDEO AD RULES.',
     '- The video is 22 to 25 seconds: hook, stakes, a real app demo, relief. A branded end card with the '
       + 'call to action is added automatically after your scenes; do not write it as a scene.',
-    '- hook: at most 8 words. It is spoken first and shown on screen in the first 3 seconds. It names the '
+    '- hook: at most 8 words. It is spoken first, in the first 3 seconds. It names the '
       + 'problem, never the product and never a price.',
     '- voiceover: 45 to 70 words, written to be SPOKEN aloud by a calm kuya on the pier, about 24 seconds. '
       + 'It starts with the hook idea, walks through the problem, shows how FishPin helps, and ends on relief.',
@@ -129,7 +129,7 @@ function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
     parameters: {
       aspectRatio: '9:16',
       resolution: c.veoResolution || '1080p',
-      durationSeconds: Number(c.veoSeconds) || 6,
+      durationSeconds: Number(c.veoSeconds) || 8,
       personGeneration: 'allow_adult',
     },
   };

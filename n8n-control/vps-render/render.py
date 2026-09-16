@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+# ============================================================================
+# This is the file the VIDEO-AD service runs: unit `reel-render-ad`, port 8090,
+# `/opt/reel-render-ad` (see DEPLOY-render-ad.md). Its `/render` half is the
+# owner's v4 reel renderer (xfade transitions, music bed, karaoke captions,
+# `motion(i)`) and has NEVER been deployed to the live reel service.
+#
+# The live reel service (`reel-render`, port 8088, `/opt/reel-render/render.py`)
+# runs a DIFFERENT, OLDER variant that is not tracked in this repo (film grain,
+# a scanline overlay, DejaVu-Sans phrase captions, a different zoompan curve).
+#
+# Do NOT copy this file over /opt/reel-render/render.py without a separate,
+# tested deploy: doing so would change how every existing reel looks
+# (transitions, a music bed and karaoke captions would appear; film grain and
+# the scanline overlay would go).
+# ============================================================================
 # Reel render service v4 (unskippable): images + Gemini voiceover + Whisper word-pop captions
 # + motion variety + fast transitions + optional music bed -> MP4 (vertical 9:16). Pure stdlib + ffmpeg.
 import json, base64, os, re, subprocess, tempfile, shutil, urllib.request, datetime, hmac, difflib, threading, binascii

@@ -825,6 +825,7 @@ Insert before the `// ----------------------------------------------------------
 // ---------------------------------------------------------------- plan
 section('plan', 'Scene plan to render payload', () => {
   const P = L('scene-plan.js');
+  const S = L('script-rules.js');
   const script = {
     voiceover: 'Gabi na, nawala ang signal.',
     scenes: [
@@ -843,6 +844,8 @@ section('plan', 'Scene plan to render payload', () => {
   check('navigate is onboarding4', P.SCREEN_URLS.navigate === 'https://www.fishpin.app/images/onboarding/onboarding4.png');
   check('dashboard is features1', P.SCREEN_URLS.dashboard === 'https://www.fishpin.app/images/features/features1.jpg');
   check('no url points at onboarding6', !JSON.stringify(P.SCREEN_URLS).includes('onboarding6'));
+  check('screen ids in scene-plan.SCREEN_URLS stay in sync with script-rules.SCREEN_IDS',
+    JSON.stringify(Object.keys(P.SCREEN_URLS).slice().sort()) === JSON.stringify(S.SCREEN_IDS.slice().sort()));
   check('counts image scenes', P.imageSceneCount(script) === 3);
 
   const r = P.buildRenderPayload(script, assets, cfg);
@@ -1206,7 +1209,7 @@ function buildScriptSystemPrompt(voiceRules) {
     'VIDEO AD RULES.',
     '- The video is 22 to 25 seconds: hook, stakes, a real app demo, relief. A branded end card with the '
       + 'call to action is added automatically after your scenes; do not write it as a scene.',
-    '- hook: at most 8 words. It is spoken first and shown on screen in the first 3 seconds. It names the '
+    '- hook: at most 8 words. It is spoken first, in the first 3 seconds. It names the '
       + 'problem, never the product and never a price.',
     '- voiceover: 45 to 70 words, written to be SPOKEN aloud by a calm kuya on the pier, about 24 seconds. '
       + 'It starts with the hook idea, walks through the problem, shows how FishPin helps, and ends on relief.',
@@ -1286,7 +1289,7 @@ function buildVeoRequest(stillB64, stillMime, scenePrompt, cfg) {
     parameters: {
       aspectRatio: '9:16',
       resolution: c.veoResolution || '1080p',
-      durationSeconds: Number(c.veoSeconds) || 6,
+      durationSeconds: Number(c.veoSeconds) || 8,
       personGeneration: 'allow_adult',
     },
   };
@@ -2493,6 +2496,9 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('voice short', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(3), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
     check('voice-wav: audio under 10 seconds is refused', j.ok === false && /too short/.test(j.message));
   });
+  glue('voice long', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(36), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
+    check('voice-wav: audio over 34 seconds is refused', j.ok === false && /too long/.test(j.message));
+  });
 
   // images
   glue('image requests', 'build-image-requests.js', { nodes: { 'Validate Script': VS } }, (o) => {
@@ -2539,6 +2545,9 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('veo pending', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }) }, (o, j) => {
     check('check-veo-poll: an unfinished operation keeps polling', j.state === 'pending');
   });
+  glue('veo poll transport error', 'check-veo-poll.js', { nodes: pollNodes, input: J({ error: { message: 'ETIMEDOUT' } }) }, (o, j) => {
+    check('check-veo-poll: a not-done transport error keeps polling instead of discarding the paid clip', j.state === 'pending');
+  });
   glue('veo timeout', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }), runIndex: 31 }, (o, j) => {
     check('check-veo-poll: gives up after 8 minutes of polls', j.state === 'failed' && /8 minutes/.test(j.reason));
   });
@@ -2582,6 +2591,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
     'Collect Images': J({ ok: true, image_count: 4 }),
     'Build Render Payload': J({ ok: true, hook_fallback: false, veo_note: '' }),
     'Check Veo Poll': J({ state: 'done' }),
+    'Check Veo Start': J({ started: true, name: 'op', reason: '' }),
   }, over || {});
   const mp4Item = { json: {}, binary: { data: binOf(MP4, 'video/mp4') } };
   glue('render ok', 'check-render.js', { nodes: crNodes(), input: [mp4Item] }, (o, j) => {
@@ -2603,6 +2613,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
   });
   glue('render fallback cost', 'check-render.js', { nodes: crNodes({
     'Check Veo Poll': J({ state: 'failed' }),
+    'Check Veo Start': J({ started: false, name: '', reason: 'Veo did not start: quota' }),
     'Build Render Payload': J({ ok: true, hook_fallback: true, veo_note: 'Veo did not start: quota' }),
   }), input: [mp4Item] }, (o, j) => {
     check('check-render: a Veo fallback costs less and is noted in the message',
@@ -2615,7 +2626,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
 - [ ] **Step 3: Run to verify it fails**
 
 Run: `node test.js --only=gen`
-Expected: `RESULTS: 0 passed, 40 failed`, each failure reading `<label> threw: ENOENT: no such file or directory, open '…/nodes/<file>.js'` (one per `glue` call; checks inside a throwing call never run).
+Expected: `RESULTS: 0 passed, 42 failed`, each failure reading `<label> threw: ENOENT: no such file or directory, open '…/nodes/<file>.js'` (one per `glue` call; checks inside a throwing call never run).
 
 - [ ] **Step 4: Create the generation glue files**
 
@@ -2757,6 +2768,7 @@ const rate = Number(((d.mimeType || d.mime_type || '').match(/rate=(\d+)/) || []
 const pcm = Buffer.from(d.data || '', 'base64');
 const seconds = pcm.length / (rate * 2);
 if (seconds < 10) return fail('The audio is only ' + seconds.toFixed(1) + ' seconds, too short for a 45 to 70 word voiceover.');
+if (seconds > 34) return fail('The audio is ' + seconds.toFixed(1) + ' seconds, too long to fit a 30-second Reel. The voiceover ran long; shorten it.');
 const h = Buffer.alloc(44);
 h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12);
 h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24);
@@ -2845,7 +2857,16 @@ if (r.done === true) {
   return [{ json: { state: 'failed', uri: '', polls,
     reason: 'Veo finished without a clip: ' + (filtered || JSON.stringify(r.error || resp).slice(0, 300)) } }];
 }
-if (r.error) return [{ json: { state: 'failed', uri: '', polls, reason: 'Veo polling failed: ' + JSON.stringify(r.error).slice(0, 300) } }];
+// A not-done response carrying {error} is a transient transport blip (retries,
+// timeouts), not Veo saying the job failed: an already-paid $0.64 clip is
+// still generating. Keep polling instead of discarding it; only the poll cap
+// below gives up, and it surfaces the last transport error when it does.
+if (r.error) {
+  const errText = 'Veo poll error: ' + JSON.stringify(r.error).slice(0, 300);
+  if (polls >= maxPolls) return [{ json: { state: 'failed', uri: '', polls,
+    reason: 'Veo did not finish within ' + (maxPolls / 4) + ' minutes. ' + errText } }];
+  return [{ json: { state: 'pending', uri: '', reason: errText, polls } }];
+}
 if (polls >= maxPolls) return [{ json: { state: 'failed', uri: '', polls, reason: 'Veo did not finish within ' + (maxPolls / 4) + ' minutes.' } }];
 return [{ json: { state: 'pending', uri: '', reason: '', polls } }];
 ```
@@ -2915,7 +2936,10 @@ if (buf.length < 50000 || buf.slice(4, 8).toString('latin1') !== 'ftyp') {
   return fail('Render service error: ' + buf.toString('utf8', 0, Math.min(buf.length, 400)));
 }
 
-const veoUsed = $('Check Veo Poll').isExecuted && $('Check Veo Poll').first().json.state === 'done';
+// Google bills Veo once generation starts, not once the clip lands: a timed-out
+// poll or a corrupt download still cost $0.64, so cost is derived from Check
+// Veo Start (started), never from whether the clip made it all the way through.
+const veoUsed = $('Check Veo Start').isExecuted && $('Check Veo Start').first().json.started === true;
 const cost = estCost({ veoUsed, veoSeconds: Number(cfg.veoSeconds), images: pics.image_count });
 const postMessage = buildPostMessage(
   { caption: script.description, cta: cfg.postCta, hashtags: script.hashtags },
@@ -3174,7 +3198,7 @@ section('wf', 'Assembled workflow structure', () => {
   check('workflow: Config holds the approved values', cfgVals.sheetId === '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
     && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 8 && cfgVals.veoMaxWaitMinutes === 8
-    && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
+    && cfgVals.ttsVoice === 'Algenib' && cfgVals.maxScriptRetries === 3
     && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
     && cfgVals.postCta === 'I-download ang FishPin sa Play Store.');
@@ -3193,8 +3217,8 @@ section('wf', 'Assembled workflow structure', () => {
 
   check('workflow: every HTTP node declares its error behaviour',
     httpNodes.every((n) => ['continueRegularOutput', 'stopWorkflow'].indexOf(n.onError) !== -1));
-  check('workflow: paid, row-creating and posting calls are never retried',
-    ['Veo Start', 'Render', 'Append Row', 'Post Video'].every((nm) => byName[nm].retryOnFail !== true));
+  check('workflow: no HTTP node carries retryOnFail (onError:continueRegularOutput makes it inert)',
+    httpNodes.every((n) => n.retryOnFail !== true));
   const R = byName.Render.parameters;
   check('workflow: Render sends the token header and the JSON binary, with a 10-minute timeout',
     R.headerParameters.parameters.some((h) => h.name === 'X-Render-Token' && /renderToken/.test(h.value))
@@ -3272,16 +3296,21 @@ const AUTH = {
   none: { params: { authentication: 'none' }, cred: null },
 };
 
-// tries: 1 for anything that costs money, creates a row, or posts: a retry
-// after a dropped connection could do it twice.
+// n8n's retryOnFail only fires when a node throws. Every HTTP node here is
+// onError:'continueRegularOutput', so a failure always arrives as a regular
+// {error} item instead of a throw — retryOnFail would never engage, so it is
+// never set. This is deliberate, not a gap: the glue reads {error} and every
+// failure path reaches Stop, which records the row status and reports it to
+// Slack. A silent double-send from an automatic retry (a paid Veo clip, a
+// duplicate sheet row, a duplicate Slack post) would be worse than one
+// honestly-reported failure.
 const http = (name, auth, params, xy, opts) => {
-  const o = Object.assign({ tries: 3, onError: 'continueRegularOutput' }, opts || {});
+  const o = Object.assign({ onError: 'continueRegularOutput' }, opts || {});
   const a = AUTH[auth];
   const node = {
     parameters: Object.assign({}, a.params, params),
     id: idOf(name), name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: xy, onError: o.onError,
   };
-  if (o.tries > 1) Object.assign(node, { retryOnFail: true, maxTries: o.tries, waitBetweenTries: 2000 });
   if (a.cred) node.credentials = a.cred;
   return node;
 };
@@ -3342,7 +3371,7 @@ const nodes = [
     method: 'POST', url: sheetUrl("/values/' + " + cfg('videosTab') + " + '!A:J:append"),
     sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }, { name: 'insertDataOption', value: 'INSERT_ROWS' }] },
     sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify({ values: [ $json.new_row ] }) }}', options: {},
-  }, at(1100, 300), { tries: 1 }),
+  }, at(1100, 300)),
   codeNode('Set Row', 'set-row.js', at(1320, 300)),
   ifNode('Row OK?', '={{ $json.ok }}', at(1540, 300)),
 
@@ -3360,11 +3389,11 @@ const nodes = [
   ifNode('Voice OK?', '={{ $json.ok }}', at(3300, 300)),
   // FAN-OUT: one item per picture. Never read Generate Image with .first().
   codeNode('Build Image Requests', 'build-image-requests.js', at(3520, 300)),
-  gemini('Generate Image', 'imageModel', 'generateContent', '={{ $json.geminiBody }}', at(3740, 300), { tries: 2 }),
+  gemini('Generate Image', 'imageModel', 'generateContent', '={{ $json.geminiBody }}', at(3740, 300)),
   codeNode('Collect Images', 'collect-images.js', at(3960, 300)),
   ifNode('Images OK?', '={{ $json.ok }}', at(4180, 300)),
   codeNode('Build Veo Request', 'build-veo-request.js', at(4400, 300)),
-  gemini('Veo Start', 'veoModel', 'predictLongRunning', '={{ $json.veoBody }}', at(4620, 300), { tries: 1 }),
+  gemini('Veo Start', 'veoModel', 'predictLongRunning', '={{ $json.veoBody }}', at(4620, 300)),
   codeNode('Check Veo Start', 'check-veo-start.js', at(4840, 300)),
   ifNode('Veo Started?', '={{ $json.started }}', at(5060, 300)),
   waitNode('Wait Veo', 15, at(5280, 140)),
@@ -3386,7 +3415,7 @@ const nodes = [
     ] },
     sendBody: true, contentType: 'binaryData', inputDataFieldName: 'payload',
     options: { timeout: 600000, response: { response: { responseFormat: 'file', outputPropertyName: 'data', neverError: true } } },
-  }, at(7040, 300), { tries: 1 }),
+  }, at(7040, 300)),
   codeNode('Check Render', 'check-render.js', at(7260, 300)),
   ifNode('Render OK?', '={{ $json.ok }}', at(7480, 300)),
 
@@ -3405,7 +3434,7 @@ const nodes = [
   waitNode('Wait 5s', 5, at(8800, 300)),
   slackApi('Post Video', 'chat.postMessage', { sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ channel: " + cfg('deliveryChannel') + ", text: $('Check Render').first().json.message_text + '\\n\\n*Video:* ' + ((($('Slack Complete').first().json.files || [])[0] || {}).permalink || '(link unavailable)') }) }}",
-    options: {} }, at(9020, 300), { tries: 1 }),
+    options: {} }, at(9020, 300)),
   codeNode('Check Delivery', 'check-delivery.js', at(9240, 300)),
   ifNode('Delivered?', '={{ $json.ok }}', at(9460, 300)),
   sheetWrite('Mark Delivered', at(9680, 300)),
@@ -3479,7 +3508,7 @@ Open `spike/FINDINGS.md` and make these edits in `build.js`:
 
 Run: `node build.js` — Expected: `Wrote …fishpin-video-ads.workflow.json (51 nodes)`.
 Run: `node test.js --only=wf` — Expected: `RESULTS: 24 passed, 0 failed`.
-Run: `node test.js` — Expected: `RESULTS: 175 passed, 0 failed`.
+Run: `node test.js` — Expected: `RESULTS: 178 passed, 0 failed`.
 
 If `every Code node body compiles` fails with `Identifier '…' has already been declared`, two libs listed together in `node-libs.js` share a top-level name: rename it in the build-07 lib, never in build 06.
 
@@ -3689,7 +3718,7 @@ Nothing is published to Facebook and nothing waits for a click. Another version 
 ## Tests
 
 ```bash
-node build.js && node test.js           # offline: 175 checks, no network
+node build.js && node test.js           # offline: 178 checks, no network
 node test.js --only=gen                 # one section: script, plan, prompt, sheet, gen, deliver, wf
 cd ../../vps-render && python -m unittest test_render_ad -v   # 23 render helper tests
 ```
@@ -3746,7 +3775,7 @@ node "$root\builds\07-fishpin-video-ads\build.js"
 Set-Location "$root\builds\07-fishpin-video-ads"; node test.js
 ```
 
-Expected: `active True`; the rebuild rewrites placeholders; `RESULTS: 175 passed, 0 failed` (the placeholder check proves no secret is left in the file on disk).
+Expected: `active True`; the rebuild rewrites placeholders; `RESULTS: 178 passed, 0 failed` (the placeholder check proves no secret is left in the file on disk).
 
 - [ ] **Step 6: Live run 1, a typed topic (confirm with the owner first)**
 

@@ -100,7 +100,7 @@ Veo 3.1 Lite only offers 1080p at an 8-second clip length, so every clip is 8s @
 ## Tests
 
 ```bash
-node build.js && node test.js           # offline: 175 checks, no network
+node build.js && node test.js           # offline: 178 checks, no network
 node test.js --only=gen                 # one section: script, plan, prompt, sheet, gen, deliver, wf
 cd ../../vps-render && python -m unittest test_render_ad -v   # 30 render helper tests
 ```
@@ -109,6 +109,7 @@ On the VPS after a render deploy: `RENDER_ROOT=/opt/reel-render-ad PORT=8090 REN
 
 ## Known limitations
 
+- `../../vps-render/render.py` is the video-ad service's file (`reel-render-ad`, port 8090, `/opt/reel-render-ad`). Its `/render` half is the owner's v4 reel renderer and has never been deployed to the live reel service; the live `reel-render` service (port 8088) runs an older, untracked variant. Never copy `render.py` over `/opt/reel-render/render.py` without a separate, tested deploy — it would change how existing reels look (transitions, a music bed and karaoke captions would appear; film grain and scanlines would go).
 - Veo 3.1 Lite is a preview model. When it fails, the video still ships with a still-image hook.
 - Each run keeps the pictures and voiceover as base64 in n8n's execution history (roughly 15 MB per run).
 - If the final `Videos` row update fails after delivery, the video is still in Slack; the row stays at `generating` and that hook is not remembered for "do not repeat".

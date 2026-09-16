@@ -38,16 +38,21 @@ const AUTH = {
   none: { params: { authentication: 'none' }, cred: null },
 };
 
-// tries: 1 for anything that costs money, creates a row, or posts: a retry
-// after a dropped connection could do it twice.
+// n8n's retryOnFail only fires when a node throws. Every HTTP node here is
+// onError:'continueRegularOutput', so a failure always arrives as a regular
+// {error} item instead of a throw — retryOnFail would never engage, so it is
+// never set. This is deliberate, not a gap: the glue reads {error} and every
+// failure path reaches Stop, which records the row status and reports it to
+// Slack. A silent double-send from an automatic retry (a paid Veo clip, a
+// duplicate sheet row, a duplicate Slack post) would be worse than one
+// honestly-reported failure.
 const http = (name, auth, params, xy, opts) => {
-  const o = Object.assign({ tries: 3, onError: 'continueRegularOutput' }, opts || {});
+  const o = Object.assign({ onError: 'continueRegularOutput' }, opts || {});
   const a = AUTH[auth];
   const node = {
     parameters: Object.assign({}, a.params, params),
     id: idOf(name), name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: xy, onError: o.onError,
   };
-  if (o.tries > 1) Object.assign(node, { retryOnFail: true, maxTries: o.tries, waitBetweenTries: 2000 });
   if (a.cred) node.credentials = a.cred;
   return node;
 };
@@ -108,7 +113,7 @@ const nodes = [
     method: 'POST', url: sheetUrl("/values/' + " + cfg('videosTab') + " + '!A:J:append"),
     sendQuery: true, queryParameters: { parameters: [{ name: 'valueInputOption', value: 'RAW' }, { name: 'insertDataOption', value: 'INSERT_ROWS' }] },
     sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify({ values: [ $json.new_row ] }) }}', options: {},
-  }, at(1100, 300), { tries: 1 }),
+  }, at(1100, 300)),
   codeNode('Set Row', 'set-row.js', at(1320, 300)),
   ifNode('Row OK?', '={{ $json.ok }}', at(1540, 300)),
 
@@ -126,11 +131,11 @@ const nodes = [
   ifNode('Voice OK?', '={{ $json.ok }}', at(3300, 300)),
   // FAN-OUT: one item per picture. Never read Generate Image with .first().
   codeNode('Build Image Requests', 'build-image-requests.js', at(3520, 300)),
-  gemini('Generate Image', 'imageModel', 'generateContent', '={{ $json.geminiBody }}', at(3740, 300), { tries: 2 }),
+  gemini('Generate Image', 'imageModel', 'generateContent', '={{ $json.geminiBody }}', at(3740, 300)),
   codeNode('Collect Images', 'collect-images.js', at(3960, 300)),
   ifNode('Images OK?', '={{ $json.ok }}', at(4180, 300)),
   codeNode('Build Veo Request', 'build-veo-request.js', at(4400, 300)),
-  gemini('Veo Start', 'veoModel', 'predictLongRunning', '={{ $json.veoBody }}', at(4620, 300), { tries: 1 }),
+  gemini('Veo Start', 'veoModel', 'predictLongRunning', '={{ $json.veoBody }}', at(4620, 300)),
   codeNode('Check Veo Start', 'check-veo-start.js', at(4840, 300)),
   ifNode('Veo Started?', '={{ $json.started }}', at(5060, 300)),
   waitNode('Wait Veo', 15, at(5280, 140)),
@@ -152,7 +157,7 @@ const nodes = [
     ] },
     sendBody: true, contentType: 'binaryData', inputDataFieldName: 'payload',
     options: { timeout: 600000, response: { response: { responseFormat: 'file', outputPropertyName: 'data', neverError: true } } },
-  }, at(7040, 300), { tries: 1 }),
+  }, at(7040, 300)),
   codeNode('Check Render', 'check-render.js', at(7260, 300)),
   ifNode('Render OK?', '={{ $json.ok }}', at(7480, 300)),
 
@@ -171,7 +176,7 @@ const nodes = [
   waitNode('Wait 5s', 5, at(8800, 300)),
   slackApi('Post Video', 'chat.postMessage', { sendBody: true, specifyBody: 'json',
     jsonBody: "={{ JSON.stringify({ channel: " + cfg('deliveryChannel') + ", text: $('Check Render').first().json.message_text + '\\n\\n*Video:* ' + ((($('Slack Complete').first().json.files || [])[0] || {}).permalink || '(link unavailable)') }) }}",
-    options: {} }, at(9020, 300), { tries: 1 }),
+    options: {} }, at(9020, 300)),
   codeNode('Check Delivery', 'check-delivery.js', at(9240, 300)),
   ifNode('Delivered?', '={{ $json.ok }}', at(9460, 300)),
   sheetWrite('Mark Delivered', at(9680, 300)),

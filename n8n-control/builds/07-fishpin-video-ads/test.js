@@ -107,6 +107,7 @@ section('script', 'Script validation', () => {
 // ---------------------------------------------------------------- plan
 section('plan', 'Scene plan to render payload', () => {
   const P = L('scene-plan.js');
+  const S = L('script-rules.js');
   const script = {
     voiceover: 'Gabi na, nawala ang signal.',
     scenes: [
@@ -125,6 +126,8 @@ section('plan', 'Scene plan to render payload', () => {
   check('navigate is onboarding4', P.SCREEN_URLS.navigate === 'https://www.fishpin.app/images/onboarding/onboarding4.png');
   check('dashboard is features1', P.SCREEN_URLS.dashboard === 'https://www.fishpin.app/images/features/features1.jpg');
   check('no url points at onboarding6', !JSON.stringify(P.SCREEN_URLS).includes('onboarding6'));
+  check('screen ids in scene-plan.SCREEN_URLS stay in sync with script-rules.SCREEN_IDS',
+    JSON.stringify(Object.keys(P.SCREEN_URLS).slice().sort()) === JSON.stringify(S.SCREEN_IDS.slice().sort()));
   check('counts image scenes', P.imageSceneCount(script) === 3);
 
   const r = P.buildRenderPayload(script, assets, cfg);
@@ -412,6 +415,9 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('voice short', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(3), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
     check('voice-wav: audio under 10 seconds is refused', j.ok === false && /too short/.test(j.message));
   });
+  glue('voice long', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(36), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
+    check('voice-wav: audio over 34 seconds is refused', j.ok === false && /too long/.test(j.message));
+  });
 
   // images
   glue('image requests', 'build-image-requests.js', { nodes: { 'Validate Script': VS } }, (o) => {
@@ -458,6 +464,9 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('veo pending', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }) }, (o, j) => {
     check('check-veo-poll: an unfinished operation keeps polling', j.state === 'pending');
   });
+  glue('veo poll transport error', 'check-veo-poll.js', { nodes: pollNodes, input: J({ error: { message: 'ETIMEDOUT' } }) }, (o, j) => {
+    check('check-veo-poll: a not-done transport error keeps polling instead of discarding the paid clip', j.state === 'pending');
+  });
   glue('veo timeout', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }), runIndex: 31 }, (o, j) => {
     check('check-veo-poll: gives up after 8 minutes of polls', j.state === 'failed' && /8 minutes/.test(j.reason));
   });
@@ -501,6 +510,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
     'Collect Images': J({ ok: true, image_count: 4 }),
     'Build Render Payload': J({ ok: true, hook_fallback: false, veo_note: '' }),
     'Check Veo Poll': J({ state: 'done' }),
+    'Check Veo Start': J({ started: true, name: 'op', reason: '' }),
   }, over || {});
   const mp4Item = { json: {}, binary: { data: binOf(MP4, 'video/mp4') } };
   glue('render ok', 'check-render.js', { nodes: crNodes(), input: [mp4Item] }, (o, j) => {
@@ -522,6 +532,7 @@ section('gen', 'Generation glue (real node bodies)', () => {
   });
   glue('render fallback cost', 'check-render.js', { nodes: crNodes({
     'Check Veo Poll': J({ state: 'failed' }),
+    'Check Veo Start': J({ started: false, name: '', reason: 'Veo did not start: quota' }),
     'Build Render Payload': J({ ok: true, hook_fallback: true, veo_note: 'Veo did not start: quota' }),
   }), input: [mp4Item] }, (o, j) => {
     check('check-render: a Veo fallback costs less and is noted in the message',
@@ -628,7 +639,7 @@ section('wf', 'Assembled workflow structure', () => {
   check('workflow: Config holds the approved values', cfgVals.sheetId === '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
     && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 8 && cfgVals.veoMaxWaitMinutes === 8
-    && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
+    && cfgVals.ttsVoice === 'Algenib' && cfgVals.maxScriptRetries === 3
     && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
     && cfgVals.postCta === 'I-download ang FishPin sa Play Store.');
@@ -647,8 +658,8 @@ section('wf', 'Assembled workflow structure', () => {
 
   check('workflow: every HTTP node declares its error behaviour',
     httpNodes.every((n) => ['continueRegularOutput', 'stopWorkflow'].indexOf(n.onError) !== -1));
-  check('workflow: paid, row-creating and posting calls are never retried',
-    ['Veo Start', 'Render', 'Append Row', 'Post Video'].every((nm) => byName[nm].retryOnFail !== true));
+  check('workflow: no HTTP node carries retryOnFail (onError:continueRegularOutput makes it inert)',
+    httpNodes.every((n) => n.retryOnFail !== true));
   const R = byName.Render.parameters;
   check('workflow: Render sends the token header and the JSON binary, with a 10-minute timeout',
     R.headerParameters.parameters.some((h) => h.name === 'X-Render-Token' && /renderToken/.test(h.value))

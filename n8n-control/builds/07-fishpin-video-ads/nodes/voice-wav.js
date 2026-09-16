@@ -12,6 +12,7 @@ const rate = Number(((d.mimeType || d.mime_type || '').match(/rate=(\d+)/) || []
 const pcm = Buffer.from(d.data || '', 'base64');
 const seconds = pcm.length / (rate * 2);
 if (seconds < 10) return fail('The audio is only ' + seconds.toFixed(1) + ' seconds, too short for a 45 to 70 word voiceover.');
+if (seconds > 34) return fail('The audio is ' + seconds.toFixed(1) + ' seconds, too long to fit a 30-second Reel. The voiceover ran long; shorten it.');
 const h = Buffer.alloc(44);
 h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12);
 h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24);
