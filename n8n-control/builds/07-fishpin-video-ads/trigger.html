@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FishPin Video Ad</title>
+<style>
+  :root { --navy: #0A2461; --blue: #147DFF; --paper: #EEF4FB; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    background: var(--paper); color: var(--navy); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 520px; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 10px 30px rgba(10, 36, 97, .12); }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p.lead { margin: 0 0 8px; color: #3b4a6b; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  textarea, input { width: 100%; padding: 12px; border: 1px solid #c9d6ea; border-radius: 10px; font: inherit; color: inherit; }
+  textarea { min-height: 96px; resize: vertical; }
+  small { color: #5a6a88; }
+  button { margin-top: 20px; width: 100%; padding: 14px; border: 0; border-radius: 10px; background: var(--blue); color: #fff;
+    font: 600 16px system-ui, sans-serif; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  #out { margin-top: 16px; padding: 12px; border-radius: 10px; display: none; }
+  #out.ok { display: block; background: #e8f7ee; color: #135c2e; }
+  #out.err { display: block; background: #fdecec; color: #8a1c1c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FishPin video ad</h1>
+  <p class="lead">Makes one 25-second video ad and posts it to Slack with a caption to copy. Nothing is posted to Facebook.</p>
+  <form id="f">
+    <label for="topic">Topic <small>(optional)</small></label>
+    <textarea id="topic" maxlength="200" placeholder="e.g. Finding the way home at night with no signal. Leave blank and the AI picks a fresh topic."></textarea>
+    <label for="secret">Trigger secret</label>
+    <input id="secret" type="password" autocomplete="off" placeholder="FISHPIN_VIDEO_TRIGGER_SECRET from n8n-control/.env">
+    <small>Remembered in this browser only.</small>
+    <button id="go" type="submit">Make the video</button>
+  </form>
+  <div id="out" role="status"></div>
+</main>
+<script>
+  const WEBHOOK_URL = 'https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-video-ad';
+  const KEY = 'fishpin-video-trigger-secret';
+  const el = (id) => document.getElementById(id);
+  try { el('secret').value = localStorage.getItem(KEY) || ''; } catch (e) { /* storage blocked: type it each time */ }
+  const show = (cls, text) => { el('out').className = cls; el('out').textContent = text; };
+  el('f').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const secret = el('secret').value.trim();
+    if (!secret) { show('err', 'Enter the trigger secret first.'); return; }
+    try { localStorage.setItem(KEY, secret); } catch (e) { /* ignore */ }
+    el('go').disabled = true;
+    show('', '');
+    try {
+      const r = await fetch(WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret, topic: el('topic').value.trim() }) });
+      if (!r.ok) throw new Error('n8n answered ' + r.status + '. Is the workflow active?');
+      show('ok', 'Started. The video arrives in Slack in about 3 to 8 minutes. A wrong secret is reported in Slack, not here.');
+    } catch (e) {
+      show('err', 'Could not start: ' + e.message);
+    } finally {
+      el('go').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
