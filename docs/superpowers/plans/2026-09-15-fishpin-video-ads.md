@@ -26,7 +26,7 @@
 - Script rules: hook ≤ 8 words; voiceover 45–70 words; description 20–60 words, 1–2 paragraphs; 5–6 scenes; `scenes[0]` is `beat:"hook"`, `type:"veo"`; exactly one `veo` scene; 1–2 `screen` scenes; planned seconds 18–28; hashtags 3–5; pillar ≠ `social proof`.
 - Screen allowlist ids: `offline`, `spots`, `path`, `navigate`, `dashboard`, `smarter` (URLs in spec §3.1). `onboarding6` is never used.
 - Voiceover and description must pass build-06 prose rules (no peso figure, no em dash, banned words, all-caps, emoji ≤ 3, compliance, forbidden claims, competitor names, fabricated counts).
-- Veo: `veo-3.1-lite-generate-preview`, `aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds` number `6` (not the string `"6"` — the API returns HTTP 400 for a string), image-to-video, `personGeneration "allow_adult"`, poll every 15s, give up after 8 min → hook falls back to the still.
+- Veo: `veo-3.1-lite-generate-preview`, `aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds` number `8` (not the string `"6"`/`"8"` — the API returns HTTP 400 for a string; and 1080p is only available at 8s — verified live 2026-09-16, 6s at 1080p returns HTTP 400 "1080p is not supported for a duration of 6 seconds"; 4s/6s are 720p-only), image-to-video, `personGeneration "allow_adult"`, poll every 15s, give up after 8 min → hook falls back to the still.
 - Captions: Poppins, white `&H00FFFFFF`, active word Amber `#FFC857` = ASS `&H0057C8FF&`, middle of frame; logo lockup top-left from 1.0s; end card 3.5s on `#0A2461`.
 - Encode: 1080×1920, 30fps, `libx264`, `yuv420p`, `-g 60 -keyint_min 60 -sc_threshold 0`, `-maxrate 8M -bufsize 16M`, AAC-LC 48000 Hz stereo 160k, `+faststart`.
 - Retries: script validation max 3 tries.
@@ -111,7 +111,7 @@ const nodes = [
   code('Extract Still', "const p=($json.candidates||[])[0]?.content?.parts||[];const d=(p.find(x=>x.inlineData||x.inline_data)||{});const i=d.inlineData||d.inline_data||{};return [{json:{mime:i.mimeType||i.mime_type||'image/png',b64:i.data||'',bytes:Buffer.from(i.data||'','base64').length}}];"),
   http('Veo Start', Object.assign(cred(GEMINI), { method: 'POST', url: G + 'models/veo-3.1-lite-generate-preview:predictLongRunning',
     sendBody: true, specifyBody: 'json',
-    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { bytesBase64Encoded: $json.b64, mimeType: $json.mime } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: 6, personGeneration: 'allow_adult' } }) }}" }), GEMINI),
+    jsonBody: "={{ JSON.stringify({ instances: [{ prompt: 'The fog slowly rolls across the calm sea toward the bangka; the fisherman looks up, uneasy. Slow push-in. No text.', image: { bytesBase64Encoded: $json.b64, mimeType: $json.mime } }], parameters: { aspectRatio: '9:16', resolution: '1080p', durationSeconds: 8, personGeneration: 'allow_adult' } }) }}" }), GEMINI),
   { parameters: { amount: 15, unit: 'seconds' }, name: 'Wait 15s', type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: at(), webhookId: 'fishpin-video-spike-wait' },
   http('Veo Poll', Object.assign(cred(GEMINI), { method: 'GET', url: "={{ '" + G + "' + $('Veo Start').first().json.name }}" }), GEMINI),
   code('Poll Guard', "const start=$('Veo Start').first().json;if(!start.name) throw new Error('Veo Start failed: ' + JSON.stringify(start).slice(0,400));\nif ($json.done === true) return [{json:{done:true, uri: $json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '', raw: $json}}];\nif ($runIndex >= 32) throw new Error('Veo did not finish in 8 minutes: ' + JSON.stringify($json).slice(0,500));\nreturn [{json:{done:false}}];"),
@@ -1129,9 +1129,9 @@ section('prompt', 'Script prompts and generation requests', () => {
   check('still prompt forbids logos and text', /no logo/i.test(stillText) && /no text/i.test(stillText));
   check('video negatives drop the supplied-logo exception', V.videoNegatives(I.NEGATIVES).every((n) => !/FishPin logo/.test(n)));
 
-  const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
-  check('Veo request is 9:16, 1080p, 6 seconds, adults only',
-    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: 6, personGeneration: 'allow_adult' }));
+  const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 8 });
+  check('Veo request is 9:16, 1080p, 8 seconds, adults only',
+    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: 8, personGeneration: 'allow_adult' }));
   check('Veo request animates the still',
     veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
       && !('inlineData' in veo.instances[0].image));
@@ -1379,8 +1379,8 @@ section('sheet', 'Videos tab rules', () => {
   check('status update targets exact cells in header order', JSON.stringify(up) === JSON.stringify({ valueInputOption: 'RAW', data: [
     { range: 'Videos!H5', values: [['delivered']] }, { range: 'Videos!I5', values: [['https://files.slack.com/x']] }] }));
   check('video id format', V.newVideoId(new Date(Date.UTC(2026, 8, 15, 1, 2, 3))) === 'VID-20260915-010203');
-  check('cost with a Veo hook and 4 images', V.estCost({ veoUsed: true, veoSeconds: 6, images: 4 }) === 0.65);
-  check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 6, images: 4 }) === 0.17);
+  check('cost with a Veo hook and 4 images', V.estCost({ veoUsed: true, veoSeconds: 8, images: 4 }) === 0.81);
+  check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 8, images: 4 }) === 0.17);
 });
 
 ```
@@ -2359,7 +2359,7 @@ const glue = (label, file, ctx, assert) => defer(label, runNode(file, ctx).then(
 const CFG = {
   sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
   scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
-  veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 6, veoResolution: '1080p', veoMaxWaitMinutes: 8,
+  veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 8, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
   renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
   playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
@@ -2522,8 +2522,8 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('veo request', 'build-veo-request.js', { nodes: { Config: withCfg(), 'Validate Script': VS,
     'Collect Images': J({ ok: true, hook_still_b64: 'STILL', hook_still_mime: 'image/png' }) } }, (o, j) => {
     const b = JSON.parse(j.veoBody);
-    check('build-veo-request: animates the hook still at 9:16, 1080p, 6 seconds',
-      b.parameters.durationSeconds === 6 && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
+    check('build-veo-request: animates the hook still at 9:16, 1080p, 8 seconds',
+      b.parameters.durationSeconds === 8 && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
         && b.instances[0].image.bytesBase64Encoded === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
   });
   glue('veo started', 'check-veo-start.js', { input: J({ name: 'models/veo-3.1-lite-generate-preview/operations/abc' }) }, (o, j) => {
@@ -2591,8 +2591,8 @@ section('gen', 'Generation glue (real node bodies)', () => {
       && j.post_message.indexOf('#FishPin') !== -1 && j.post_message.indexOf(CFG.postCta) !== -1);
     check('check-render: the Slack message carries the hook, voiceover, caption and cost', j.message_text.indexOf(GOOD_SCRIPT.hook) !== -1
       && j.message_text.indexOf(GOOD_SCRIPT.voiceover) !== -1 && j.message_text.indexOf(j.post_message) !== -1
-      && j.message_text.indexOf('$0.65') !== -1);
-    check('check-render: the file is named by the video id and the cost is kept', j.file_name === 'VID-20260915-010203.mp4' && j.est_cost === 0.65);
+      && j.message_text.indexOf('$0.81') !== -1);
+    check('check-render: the file is named by the video id and the cost is kept', j.file_name === 'VID-20260915-010203.mp4' && j.est_cost === 0.81);
   });
   const errItem = { json: {}, binary: { data: binOf(Buffer.from(JSON.stringify({ error: 'scene 2: b64 is required for image' })), 'application/json') } };
   glue('render error body', 'check-render.js', { nodes: crNodes(), input: [errItem] }, (o, j) => {
@@ -3173,7 +3173,7 @@ section('wf', 'Assembled workflow structure', () => {
 
   check('workflow: Config holds the approved values', cfgVals.sheetId === '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
-    && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 6 && cfgVals.veoMaxWaitMinutes === 8
+    && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 8 && cfgVals.veoMaxWaitMinutes === 8
     && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
     && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
@@ -3324,7 +3324,7 @@ const nodes = [
       A('sheetId', '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'), A('videosTab', 'Videos'),
       A('deliveryChannel', 'C0C1WS8PAAJ'), A('opsChannel', 'C0C1WS8PAAJ'),
       A('scriptModel', 'gemini-2.5-flash'), A('scriptTemperature', 0.9), A('imageModel', 'gemini-2.5-flash-image'),
-      A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 6), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
+      A('veoModel', 'veo-3.1-lite-generate-preview'), A('veoSeconds', 8), A('veoResolution', '1080p'), A('veoMaxWaitMinutes', 8),
       A('ttsModel', 'gemini-3.1-flash-tts-preview'), A('ttsVoice', TTS_VOICE), A('maxScriptRetries', 3),
       A('renderUrl', 'http://172.18.0.1:8090/render-ad'),
       A('websiteUrl', 'www.fishpin.app'), A('playStoreUrl', 'https://play.google.com/store/apps/details?id=com.fishpin.app'),
@@ -3592,7 +3592,7 @@ The service account already has editor access to this spreadsheet (build 06). `S
 
 Type a topic, or leave it blank, and a 25-second branded video ad in spoken Filipino arrives in Slack a few minutes later, with a caption ready to paste. Download it, review or re-edit it, and upload it to Facebook yourself.
 
-**ROI pitch:** replaces a script writer, voice actor and video editor for about $0.65 of AI spend per video, and hands a human a finished draft instead of a blank page.
+**ROI pitch:** replaces a script writer, voice actor and video editor for about $0.81 of AI spend per video, and hands a human a finished draft instead of a blank page.
 
 ## The business problem
 
@@ -3628,11 +3628,11 @@ Nothing is published to Facebook and nothing waits for a click. Another version 
 
 | Item | Cost |
 |---|---|
-| Veo 3.1 Lite, 6s, 1080p | $0.48 |
+| Veo 3.1 Lite, 8s, 1080p | $0.64 |
 | Hook still + 3 scene images | ~$0.16 |
 | Script + voiceover | ~$0.01 |
 | VPS render | $0 |
-| **Per video** | **~$0.65** (≈ $0.17 when Veo falls back) |
+| **Per video** | **~$0.81** (≈ $0.17 when Veo falls back) |
 
 3–8 minutes from trigger to Slack.
 
@@ -3677,7 +3677,7 @@ Nothing is published to Facebook and nothing waits for a click. Another version 
 | `deliveryChannel` / `opsChannel` | `C0C1WS8PAAJ` | video and failure messages |
 | `scriptModel` / `scriptTemperature` | `gemini-2.5-flash` / `0.9` | |
 | `imageModel` | `gemini-2.5-flash-image` | |
-| `veoModel` / `veoSeconds` / `veoResolution` / `veoMaxWaitMinutes` | `veo-3.1-lite-generate-preview` / `6` / `1080p` / `8` | |
+| `veoModel` / `veoSeconds` / `veoResolution` / `veoMaxWaitMinutes` | `veo-3.1-lite-generate-preview` / `8` / `1080p` / `8` | |
 | `ttsModel` / `ttsVoice` | `gemini-3.1-flash-tts-preview` / owner's choice | |
 | `maxScriptRetries` | `3` | script validation tries |
 | `renderUrl` | `http://172.18.0.1:8090/render-ad` | Docker host address |
@@ -3749,7 +3749,7 @@ Expected: `active True`; the rebuild rewrites placeholders; `RESULTS: 175 passed
 
 - [ ] **Step 6: Live run 1, a typed topic (confirm with the owner first)**
 
-This spends about $0.65. Ask the owner before firing. Then:
+This spends about $0.81. Ask the owner before firing. Then:
 
 ```powershell
 $body = @{ secret = $cfg["FISHPIN_VIDEO_TRIGGER_SECRET"]; topic = "Finding the way home at night when the signal is gone" } | ConvertTo-Json

@@ -53,7 +53,7 @@ approval step or regenerate loop. One run makes one video. Another version = ano
 | Silent viewing | ~85% of Facebook video plays silent; captions lift view time | same |
 | Reels file spec (the MP4 is made upload-ready) | 3–90s, 9:16, 1080×1920 recommended, 24–60fps, H.264/H.265, AAC-LC 48kHz stereo 128k+, closed GOP 2–5s | Meta "Publish a Reel" guide |
 | Veo 3.1 pricing (1080p, audio included, no free tier) | Lite `veo-3.1-lite-generate-preview` $0.08/s · Fast $0.12/s · Standard $0.40/s | ai.google.dev pricing |
-| Veo 3.1 API | `…/models/{model}:predictLongRunning`; `parameters.aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds "4"/"6"/"8"`; image-to-video via `instances[0].image.inlineData`; image input requires `personGeneration "allow_adult"`; poll the operation until `done`; video at `response.generateVideoResponse.generatedSamples[0].video.uri`, downloaded with `x-goog-api-key`; kept 2 days; audio cannot be disabled; latency 11s–6min | ai.google.dev Veo guide |
+| Veo 3.1 API | `…/models/{model}:predictLongRunning`; `parameters.aspectRatio "9:16"`, `resolution "1080p"`, `durationSeconds` a JSON number (not a string — verified live 2026-09-16, a string returns HTTP 400); 1080p is only available at 8s (4s/6s are 720p-only — verified live 2026-09-16, 6s at 1080p returns HTTP 400 "1080p is not supported for a duration of 6 seconds"); image-to-video via `instances[0].image = { bytesBase64Encoded, mimeType }` (not `inlineData` — verified live 2026-09-16, `inlineData` returns HTTP 400); image input requires `personGeneration "allow_adult"`; poll the operation until `done`; video at `response.generateVideoResponse.generatedSamples[0].video.uri`, downloaded with `x-goog-api-key`; kept 2 days; audio cannot be disabled; latency 11s–6min | ai.google.dev Veo guide |
 | Gemini Omni Flash | ~$0.10/s at 720p, 1080p is upscaled — not cheaper than Veo Lite | therundown.ai, eesel.ai |
 | Gemini TTS | Filipino (`fil`) supported; models `gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts`; output 24kHz mono 16-bit PCM; tone/pace steerable by natural-language prompt | ai.google.dev speech generation |
 | Slack file delivery from n8n | `files.getUploadURLExternal` → POST bytes → `files.completeUploadExternal` (no `channel_id`) → wait ~5s → `chat.postMessage`. Sharing via `channel_id` can return `ok:true` and never appear | proven in workflow `xmBD3loDGu09i4Sf` |
@@ -167,7 +167,7 @@ Manual Trigger (n8n)                                                ┴─► Co
 `sheetId` `1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E` · `videosTab` `Videos` ·
 `deliveryChannel` / `opsChannel` `C0C1WS8PAAJ` · `scriptModel` `gemini-2.5-flash` ·
 `scriptTemperature` `0.9` · `imageModel` `gemini-2.5-flash-image` ·
-`veoModel` `veo-3.1-lite-generate-preview` · `veoSeconds` `6` · `veoResolution` `1080p` ·
+`veoModel` `veo-3.1-lite-generate-preview` · `veoSeconds` `8` (1080p requires 8s) · `veoResolution` `1080p` ·
 `veoMaxWaitMinutes` `8` · `ttsModel` `gemini-3.1-flash-tts-preview` · `ttsVoice` `Gacrux`
 (proven in this repo; §9 auditions `Algenib` and `Achird` against it) · `maxScriptRetries` `3` ·
 `renderUrl` `http://172.18.0.1:8090/render-ad` · `websiteUrl` `www.fishpin.app` ·
@@ -308,11 +308,11 @@ success.
 
 | Item | Cost |
 |---|---|
-| Veo 3.1 Lite, 6s, 1080p | $0.48 |
+| Veo 3.1 Lite, 8s, 1080p | $0.64 |
 | Hook still + 3 scene images | ~$0.15 |
 | Script + voiceover | ~$0.01 |
 | VPS render | $0 |
-| **Per video** | **~$0.65** (≈ $0.17 when Veo falls back to the still) |
+| **Per video** | **~$0.81** (≈ $0.17 when Veo falls back to the still) |
 
 Wall time per video: ~3–8 min (Veo 11s–6min, caption timing 30–60s, encode 1–2 min).
 

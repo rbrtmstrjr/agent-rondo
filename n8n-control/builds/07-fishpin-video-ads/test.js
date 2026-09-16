@@ -198,9 +198,9 @@ section('prompt', 'Script prompts and generation requests', () => {
   check('still prompt forbids logos and text', /no logo/i.test(stillText) && /no text/i.test(stillText));
   check('video negatives drop the supplied-logo exception', V.videoNegatives(I.NEGATIVES).every((n) => !/FishPin logo/.test(n)));
 
-  const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 6 });
-  check('Veo request is 9:16, 1080p, 6 seconds, adults only',
-    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: 6, personGeneration: 'allow_adult' }));
+  const veo = V.buildVeoRequest('B64', 'image/png', 'Fog rolls in.', { veoResolution: '1080p', veoSeconds: 8 });
+  check('Veo request is 9:16, 1080p, 8 seconds, adults only',
+    JSON.stringify(veo.parameters) === JSON.stringify({ aspectRatio: '9:16', resolution: '1080p', durationSeconds: 8, personGeneration: 'allow_adult' }));
   check('Veo request animates the still',
     veo.instances[0].image.bytesBase64Encoded === 'B64' && veo.instances[0].image.mimeType === 'image/png'
       && !('inlineData' in veo.instances[0].image));
@@ -242,8 +242,8 @@ section('sheet', 'Videos tab rules', () => {
   check('status update targets exact cells in header order', JSON.stringify(up) === JSON.stringify({ valueInputOption: 'RAW', data: [
     { range: 'Videos!H5', values: [['delivered']] }, { range: 'Videos!I5', values: [['https://files.slack.com/x']] }] }));
   check('video id format', V.newVideoId(new Date(Date.UTC(2026, 8, 15, 1, 2, 3))) === 'VID-20260915-010203');
-  check('cost with a Veo hook and 4 images', V.estCost({ veoUsed: true, veoSeconds: 6, images: 4 }) === 0.65);
-  check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 6, images: 4 }) === 0.17);
+  check('cost with a Veo hook and 4 images', V.estCost({ veoUsed: true, veoSeconds: 8, images: 4 }) === 0.81);
+  check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 8, images: 4 }) === 0.17);
 });
 
 // ---------------------------------------------------------------- glue harness
@@ -278,7 +278,7 @@ const glue = (label, file, ctx, assert) => defer(label, runNode(file, ctx).then(
 const CFG = {
   sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
   scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
-  veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 6, veoResolution: '1080p', veoMaxWaitMinutes: 8,
+  veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 8, veoResolution: '1080p', veoMaxWaitMinutes: 8,
   ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
   renderUrl: 'http://172.18.0.1:8090/render-ad', websiteUrl: 'www.fishpin.app',
   playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
@@ -441,8 +441,8 @@ section('gen', 'Generation glue (real node bodies)', () => {
   glue('veo request', 'build-veo-request.js', { nodes: { Config: withCfg(), 'Validate Script': VS,
     'Collect Images': J({ ok: true, hook_still_b64: 'STILL', hook_still_mime: 'image/png' }) } }, (o, j) => {
     const b = JSON.parse(j.veoBody);
-    check('build-veo-request: animates the hook still at 9:16, 1080p, 6 seconds',
-      b.parameters.durationSeconds === 6 && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
+    check('build-veo-request: animates the hook still at 9:16, 1080p, 8 seconds',
+      b.parameters.durationSeconds === 8 && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
         && b.instances[0].image.bytesBase64Encoded === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
   });
   glue('veo started', 'check-veo-start.js', { input: J({ name: 'models/veo-3.1-lite-generate-preview/operations/abc' }) }, (o, j) => {
@@ -510,8 +510,8 @@ section('gen', 'Generation glue (real node bodies)', () => {
       && j.post_message.indexOf('#FishPin') !== -1 && j.post_message.indexOf(CFG.postCta) !== -1);
     check('check-render: the Slack message carries the hook, voiceover, caption and cost', j.message_text.indexOf(GOOD_SCRIPT.hook) !== -1
       && j.message_text.indexOf(GOOD_SCRIPT.voiceover) !== -1 && j.message_text.indexOf(j.post_message) !== -1
-      && j.message_text.indexOf('$0.65') !== -1);
-    check('check-render: the file is named by the video id and the cost is kept', j.file_name === 'VID-20260915-010203.mp4' && j.est_cost === 0.65);
+      && j.message_text.indexOf('$0.81') !== -1);
+    check('check-render: the file is named by the video id and the cost is kept', j.file_name === 'VID-20260915-010203.mp4' && j.est_cost === 0.81);
   });
   const errItem = { json: {}, binary: { data: binOf(Buffer.from(JSON.stringify({ error: 'scene 2: b64 is required for image' })), 'application/json') } };
   glue('render error body', 'check-render.js', { nodes: crNodes(), input: [errItem] }, (o, j) => {
@@ -627,7 +627,7 @@ section('wf', 'Assembled workflow structure', () => {
 
   check('workflow: Config holds the approved values', cfgVals.sheetId === '1tdud2e5BKy7IQ7wpYy8Iavl_hOK8vUBrUs1oYj1Cp3E'
     && cfgVals.videosTab === 'Videos' && cfgVals.deliveryChannel === 'C0C1WS8PAAJ' && cfgVals.opsChannel === 'C0C1WS8PAAJ'
-    && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 6 && cfgVals.veoMaxWaitMinutes === 8
+    && cfgVals.veoModel === 'veo-3.1-lite-generate-preview' && cfgVals.veoSeconds === 8 && cfgVals.veoMaxWaitMinutes === 8
     && ['Gacrux', 'Algenib', 'Achird'].indexOf(cfgVals.ttsVoice) !== -1 && cfgVals.maxScriptRetries === 3
     && cfgVals.renderUrl === 'http://172.18.0.1:8090/render-ad'
     && cfgVals.playStoreUrl === 'https://play.google.com/store/apps/details?id=com.fishpin.app'
