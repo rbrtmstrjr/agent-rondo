@@ -119,6 +119,11 @@ and the checks below, are the first real test of them. If `reel-render` runs as 
 out and skip the `chown` (root is systemd's default and already owns `/opt/reel-render-ad`).
 ```bash
 ss -tlnp | grep -w 8090 || echo "8090 free"
+```
+**STOP if anything is already listening on 8090** — investigate before continuing (another
+process, a leftover staging server from step 4 that was never killed, etc.). Only move on once this
+prints `8090 free`.
+```bash
 systemctl daemon-reload
 systemctl enable --now reel-render-ad
 systemctl status reel-render-ad --no-pager | head -5
@@ -147,16 +152,31 @@ Send the full output. If it does not print `FAILS=0`, run the Rollback section i
 calling `http://<GATEWAY>:8088/render`, the existing reel pipeline) crosses the host's INPUT chain
 just like any other inbound connection — so enabling ufw without an explicit allow for 8088 from the
 Docker network would silently cut n8n off from the reel service it already depends on today. This
-step restores exactly that access; it does **not** touch 8088's public-facing exposure at all.
+step restores exactly that Docker-network access. What happens to 8088's *public* exposure depends
+on ufw's starting state (see below) — it is not simply "unchanged" in every case.
 ```bash
 ufw status numbered
 ```
 If any existing rule allows `8090` from `Anywhere`, delete it: `ufw delete <n>`. Rule numbers shift
 after every delete — re-run `ufw status numbered` again before deleting the next one; never delete
-by a number you read before the previous delete. Leave every existing `8088` rule exactly as you
-find it here — this step adds one new Docker-network-scoped allow for `8088` below (restoring the
-access it already had before ufw is enabled), but never adds, removes, or widens any of its
-public-facing rules.
+by a number you read before the previous delete.
+
+**Check this listing for a `DENY` rule on port `8088`.** An earlier revision of this very runbook
+paired a Docker-subnet 8088 allow with a public `ufw deny 8088/tcp`, so a box deployed under that
+revision may already have one. ufw evaluates `ufw-user-input` first-rule-wins, and a plain appended
+allow lands *after* that existing DENY — so it would never actually match, and n8n would stay cut
+off exactly as this step exists to prevent. Two ways to fix it:
+- **Preferred:** insert the new 8088 allow at position 1 instead of appending it (the always-run
+  block below already does this — `ufw insert 1 allow from <SUBNET> to any port 8088 proto tcp` —
+  precisely for this reason), so it is evaluated before any existing rule, including a stale DENY,
+  without deleting or otherwise touching that DENY or anything else already there.
+- Delete the stale DENY instead (`ufw delete <n>`, re-running `ufw status numbered` between deletes
+  since numbers shift). This also works, but it changes 8088's public exposure — that DENY may have
+  been intentional — so only do this if you've confirmed with the owner that opening 8088 publicly
+  is fine. Insert is the safer default; prefer it unless you have a specific reason to delete.
+
+Leave every other existing `8088` rule exactly as you find it — this step's only change to 8088 is
+the one inserted Docker-network-scoped allow described above.
 
 If `ufw status` above showed **inactive**, check what else is publicly listening before enabling it,
 so this step can't accidentally cut off something the owner relies on:
@@ -173,12 +193,21 @@ ufw allow 443/tcp
 Docker-published ports do not need a rule here — Docker manages its own iptables rules independently
 of ufw.
 
+Before enabling, get a baseline for the 8088 health check so a pre-existing problem is never
+mistaken for one this step caused:
+```bash
+docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
+```
+Note whether this prints `ok`. If it does **not**, that is a pre-existing condition unrelated to
+this firewall change — record it now, and do not treat the same check failing again after `ufw
+--force enable` below as a firewall regression; it was already broken before ufw was touched.
+
 Then, always:
 ```bash
 ufw allow OpenSSH
 ufw allow from <SUBNET> to any port 8090 proto tcp
 ufw deny 8090/tcp
-ufw allow from <SUBNET> to any port 8088 proto tcp
+ufw insert 1 allow from <SUBNET> to any port 8088 proto tcp
 ufw --force enable
 ufw status numbered
 docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8090/health; echo
@@ -186,17 +215,25 @@ docker exec <N8N_CONTAINER> wget -qO- http://<GATEWAY>:8088/health; echo
 curl -sI https://n8n.srv1193790.hstgr.cloud | head -1
 ```
 `<SUBNET>` and `<GATEWAY>` are the values discovered in step 1 — do not assume `172.18.0.0/16` /
-`172.18.0.1` without checking step 1's output. The `ufw allow from <SUBNET> to any port 8088` line
-only restores the Docker-network access the reel service already had — it is not `ufw allow
-8088/tcp` (which would open it to Anywhere), and no public `ufw deny 8088/tcp` is added either:
-8088's public-facing exposure is left exactly as the operator finds it, whatever that is.
+`172.18.0.1` without checking step 1's output. The inserted 8088 rule only restores the
+Docker-network access the reel service already had — it is not `ufw allow 8088/tcp` (which would
+open it to Anywhere).
 
-Expected: **both** `docker exec` checks print `ok` (8090 confirms the new service; 8088 confirms
-n8n's access to the existing reel service survived enabling ufw) and the `curl` prints an HTTP
-status line (n8n is still publicly reachable). **If any of these three checks fail, run `ufw
-disable` immediately and send the output** — do not leave the firewall in a broken state. Once all
-three pass, the controller separately confirms the public probe of `:8090/health` no longer
-answers.
+**On 8088's public exposure specifically:** if ufw was already active before this step, its existing
+8088 rules (checked above) are left exactly as found. If ufw was **inactive**, enabling it now closes
+8088 to the public internet, the same as every other port not explicitly allowed — this is
+deliberate (the `ss -tlnp` sweep above intentionally excludes 8088 from the generic public-allow
+list), not an oversight. Either way, only the Docker network keeps access to 8088 through the
+inserted rule.
+
+Expected: the pre-enable 8088 baseline above matched what you expected (or its failure was already
+noted as pre-existing), and now **both** `docker exec` checks print `ok` (8090 confirms the new
+service; 8088 confirms n8n's access to the existing reel service survived enabling ufw) and the
+`curl` prints an HTTP status line (n8n is still publicly reachable). **If either post-enable
+`docker exec` check newly fails (i.e. the 8088 one printed `ok` in the baseline but not now), or the
+`curl` fails, run `ufw disable` immediately and send the output** — do not leave the firewall in a
+broken state. Once everything checks out, the controller separately confirms the public probe of
+`:8090/health` no longer answers.
 
 ## Rollback
 ```bash
@@ -205,6 +242,6 @@ systemctl disable --now reel-render-ad
 # rm -rf /opt/reel-render-ad
 ```
 The `reel-render` service itself (its `render.py`, its systemd unit) was never touched by this
-deploy, so there is nothing to restore there. Step 7's `ufw allow from <SUBNET> to any port 8088`
-rule is purely additive (it only restores Docker-network access that existed before ufw was
-enabled) and safe to leave in place even after this rollback.
+deploy, so there is nothing to restore there. Step 7's inserted `ufw ... allow from <SUBNET> to any
+port 8088` rule is purely additive (it only restores Docker-network access that existed before ufw
+was enabled) and safe to leave in place even after this rollback.
