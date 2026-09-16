@@ -244,6 +244,289 @@ section('sheet', 'Videos tab rules', () => {
   check('cost after a Veo fallback', V.estCost({ veoUsed: false, veoSeconds: 6, images: 4 }) === 0.17);
 });
 
+// ---------------------------------------------------------------- glue harness
+// Runs a real glue body exactly as build.js assembles it, under AsyncFunction,
+// with a fake n8n: $('Node') serves canned items (isExecuted false and a throw
+// on read for anything not supplied), and binaries are base64 in memory.
+const { NODE_LIBS, assemble } = require('./node-libs.js');
+const AsyncFn = Object.getPrototypeOf(async function () {}).constructor;
+const binOf = (buf, mimeType, fileName) => ({ data: buf.toString('base64'), mimeType, fileName: fileName || 'data', fileSize: String(buf.length) });
+async function runNode(file, ctx) {
+  const c = ctx || {};
+  const store = c.nodes || {};
+  const input = c.input || [{ json: {} }];
+  const $ = (name) => {
+    const list = store[name];
+    if (!list) {
+      const boom = () => { throw new Error("$('" + name + "') was read but has not executed"); };
+      return { isExecuted: false, first: boom, all: boom };
+    }
+    return { isExecuted: true, first: () => list[0], all: () => list };
+  };
+  const helpers = {
+    prepareBinaryData: async (buf, fileName, mimeType) => binOf(buf, mimeType, fileName),
+    getBinaryDataBuffer: async (i, prop) => Buffer.from(input[i].binary[prop].data, 'base64'),
+  };
+  const fn = new AsyncFn('$', '$json', '$input', 'items', '$runIndex', assemble(file));
+  return fn.call({ helpers }, $, input[0].json, { first: () => input[0], all: () => input }, input, c.runIndex || 0);
+}
+const J = (json) => [{ json }];
+const glue = (label, file, ctx, assert) => defer(label, runNode(file, ctx).then((out) => assert(out, (out && out[0] && out[0].json) || {})));
+
+const CFG = {
+  sheetId: 'SHEET', videosTab: 'Videos', deliveryChannel: 'C0C1WS8PAAJ', opsChannel: 'C0C1WS8PAAJ',
+  scriptModel: 'gemini-2.5-flash', scriptTemperature: 0.9, imageModel: 'gemini-2.5-flash-image',
+  veoModel: 'veo-3.1-lite-generate-preview', veoSeconds: 6, veoResolution: '1080p', veoMaxWaitMinutes: 8,
+  ttsModel: 'gemini-3.1-flash-tts-preview', ttsVoice: 'Gacrux', maxScriptRetries: 3,
+  renderUrl: 'http://172.18.0.1:8088/render-ad', websiteUrl: 'www.fishpin.app',
+  playStoreUrl: 'https://play.google.com/store/apps/details?id=com.fishpin.app',
+  endCardCta: 'I-download sa Play Store', endCardSeconds: 3.5, postCta: 'I-download ang FishPin sa Play Store.',
+  triggerSecret: 'test-trigger-secret', renderToken: 'test-render-token',
+};
+const GOOD_SCRIPT = {
+  pillar: 'safety',
+  topic: 'Finding the way home when fog and night come',
+  hook: 'Nawala ang signal, gabi na sa laot',
+  voiceover: 'Gabi na, makapal ang ulap, at nawala ang signal sa laot. Kinakabahan ka, di ba? '
+    + 'Nasa bahay ang pamilya, naghihintay. Sa FishPin, alam mo pa rin kung nasaan ka, kahit walang '
+    + 'internet. Naka-save ang iyong daan pauwi, at ang compass ay nagtuturo sa uwian. Mas panatag '
+    + 'ang biyahe, mas panatag ang pamilya. I-download na po.',
+  description: 'Nawala ang signal sa laot at gabi na? Huwag mag-alala.\n\nSa FishPin, alam mo pa rin '
+    + 'kung nasaan ka at ang daan pauwi, kahit walang internet. Para sa mas panatag na biyahe.',
+  hashtags: ['#FishPin', '#Mangingisda', '#KaligtasanSaLaot'],
+  scenes: [
+    { beat: 'hook', type: 'veo', seconds: 3, prompt: 'Fog rolls over a bangka at dusk, the fisherman looks up.' },
+    { beat: 'stakes', type: 'image', seconds: 2.5, prompt: 'Dark sea, no shoreline visible, a single lantern.' },
+    { beat: 'stakes', type: 'image', seconds: 2.5, prompt: 'A mother at a doorway looking out to sea at night.' },
+    { beat: 'demo', type: 'screen', seconds: 4, screen: 'navigate' },
+    { beat: 'demo', type: 'screen', seconds: 4, screen: 'offline' },
+    { beat: 'relief', type: 'image', seconds: 5, prompt: 'The bangka reaches the shore at dawn, family waving.' },
+  ],
+};
+const HEADERS = ['id', 'created_at', 'topic_input', 'pillar', 'topic', 'hook', 'voiceover', 'status', 'video_url', 'est_cost_usd'];
+const SHEET_VALUES = { values: [HEADERS,
+  ['VID-1', '', '', 'safety', 't1', 'h1', 'v1', 'delivered'],
+  ['VID-2', '', 'topic two', 'safety', 't2', 'h2', 'v2', 'failed']] };
+const SET_ROW_NEW = { ok: true, id: 'VID-20260915-010203', row_number: 7, topic_input: 'SOS at night', prior_videos: [], new_row: [] };
+const geminiText = (obj) => ({ candidates: [{ content: { parts: [{ text: typeof obj === 'string' ? obj : JSON.stringify(obj) }] } }] });
+const geminiInline = (b64, mimeType) => ({ candidates: [{ content: { parts: [{ inlineData: { data: b64, mimeType } }] } }] });
+const HOOK_B64 = Buffer.alloc(30000, 1).toString('base64');
+const SCENE_B64 = Buffer.alloc(30000, 2).toString('base64');
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(200000)]);
+const withCfg = (over) => J(Object.assign({}, CFG, over || {}));
+
+// ---------------------------------------------------------------- gen
+section('gen', 'Generation glue (real node bodies)', () => {
+  const S = L('script-rules.js');
+  const hook9 = Object.assign({}, GOOD_SCRIPT, { hook: 'salita salita salita salita salita salita salita salita salita' });
+  const webhook = (body) => [{ json: { body } }];
+
+  // start-run
+  glue('start-run manual', 'start-run.js', { nodes: { Config: withCfg() }, input: J(SHEET_VALUES) }, (o, j) => {
+    check('start-run: a manual run starts a new video with no topic', j.ok === true && /^VID-\d{8}-\d{6}$/.test(j.id) && j.topic_input === '');
+    check('start-run: the new row starts generating', j.new_row.length === 10 && j.new_row[0] === j.id && j.new_row[7] === 'generating');
+    check('start-run: only delivered rows become prior videos', j.prior_videos.length === 1 && j.prior_videos[0].hook === 'h1');
+  });
+  glue('start-run topic', 'start-run.js', { nodes: { Config: withCfg(), 'Trigger Webhook': webhook({ secret: CFG.triggerSecret, topic: 'SOS\n\tat   night' }) }, input: J(SHEET_VALUES) }, (o, j) => {
+    check('start-run: the trigger page topic is cleaned and kept', j.topic_input === 'SOS at night' && j.new_row[2] === 'SOS at night');
+  });
+  glue('start-run long', 'start-run.js', { nodes: { Config: withCfg(), 'Trigger Webhook': webhook({ secret: CFG.triggerSecret, topic: 'x'.repeat(300) }) }, input: J(SHEET_VALUES) }, (o, j) => {
+    check('start-run: a 300-character topic is capped at 200', j.topic_input.length === 200);
+  });
+  glue('start-run secret', 'start-run.js', { nodes: { Config: withCfg(), 'Trigger Webhook': webhook({ secret: 'nope' }) }, input: J(SHEET_VALUES) }, (o, j) => {
+    check('start-run: a wrong secret is rejected', j.ok === false && j.status === 'rejected' && /secret/.test(j.message));
+  });
+  glue('start-run placeholder', 'start-run.js', { nodes: { Config: withCfg({ triggerSecret: 'FILL_IN_VIDEO_TRIGGER_SECRET' }), 'Trigger Webhook': webhook({ secret: 'FILL_IN_VIDEO_TRIGGER_SECRET' }) }, input: J(SHEET_VALUES) }, (o, j) => {
+    check('start-run: a placeholder secret rejects every webhook call', j.ok === false && /placeholder/.test(j.message));
+  });
+  glue('start-run headers', 'start-run.js', { nodes: { Config: withCfg() }, input: J({ values: [['id', 'x']] }) }, (o, j) => {
+    check('start-run: a wrong header row is rejected', j.ok === false && /header row/.test(j.message));
+  });
+  glue('start-run sheets', 'start-run.js', { nodes: { Config: withCfg() }, input: J({ error: { message: '403 forbidden' } }) }, (o, j) => {
+    check('start-run: a Sheets error is rejected', j.ok === false && /could not read/.test(j.message));
+  });
+
+  // set-row
+  const started = { ok: true, id: 'VID-20260915-010203', topic_input: '', prior_videos: [], new_row: [] };
+  glue('set-row new', 'set-row.js', { nodes: { Config: withCfg(), 'Start Run': J(started) }, input: J({ updates: { updatedRange: 'Videos!A7:J7' } }) }, (o, j) => {
+    check('set-row: takes the row number from the append response', j.ok === true && j.row_number === 7 && j.id === started.id);
+  });
+  glue('set-row append failed', 'set-row.js', { nodes: { Config: withCfg(), 'Start Run': J(started) }, input: J({ error: { message: 'quota exceeded' } }) }, (o, j) => {
+    check('set-row: a failed append stops the run before any spend', j.ok === false && j.status === 'failed' && /quota exceeded/.test(j.message));
+  });
+
+  // build-script-request
+  const bodyOf = (j) => JSON.parse(j.geminiBody);
+  const userText = (j) => bodyOf(j).contents[0].parts[0].text;
+  glue('script request', 'build-script-request.js', { nodes: { Config: withCfg(), 'Set Row': J(SET_ROW_NEW) }, input: J({ spreadsheetId: 'SHEET' }) }, (o, j) => {
+    const b = bodyOf(j);
+    check('build-script-request: asks for JSON matching the script schema', b.generationConfig.responseMimeType === 'application/json'
+      && JSON.stringify(b.generationConfig.responseSchema.properties.scenes.items.properties.screen.enum) === JSON.stringify(S.SCREEN_IDS));
+    check('build-script-request: the system prompt carries the video rules and the brand voice',
+      /VIDEO AD RULES/.test(b.systemInstruction.parts[0].text) && /BRAND VOICE/.test(b.systemInstruction.parts[0].text));
+    check('build-script-request: the typed topic reaches the prompt', userText(j).indexOf('SOS at night') !== -1);
+  });
+  glue('script request retry', 'build-script-request.js', { nodes: { Config: withCfg(), 'Set Row': J(SET_ROW_NEW) }, input: J({ valid: false, reasons: ['hook is 9 words, must be 1 to 8.'] }) }, (o, j) => {
+    check('build-script-request: the last try\'s validator reasons are fed back', userText(j).indexOf('hook is 9 words, must be 1 to 8.') !== -1);
+  });
+
+  // validate-script
+  const vsNodes = (setRow) => ({ Config: withCfg(), 'Set Row': J(setRow || SET_ROW_NEW) });
+  glue('validate clean', 'validate-script.js', { nodes: vsNodes(), input: J(geminiText(GOOD_SCRIPT)) }, (o, j) => {
+    check('validate-script: accepts a clean script on the first try', j.valid === true && j.script.hook === GOOD_SCRIPT.hook && j.script_try === 1);
+  });
+  glue('validate retry', 'validate-script.js', { nodes: vsNodes(), input: J(geminiText(hook9)) }, (o, j) => {
+    check('validate-script: an invalid script under the cap asks for a retry', j.valid === false && j.retry === true && j.reasons.some((r) => /hook/.test(r)));
+  });
+  glue('validate cap', 'validate-script.js', { nodes: vsNodes(), input: J(geminiText(hook9)), runIndex: 2 }, (o, j) => {
+    check('validate-script: the third invalid script stops as needs_manual', j.retry === false && j.status === 'needs_manual' && /3 times/.test(j.message));
+  });
+  glue('validate json', 'validate-script.js', { nodes: vsNodes(), input: J(geminiText('not json')) }, (o, j) => {
+    check('validate-script: unparseable output is a reason, not a crash', j.valid === false && j.reasons.some((r) => /not valid JSON/.test(r)));
+  });
+  glue('validate repeat', 'validate-script.js', { nodes: vsNodes(Object.assign({}, SET_ROW_NEW, { prior_videos: [{ hook: GOOD_SCRIPT.hook, voiceover: 'x', topic: 't' }] })), input: J(geminiText(GOOD_SCRIPT)) }, (o, j) => {
+    check('validate-script: an exact repeat of an earlier hook is rejected', j.valid === false && j.reasons.some((r) => /already been published/.test(r)));
+  });
+  glue('validate error', 'validate-script.js', { nodes: vsNodes(), input: J({ error: { message: 'model overloaded' } }) }, (o, j) => {
+    check('validate-script: a Gemini error becomes a reason', j.valid === false && j.reasons.some((r) => /no script/.test(r) && /overloaded/.test(r)));
+  });
+
+  // TTS
+  const VS = J({ valid: true, script: GOOD_SCRIPT, script_try: 1 });
+  glue('tts request', 'build-tts-request.js', { nodes: { Config: withCfg(), 'Validate Script': VS } }, (o, j) => {
+    const b = JSON.parse(j.geminiBody);
+    check('build-tts-request: uses the Config voice and the validated voiceover',
+      b.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Gacrux' && b.contents[0].parts[0].text.indexOf(GOOD_SCRIPT.voiceover) !== -1);
+  });
+  const pcm = (seconds) => Buffer.alloc(24000 * 2 * seconds).toString('base64');
+  glue('voice ok', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(12), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
+    const wav = Buffer.from(j.wav_b64 || '', 'base64');
+    check('voice-wav: wraps 24 kHz PCM in a WAV header', wav.toString('latin1', 0, 4) === 'RIFF' && wav.readUInt32LE(24) === 24000);
+    check('voice-wav: reports the audio length', j.ok === true && j.seconds === 12);
+  });
+  glue('voice missing', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J({ error: { message: 'tts down' } }) }, (o, j) => {
+    check('voice-wav: missing audio stops the run before any image spend', j.ok === false && j.status === 'failed' && /TTS/.test(j.message));
+  });
+  glue('voice short', 'voice-wav.js', { nodes: { 'Set Row': J(SET_ROW_NEW) }, input: J(geminiInline(pcm(3), 'audio/L16;codec=pcm;rate=24000')) }, (o, j) => {
+    check('voice-wav: audio under 10 seconds is refused', j.ok === false && /too short/.test(j.message));
+  });
+
+  // images
+  glue('image requests', 'build-image-requests.js', { nodes: { 'Validate Script': VS } }, (o) => {
+    check('build-image-requests: one request for the hook still plus each image scene', o.length === 4);
+    check('build-image-requests: items keep their index and the hook still comes first',
+      JSON.stringify(o.map((it) => it.json.index)) === '[0,1,2,3]' && o[0].json.role === 'hook still');
+    check('build-image-requests: every request is a 9:16 still with no logo lockup', o.every((it) => {
+      const b = JSON.parse(it.json.geminiBody);
+      return b.generationConfig.imageConfig.aspectRatio === '9:16' && !/BRAND LOCKUP/.test(it.json.geminiBody);
+    }));
+  });
+  const BIR = [0, 1, 2, 3].map((index) => ({ json: { index, role: index === 0 ? 'hook still' : 'scene image ' + index } }));
+  const picsIn = [HOOK_B64, SCENE_B64, SCENE_B64, SCENE_B64].map((b) => ({ json: geminiInline(b, 'image/png') }));
+  glue('collect ok', 'collect-images.js', { nodes: { 'Set Row': J(SET_ROW_NEW), 'Build Image Requests': BIR }, input: picsIn }, (o, j) => {
+    check('collect-images: four pictures join into one item', o.length === 1 && j.ok === true && j.images_b64.length === 3 && j.image_count === 4);
+    check('collect-images: the first picture is the hook still', j.hook_still_b64 === HOOK_B64 && j.images_b64[0] === SCENE_B64);
+  });
+  glue('collect one bad', 'collect-images.js', { nodes: { 'Set Row': J(SET_ROW_NEW), 'Build Image Requests': BIR },
+    input: [picsIn[0], picsIn[1], { json: { error: { message: 'overloaded' } } }, picsIn[3]] }, (o, j) => {
+    check('collect-images: one empty picture sinks the whole set', o.length === 1 && j.ok === false && /Image 3 of 4/.test(j.message));
+  });
+  glue('collect short', 'collect-images.js', { nodes: { 'Set Row': J(SET_ROW_NEW), 'Build Image Requests': BIR }, input: picsIn.slice(0, 3) }, (o, j) => {
+    check('collect-images: fewer results than requests is refused', j.ok === false && /Expected 4/.test(j.message));
+  });
+
+  // Veo
+  glue('veo request', 'build-veo-request.js', { nodes: { Config: withCfg(), 'Validate Script': VS,
+    'Collect Images': J({ ok: true, hook_still_b64: 'STILL', hook_still_mime: 'image/png' }) } }, (o, j) => {
+    const b = JSON.parse(j.veoBody);
+    check('build-veo-request: animates the hook still at 9:16, 1080p, 6 seconds',
+      b.parameters.durationSeconds === '6' && b.parameters.aspectRatio === '9:16' && b.parameters.resolution === '1080p'
+        && b.instances[0].image.inlineData.data === 'STILL' && b.instances[0].prompt.indexOf(GOOD_SCRIPT.scenes[0].prompt) !== -1);
+  });
+  glue('veo started', 'check-veo-start.js', { input: J({ name: 'models/veo-3.1-lite-generate-preview/operations/abc' }) }, (o, j) => {
+    check('check-veo-start: an operation name means started', j.started === true && /operations\/abc$/.test(j.name));
+  });
+  glue('veo not started', 'check-veo-start.js', { input: J({ error: { message: 'quota' } }) }, (o, j) => {
+    check('check-veo-start: an error falls back instead of stopping', j.started === false && /quota/.test(j.reason));
+  });
+  const pollNodes = { Config: withCfg() };
+  glue('veo done', 'check-veo-poll.js', { nodes: pollNodes, input: J({ done: true, response: { generateVideoResponse: { generatedSamples: [{ video: { uri: 'https://x/v.mp4' } }] } } }) }, (o, j) => {
+    check('check-veo-poll: a finished operation yields the clip uri', j.state === 'done' && j.uri === 'https://x/v.mp4');
+  });
+  glue('veo pending', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }) }, (o, j) => {
+    check('check-veo-poll: an unfinished operation keeps polling', j.state === 'pending');
+  });
+  glue('veo timeout', 'check-veo-poll.js', { nodes: pollNodes, input: J({ name: 'op' }), runIndex: 31 }, (o, j) => {
+    check('check-veo-poll: gives up after 8 minutes of polls', j.state === 'failed' && /8 minutes/.test(j.reason));
+  });
+  glue('veo filtered', 'check-veo-poll.js', { nodes: pollNodes, input: J({ done: true, response: { generateVideoResponse: { raiMediaFilteredReasons: ['person filter'] } } }) }, (o, j) => {
+    check('check-veo-poll: a filtered clip falls back with the filter reason', j.state === 'failed' && /person filter/.test(j.reason));
+  });
+
+  // render payload
+  const renderNodes = (over) => Object.assign({
+    Config: withCfg(), 'Set Row': J(SET_ROW_NEW), 'Validate Script': VS,
+    'Collect Images': J({ ok: true, hook_still_b64: 'STILL', hook_still_mime: 'image/png', images_b64: ['I1', 'I2', 'I3'], image_count: 4 }),
+    'Voice WAV': J({ ok: true, wav_b64: 'WAV', seconds: 24 }),
+    'Check Veo Start': J({ started: true, name: 'op', reason: '' }),
+  }, over || {});
+  const payloadOf = (o) => JSON.parse(Buffer.from(o[0].binary.payload.data, 'base64').toString('utf8'));
+  const clipItem = { json: {}, binary: { data: binOf(MP4, 'video/mp4') } };
+  glue('payload clip', 'build-render-payload.js', { nodes: renderNodes({ 'Check Veo Poll': J({ state: 'done' }), 'Veo Download': [clipItem] }), input: [clipItem] }, (o, j) => {
+    const p = payloadOf(o);
+    check('build-render-payload: with the clip the hook is a video scene', j.ok === true && j.hook_fallback === false
+      && p.scenes[0].type === 'video' && p.scenes[0].b64 === MP4.toString('base64'));
+    check('build-render-payload: the body is handed on as a JSON binary', o[0].binary.payload.mimeType === 'application/json');
+    check('build-render-payload: the payload carries the voiceover and the end card', p.audio_b64 === 'WAV' && p.end_card.cta === 'I-download sa Play Store');
+  });
+  const pollFailed = J({ state: 'failed', reason: 'Veo did not finish within 8 minutes.' });
+  glue('payload fallback', 'build-render-payload.js', { nodes: renderNodes({ 'Check Veo Poll': pollFailed }), input: pollFailed }, (o, j) => {
+    const p = payloadOf(o);
+    check('build-render-payload: without a clip the hook is the punched still, with the reason', j.hook_fallback === true
+      && /8 minutes/.test(j.veo_note) && p.scenes[0].type === 'image' && p.scenes[0].punch === true);
+  });
+  const badClip = { json: {}, binary: { data: binOf(Buffer.from('{"error":"denied"}'), 'application/json') } };
+  glue('payload bad clip', 'build-render-payload.js', { nodes: renderNodes({ 'Check Veo Poll': J({ state: 'done' }), 'Veo Download': [badClip] }), input: [badClip] }, (o, j) => {
+    check('build-render-payload: a download that is not a video falls back', j.hook_fallback === true && /not a usable video/.test(j.veo_note));
+  });
+  glue('payload token', 'build-render-payload.js', { nodes: renderNodes({ Config: withCfg({ renderToken: 'FILL_IN_RENDER_TOKEN' }), 'Check Veo Poll': pollFailed }), input: pollFailed }, (o, j) => {
+    check('build-render-payload: a placeholder render token stops before rendering', j.ok === false && /renderToken/.test(j.message));
+  });
+
+  // check-render
+  const crNodes = (over) => Object.assign({
+    Config: withCfg(), 'Set Row': J(SET_ROW_NEW), 'Validate Script': VS,
+    'Collect Images': J({ ok: true, image_count: 4 }),
+    'Build Render Payload': J({ ok: true, hook_fallback: false, veo_note: '' }),
+    'Check Veo Poll': J({ state: 'done' }),
+  }, over || {});
+  const mp4Item = { json: {}, binary: { data: binOf(MP4, 'video/mp4') } };
+  glue('render ok', 'check-render.js', { nodes: crNodes(), input: [mp4Item] }, (o, j) => {
+    check('check-render: an MP4 response is ok and keeps the video binary', j.ok === true && j.bytes === MP4.length && !!o[0].binary.video);
+    check('check-render: the caption to paste is the composed message', j.post_message.indexOf('Huwag mag-alala.') !== -1
+      && j.post_message.indexOf('www.fishpin.app') !== -1 && j.post_message.indexOf(CFG.playStoreUrl) !== -1
+      && j.post_message.indexOf('#FishPin') !== -1 && j.post_message.indexOf(CFG.postCta) !== -1);
+    check('check-render: the Slack message carries the hook, voiceover, caption and cost', j.message_text.indexOf(GOOD_SCRIPT.hook) !== -1
+      && j.message_text.indexOf(GOOD_SCRIPT.voiceover) !== -1 && j.message_text.indexOf(j.post_message) !== -1
+      && j.message_text.indexOf('$0.65') !== -1);
+    check('check-render: the file is named by the video id and the cost is kept', j.file_name === 'VID-20260915-010203.mp4' && j.est_cost === 0.65);
+  });
+  const errItem = { json: {}, binary: { data: binOf(Buffer.from(JSON.stringify({ error: 'scene 2: b64 is required for image' })), 'application/json') } };
+  glue('render error body', 'check-render.js', { nodes: crNodes(), input: [errItem] }, (o, j) => {
+    check('check-render: a JSON error body is reported with its text', j.ok === false && /scene 2: b64 is required/.test(j.message));
+  });
+  glue('render connection', 'check-render.js', { nodes: crNodes(), input: J({ error: { message: 'ETIMEDOUT' } }) }, (o, j) => {
+    check('check-render: a connection failure is reported', j.ok === false && /ETIMEDOUT/.test(j.message));
+  });
+  glue('render fallback cost', 'check-render.js', { nodes: crNodes({
+    'Check Veo Poll': J({ state: 'failed' }),
+    'Build Render Payload': J({ ok: true, hook_fallback: true, veo_note: 'Veo did not start: quota' }),
+  }), input: [mp4Item] }, (o, j) => {
+    check('check-render: a Veo fallback costs less and is noted in the message',
+      j.est_cost === 0.17 && j.message_text.indexOf('$0.17') !== -1 && j.message_text.indexOf('Veo did not start: quota') !== -1);
+  });
+});
+
 // ---------------------------------------------------------------- results
 Promise.all(PENDING).then(() => {
   console.log('\n' + '─'.repeat(40));
