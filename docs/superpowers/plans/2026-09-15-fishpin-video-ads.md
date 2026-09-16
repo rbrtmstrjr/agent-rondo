@@ -1844,6 +1844,8 @@ git commit -m "feat(render): pure /render-ad helpers with unit tests; paths from
 
 ### Task 9: Render service — `render_ad`, the `/render-ad` route, VPS smoke test and deploy
 
+**Owner amendment (2026-09-15, "test it first"):** the smoke script takes `PORT` and also proves the existing `/render` still renders; the runbook tests the new `render.py` as a staging copy on `127.0.0.1:8089` (own `RENDER_ROOT`, throwaway token) and only replaces the live file after that smoke test prints `FAILS=0`, then smoke-tests the live service again before the firewall step. The Step 5, 6 and 8 text below predates this amendment; the implemented runbook is authoritative.
+
 Builds the video in three ffmpeg passes that are each simple to debug: one segment per scene plus the end card, a stream-copy concat, then a final pass that burns captions, overlays the logo lockup and mixes audio to Facebook's spec. Verified on the VPS by a smoke script, because ffmpeg is not installed locally.
 
 **Files:**
