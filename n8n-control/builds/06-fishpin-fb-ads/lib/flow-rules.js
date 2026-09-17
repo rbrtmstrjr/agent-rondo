@@ -96,7 +96,7 @@ const DECLINE_NOTE = 'The reviewer rejected this draft in Slack without giving a
 // Finds a boolean `approved` anywhere in the payload (bounded depth), which is
 // the shape n8n's sendAndWait emits in `approvalType: 'double'` mode:
 // {data: {approved: true|false}}. Returns true, false, or null when absent.
-// null is what tells a 6-hour timeout apart from a Disapprove click -- see
+// null is what tells a 2-hour timeout apart from a Disapprove click -- see
 // routeApproval.
 function findApproved(obj, depth) {
   depth = depth || 0;

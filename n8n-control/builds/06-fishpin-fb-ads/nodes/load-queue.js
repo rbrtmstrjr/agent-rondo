@@ -12,7 +12,17 @@ const rows = vals.slice(1).map((r, i) => {
 
 const stop = (reason) => [{ json: { found: false, reason } }];
 
-const fromWebhook = $('Loop Webhook').isExecuted;
+// A run started from the Manual Trigger in the n8n editor only loads the
+// nodes on that trigger's own path — Loop Webhook is a separate trigger, not
+// an ancestor of Pick Row on that path, so n8n doesn't even instantiate it
+// for the run. `$('Loop Webhook')` then throws "Referenced node doesn't
+// exist" instead of returning an object with isExecuted:false (which is what
+// it does on a Schedule Trigger run, where every trigger node DOES exist in
+// the graph). Resolve it defensively so editor Execute runs behave exactly
+// like a scheduled run: no webhook body, so the two guards below both take
+// their unauthenticated/no-row-id branch, same as today.
+let fromWebhook = false;
+try { fromWebhook = $('Loop Webhook').isExecuted; } catch (e) { fromWebhook = false; }
 const wh = fromWebhook ? ($('Loop Webhook').first().json.body || {}) : {};
 
 // --- guard 1: the loop webhook is a public POST endpoint -------------------

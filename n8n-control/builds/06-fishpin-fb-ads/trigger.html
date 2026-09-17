@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FishPin Post Now</title>
+<style>
+  :root { --navy: #0A2461; --blue: #147DFF; --paper: #EEF4FB; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+    background: var(--paper); color: var(--navy); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 520px; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 10px 30px rgba(10, 36, 97, .12); }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p.lead { margin: 0 0 8px; color: #3b4a6b; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  input { width: 100%; padding: 12px; border: 1px solid #c9d6ea; border-radius: 10px; font: inherit; color: inherit; }
+  small { color: #5a6a88; }
+  button { margin-top: 20px; width: 100%; padding: 14px; border: 0; border-radius: 10px; background: var(--blue); color: #fff;
+    font: 600 16px system-ui, sans-serif; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  #out { margin-top: 16px; padding: 12px; border-radius: 10px; display: none; }
+  #out.ok { display: block; background: #e8f7ee; color: #135c2e; }
+  #out.err { display: block; background: #fdecec; color: #8a1c1c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FishPin post now</h1>
+  <p class="lead">Generates and sends the next ready topic to Slack for approval — an extra
+    post outside the 09:00 schedule. Nothing posts to the Page until you approve it.</p>
+  <form id="f">
+    <label for="secret">Loop secret</label>
+    <input id="secret" type="password" autocomplete="off" placeholder="FISHPIN_LOOP_SECRET from n8n-control/.env">
+    <small>Remembered in this browser only.</small>
+    <button id="go" type="submit">Post now</button>
+  </form>
+  <div id="out" role="status"></div>
+</main>
+<script>
+  const WEBHOOK_URL = 'https://n8n.srv1193790.hstgr.cloud/webhook/fishpin-ad';
+  const KEY = 'fishpin-ad-loop-secret';
+  const el = (id) => document.getElementById(id);
+  try { el('secret').value = localStorage.getItem(KEY) || ''; } catch (e) { /* storage blocked: type it each time */ }
+  const show = (cls, text) => { el('out').className = cls; el('out').textContent = text; };
+  el('f').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const secret = el('secret').value.trim();
+    if (!secret) { show('err', 'Enter the loop secret first.'); return; }
+    try { localStorage.setItem(KEY, secret); } catch (e) { /* ignore */ }
+    el('go').disabled = true;
+    show('', '');
+    try {
+      // No row_id: Pick Row falls through to the same "next ready row" path
+      // the 09:00 schedule uses, not the in_review re-entry path — see
+      // nodes/load-queue.js and lib/sheet-rules.js selectRow.
+      const r = await fetch(WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loop_secret: secret }) });
+      if (!r.ok) throw new Error('n8n answered ' + r.status + '. Is the workflow active?');
+      show('ok', 'Started — the draft arrives in Slack in about a minute; approve it within 2 hours. '
+        + 'A wrong secret or an empty queue is reported in Slack, not here.');
+    } catch (e) {
+      show('err', 'Could not start: ' + e.message);
+    } finally {
+      el('go').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

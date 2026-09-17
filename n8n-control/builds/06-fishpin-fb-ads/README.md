@@ -132,7 +132,7 @@ inside a true cycle resolves unpredictably across iterations. Instead, `Loop Gua
 increments the attempt counter and HTTP-POSTs the row id + decision back to the
 workflow's own webhook (`POST /webhook/fishpin-ad`). Each retry is therefore its own
 execution in the n8n log — attempt 3 is fully debuggable on its own — and it composes
-cleanly with a 6-hour `sendAndWait`. The same webhook and payload shape serves both the
+cleanly with a 2-hour `sendAndWait`. The same webhook and payload shape serves both the
 human regeneration loop (budget 3) and the machine copy-validation retry (budget 1); only
 `decision` and which counter moved tells them apart.
 
@@ -230,7 +230,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
   **Approve** click on the `Slack Review` `sendAndWait` step — two native Slack buttons,
   `approvalType: double`, decided in the channel with no browser tab. Declines and timeouts
   never auto-publish, and the two are told apart (a decline regenerates and spends an
-  attempt; a 6-hour timeout expires the row and spends nothing). The gate is also **fail-closed and all-or-nothing**: if any photo of the
+  attempt; a 2-hour timeout expires the row and spends nothing). The gate is also **fail-closed and all-or-nothing**: if any photo of the
   set has no usable public URL, the preview message would have thrown and the reviewer
   would have been shown a bare approval prompt with no images and no copy — while perfectly
   valid `media_fbid`s stood ready to publish. `Collect Photos` reduces "are all N photos
@@ -273,6 +273,7 @@ Checked against the repo's Definition of Done in the root `CLAUDE.md`.
 | `nodes/*.js` | The 13 Code-node glue files each workflow inlines a lib into (see `build.js`'s `code()` helper). `collect-photos.js` is the join that turns the per-image fan-out back into one album, and — because it is the single-item node BOTH `Publish Post` and `Post Preview` read — it is also where `buildPostMessage` composes the published message, once. |
 | `fishpin-fb-ads.workflow.json` / `fishpin-insights.workflow.json` | The deployable, generated workflow JSON — do not hand-edit; edit the builder and rebuild. |
 | `queue-seed.csv` | 10 starter rows covering all 7 pillars, ready to import into the Queue tab. Unchanged by the album work: the `Queue` tab is still 16 columns and its one `image_url` column now holds every image url joined by ` \| `. |
+| `trigger.html` | "Post now" page — POSTs `{loop_secret}` (no `row_id`) to the production loop webhook so an extra draft goes to Slack for approval, outside the 09:00 schedule. See "Posting outside the schedule" below. |
 | `assets/BRAND.md` | The FishPin colour palette and personality, lifted from the app's own brand spec. The source of truth for `STYLE_SUFFIX`. |
 | `assets/logo.png` | The real FishPin logo (7.5 KB). `build.js` base64s it into the Build Image Prompt Code node at build time and it is sent to Gemini as an inline reference image. |
 | `test.js` | Offline unit tests (876 checks) + the `--live` Gemini copy-generation test. |
@@ -376,6 +377,37 @@ string, which `Notify Queue Empty` prints to the ops channel.
 
 ---
 
+## Posting outside the schedule
+
+Two ways to get an extra draft in front of the reviewer besides waiting for the 09:00
+`Schedule Trigger`:
+
+- **`trigger.html` ("Post now").** Open it anywhere (phone included), paste the loop
+  secret once (kept only in that browser's `localStorage`, never written into the page),
+  and click **Post now**. It POSTs `{"loop_secret": "..."}` — no `row_id` — to the
+  production webhook (`POST /webhook/fishpin-ad`). This is a **real production run**:
+  `Pick Row` sees no `row_id`, so it takes the same "next `ready` row" path the 09:00
+  schedule uses (`selectRow` in `lib/sheet-rules.js`), not the `in_review` re-entry path,
+  which only fires when a `row_id` is present (see `nodes/load-queue.js`). The draft lands
+  in Slack in about a minute; approve or decline it from any device, same as the daily one.
+  A wrong secret or an empty queue is reported in Slack (`Notify Queue Empty` / `Pick Row`'s
+  refusal reasons), not on the page itself.
+- **The n8n editor's "Execute workflow" (Manual Trigger).** Useful for debugging, but its
+  Slack Approve/Disapprove buttons are wired to that one **test-mode** execution and only
+  resolve while the editor tab stays open and connected — close it, and the button click
+  has nothing to resume. Prefer `trigger.html` for anything you intend to actually approve
+  later, especially from your phone. (Editor runs used to crash outright at `Pick Row` —
+  `$('Loop Webhook')` throws when the run starts from the Manual Trigger, because that
+  trigger's own path doesn't include the Loop Webhook node; `nodes/load-queue.js` now
+  catches that and falls back to the no-webhook-body case, same as a scheduled run.)
+
+Either way, an unanswered draft **expires after 2 hours** (`Config.reviewTimeoutHours`) —
+the row goes to `status = expired` and nothing posts. An `expired` row is not gone: open
+the Queue tab, set that row's `status` back to `ready`, and it re-enters rotation on the
+next trigger (scheduled, Post now, or manual).
+
+---
+
 ## Config table
 
 ### `fishpin-fb-ads.workflow.json` (main pipeline)
@@ -392,7 +424,7 @@ string, which `Notify Queue Empty` prints to the ops channel.
 | `copyTemperature` | Sampling temperature for copy generation. | `0.8` |
 | `maxAttempts` | How many times a reviewer may Decline before `needs_manual`. Each Decline regenerates the copy AND the images. | `3` |
 | `maxCopyRetries` | Machine copy-validation retry budget before `needs_manual`. | `1` |
-| `reviewTimeoutHours` | How long `Slack Review`'s two-button `sendAndWait` waits before the row goes `expired`. A timeout consumes no human attempt. | `6` |
+| `reviewTimeoutHours` | How long `Slack Review`'s two-button `sendAndWait` waits before the row goes `expired`. A timeout consumes no human attempt. | `2` |
 | `reviewChannel` | Slack channel id the approval form is posted to. | `C0C1WS8PAAJ` |
 | `opsChannel` | Slack channel id for success/failure/empty-queue notifications. | `C0C1WS8PAAJ` |
 | `websiteUrl` | FishPin's website. Appended to **every** post by `buildPostMessage` (never written by the model), and set under the brand lockup in every image. | `www.fishpin.app` |
@@ -592,7 +624,7 @@ Run this once, in order, before letting the schedule trigger post to the real Pa
    that the row ends as `status = expired` with the "Review timed out" Slack message, and
    that `attempt` did **not** increment and no regeneration fired. This is the one
    behaviour in this build reasoned from n8n's resume semantics rather than observed (see
-   Known limitations). Put `reviewTimeoutHours` back to 6 afterwards.
+   Known limitations). Put `reviewTimeoutHours` back to 2 afterwards.
 9. Decline three times in a row and confirm the run escalates on the **third** decline
    with "3 attempts rejected, needs a human" — there must never be an "attempt 4 of 3".
 10. Queue a how-to or fish-guide row and confirm the copy model asks for **more than one**

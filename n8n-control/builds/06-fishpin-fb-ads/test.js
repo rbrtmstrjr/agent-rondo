@@ -2090,6 +2090,36 @@ section('workflow', 'Main workflow structure', () => {
   check('I4: a scheduled run needs no secret and picks the first ready row',
     scheduled.found === true && scheduled.row.id === 'FP-003');
   check('I4: a scheduled run never sets keep_copy', scheduled.keep_copy === false);
+
+  // D2 (2026-09-17): an n8n editor "Execute workflow" run starting from the
+  // Manual Trigger only loads the nodes on that trigger's own path — Loop
+  // Webhook is a separate trigger and isn't even instantiated for the run,
+  // so $('Loop Webhook') THROWS at the call site (not just isExecuted:false,
+  // which is what a scheduled run gets for an un-fired but still-present
+  // trigger). runCode's shared fakeDollar can't express a throw on the call
+  // itself, so this uses a bespoke one that matches n8n's real failure mode.
+  const throwingWebhookDollar = (name) => {
+    if (name === 'Loop Webhook') throw new Error("Referenced node doesn't exist [line 117]");
+    const store = { Config: one(MAIN_CFG) };
+    const e = store[name];
+    if (!e) return { isExecuted: false, first: () => { throw new Error("no data for $('" + name + "')"); }, all: () => { throw new Error("no data for $('" + name + "')"); } };
+    return { isExecuted: e.isExecuted !== false, first: () => e.items[0], all: () => e.items };
+  };
+  const editorOut = new Function('$', '$json', 'items', byName['Pick Row'].parameters.jsCode)(
+    throwingWebhookDollar, sheetPayload, [{ json: sheetPayload }])[0].json;
+  check('D2: an editor Manual Trigger run — $(\'Loop Webhook\') throws — still picks the first ready row',
+    editorOut.found === true && editorOut.row.id === 'FP-003');
+  check('D2: the editor run never sets keep_copy', editorOut.keep_copy === false);
+
+  // D2: "Post now" is the production webhook called with just {loop_secret},
+  // no row_id — Loop Webhook IS executed (a real production run), but with no
+  // row named, so it must fall through to the same next-ready-row path as the
+  // 09:00 schedule, not the in_review re-entry path.
+  const postNowOut = runCode('Pick Row', pickStore({ loop_secret: SECRET }), sheetPayload)[0].json;
+  check('D2: Post now (loop_secret, no row_id) picks the first ready row',
+    postNowOut.found === true && postNowOut.row.id === 'FP-003');
+  check('D2: Post now never sets keep_copy', postNowOut.keep_copy === false);
+
   const emptyQueue = runCode('Pick Row', pickStore(null),
     { values: [S.QUEUE_HEADERS, SHEET_ROWS[1]] })[0].json;
   check('I4: an genuinely empty queue still reports the empty-queue reason',

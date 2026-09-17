@@ -2,7 +2,7 @@
 //
 // routeApproval, not normalizeDecision: the Slack Review node is a native
 // two-button sendAndWait, whose only two outputs are {data:{approved:bool}}
-// (a click) and a passthrough of its own input (a 6-hour limitWaitTime
+// (a click) and a passthrough of its own input (a 2-hour limitWaitTime
 // expiry). routeApproval is what encodes that distinction, so a decline
 // ('both' — regenerate copy AND images) is never mistaken for a timeout and
 // vice versa. See lib/flow-rules.js.
