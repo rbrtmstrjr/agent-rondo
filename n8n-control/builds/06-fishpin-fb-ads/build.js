@@ -85,6 +85,14 @@ const sheetUrl = (suffix) => "={{ '" + SHEET_BASE + "/' + $('Config').first().js
 // node itself and pins it if the workflow is ever copied into another file.
 const TZ = 'Asia/Manila';
 
+// Owner decision 2026-09-17: an unanswered draft expires so the next day's
+// post is unaffected — the owner is often too busy to click Approve/Decline
+// on the 09:00 draft, and rows were piling up at in_review forever (a flat
+// { resumeAmount, resumeUnit } under `options` is not the shape n8n's
+// sendAndWait node reads, so the old "6 hours" never actually took effect;
+// see the Slack Review node below).
+const REVIEW_TIMEOUT_HOURS = 2;
+
 const nodes = [
   // One post a day, every day, at 09:00 Manila (owner decision, 2026-09-15).
   { parameters: { rule: { interval: [
@@ -114,7 +122,7 @@ const nodes = [
       { id: 'c8', name: 'copyTemperature', value: 0.8, type: 'number' },
       { id: 'c9', name: 'maxAttempts', value: 3, type: 'number' },
       { id: 'c10', name: 'maxCopyRetries', value: 1, type: 'number' },
-      { id: 'c11', name: 'reviewTimeoutHours', value: 6, type: 'number' },
+      { id: 'c11', name: 'reviewTimeoutHours', value: REVIEW_TIMEOUT_HOURS, type: 'number' },
       { id: 'c12', name: 'reviewChannel', value: 'C0C1WS8PAAJ', type: 'string' },
       { id: 'c13', name: 'opsChannel', value: 'C0C1WS8PAAJ', type: 'string' },
       // Both links are required in EVERY generated caption (validateCopy rule
@@ -291,9 +299,21 @@ const nodes = [
   slack('n-rev', 'Slack Review', {
     operation: 'sendAndWait',
     channelId: { __rl: true, value: cfgVal('reviewChannel'), mode: 'id' },
-    message: "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}, {{ $('Collect Photos').first().json.image_count }} image(s)).\n\n*Approve* publishes it to the FishPin Page as one post.\n*Decline* throws it away and regenerates the copy and images for the same idea.",
+    message: "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}, {{ $('Collect Photos').first().json.image_count }} image(s)).\n\n*Approve* publishes it to the FishPin Page as one post.\n*Decline* throws it away and regenerates the copy and images for the same idea.\n\n_No response in " + REVIEW_TIMEOUT_HOURS + " hours and this draft expires — nothing gets posted._",
     approvalOptions: { values: { approvalType: 'double' } },
-    options: { limitWaitTime: true, resumeAmount: '={{ $(\'Config\').first().json.reviewTimeoutHours }}', resumeUnit: 'hours' },
+    // n8n's own sendAndWait timeout is a fixedCollection under `options`
+    // (packages/nodes-base/utils/sendAndWait/descriptions.ts):
+    //   options.limitWaitTime.values = { limitType, resumeAmount, resumeUnit }
+    // A flat { limitWaitTime: true, resumeAmount, resumeUnit } directly under
+    // `options` — what this node used to send, with resumeAmount as an
+    // n8n expression reading Config.reviewTimeoutHours — is NOT that shape,
+    // so n8n silently ignored it and the wait never timed out. resumeAmount
+    // must be a literal number here: this fixedCollection is UI-parameter
+    // configuration resolved by the node before the workflow runs, not an
+    // expression context, so an '={{ }}' string is never evaluated.
+    options: { limitWaitTime: { values: {
+      limitType: 'afterTimeInterval', resumeAmount: REVIEW_TIMEOUT_HOURS, resumeUnit: 'hours',
+    } } },
   }, 3780, 320),
 
   codeNode('n-route', 'Route Decision', code(['flow-rules.js'], 'route-decision.js'), 4000, 260),

@@ -1299,6 +1299,11 @@ section('workflow', 'Main workflow structure', () => {
   check('A2: the wrong package id (app.fishpin) is gone from the whole workflow',
     !JSON.stringify(wf).includes('id=app.fishpin'));
 
+  // Owner decision 2026-09-17: an unanswered draft expires after 2 hours
+  // (was 6) so it never blocks the next day's 09:00 post.
+  check('D1: Config reviewTimeoutHours is 2 hours',
+    cfgVals.reviewTimeoutHours === 2);
+
   // appPrice was removed: nothing reads it any more now that the validator
   // never uses the app's price to decide validity (see lib/copy-rules.js
   // rule 9). Config must not carry a dead tunable.
@@ -1333,7 +1338,23 @@ section('workflow', 'Main workflow structure', () => {
     /approve/i.test(String(rev.message)) && /declin/i.test(String(rev.message)));
   check('C1: the review message says Decline regenerates copy AND images',
     /copy and (the )?image|copy AND image/i.test(String(rev.message)));
-  check('review limits the wait time', rev.options && rev.options.limitWaitTime === true);
+  // D1 (2026-09-17): n8n's sendAndWait timeout is a fixedCollection under
+  // `options.limitWaitTime.values` (packages/nodes-base/utils/sendAndWait/
+  // descriptions.ts) — { limitType, resumeAmount, resumeUnit }. The node used
+  // to send a flat { limitWaitTime: true, resumeAmount, resumeUnit } directly
+  // under `options`, which n8n does not read, so the wait never actually
+  // timed out. Pin the real contract, including that resumeAmount is a
+  // literal number (this fixedCollection is resolved before the workflow
+  // runs, not an expression context) and that the old flat keys are gone.
+  check('D1: review options.limitWaitTime is the real fixedCollection shape',
+    rev.options && JSON.stringify(rev.options.limitWaitTime) === JSON.stringify({
+      values: { limitType: 'afterTimeInterval', resumeAmount: 2, resumeUnit: 'hours' },
+    }));
+  check('D1: review options no longer carries the old flat resumeAmount/resumeUnit',
+    rev.options && rev.options.resumeAmount === undefined && rev.options.resumeUnit === undefined
+      && rev.options.limitWaitTime !== true);
+  check('D1: the review message tells the reviewer the draft expires after 2 hours',
+    /2\s*hours?/i.test(String(rev.message)) && /expir/i.test(String(rev.message)));
   check('C1: Route Decision uses the approval-gate mapper, not the raw normaliser',
     /routeApproval\s*\(/.test(byName['Route Decision'].parameters.jsCode));
 

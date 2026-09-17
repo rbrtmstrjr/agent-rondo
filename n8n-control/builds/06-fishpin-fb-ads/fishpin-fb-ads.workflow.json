@@ -117,7 +117,7 @@
             {
               "id": "c11",
               "name": "reviewTimeoutHours",
-              "value": 6,
+              "value": 2,
               "type": "number"
             },
             {
@@ -766,16 +766,20 @@
           "value": "={{ $('Config').first().json.reviewChannel }}",
           "mode": "id"
         },
-        "message": "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}, {{ $('Collect Photos').first().json.image_count }} image(s)).\n\n*Approve* publishes it to the FishPin Page as one post.\n*Decline* throws it away and regenerates the copy and images for the same idea.",
+        "message": "=Review the FishPin ad above (`{{ $('Pick Row').first().json.row.id }}`, attempt {{ $('Pick Row').first().json.attempt }} of {{ $('Config').first().json.maxAttempts }}, {{ $('Collect Photos').first().json.image_count }} image(s)).\n\n*Approve* publishes it to the FishPin Page as one post.\n*Decline* throws it away and regenerates the copy and images for the same idea.\n\n_No response in 2 hours and this draft expires — nothing gets posted._",
         "approvalOptions": {
           "values": {
             "approvalType": "double"
           }
         },
         "options": {
-          "limitWaitTime": true,
-          "resumeAmount": "={{ $('Config').first().json.reviewTimeoutHours }}",
-          "resumeUnit": "hours"
+          "limitWaitTime": {
+            "values": {
+              "limitType": "afterTimeInterval",
+              "resumeAmount": 2,
+              "resumeUnit": "hours"
+            }
+          }
         }
       },
       "id": "n-rev",
